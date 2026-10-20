@@ -1,0 +1,56 @@
+name: 毎日の更新
+
+on:
+  schedule:
+    - cron: "20 15 * * *"  # 毎日 0:20(日本時間): 前日の成績と今日の番組表
+    - cron: "10 22 * * *"  # 毎日 7:10(日本時間): 取りこぼしの再取得
+    - cron: "10 8 * * *"   # 毎日 17:10(日本時間): 明日の番組表(出ていれば)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["scripts/**", "site/**", "data/stadiums.json", ".github/workflows/update.yml"]
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 解凍ツールを入れる
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lhasa
+      - name: 公式データを取り込んでサイトを作る
+        run: python3 scripts/update.py
+      - name: 取り込んだデータを保存する
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/program data/results data/fetch_state.json
+          if git commit -m "データ更新 $(TZ=Asia/Tokyo date +'%Y-%m-%d %H:%M') [skip ci]"; then
+            git pull --rebase -q origin main && git push
+          else
+            echo "変更なし"
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
