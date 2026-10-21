@@ -259,6 +259,8 @@
     var exm = exOk ? exs.reduce(function (s, x) { return s + x; }, 0) / 6 : null;
     var mots = B.map(function (b) { return b.motorR != null ? b.motorR : null; }), mm = mots.filter(function (x) { return x != null; });
     var mmean = mm.length ? mm.reduce(function (s, x) { return s + x; }, 0) / mm.length : null;
+    var LK = K.LOC_K || 8, locd = B.map(function (b, i) { var lv = b.lv || [0, 0]; return (lv[0] + LK * pts[i]) / (lv[1] + LK) - pts[i]; });
+    var mloc = locd.reduce(function (s, x) { return s + x; }, 0) / 6;
     var u = {};
     B.forEach(function (b, i) {
       var c = i + 1;
@@ -267,6 +269,11 @@
       var x = { str: pts[i] - mp, st: (sm - sts[i]) / K.U, ex: exOk ? (exm - exs[i]) / 0.05 : 0,
                 mot: mmean != null && mots[i] != null ? (mots[i] - mmean) / 10 : 0,
                 c2: Math.log((((cs.w2 || 0) + O.K2 * bc) / ((cs.n || 0) + O.K2)) / bc), cb: ((cb[0] + 2.5) / (cb[1] + 5) - 0.5) * 4 };
+      if (O.base3) {                                      // このコースの3連対率と、当地の相性(fit.py の order_feats と同じ式)
+        var b3 = O.base2[i] + O.base3[i] + 0.1;
+        x.top3 = Math.log((((cs.w1 || 0) + (cs.w2 || 0) + (cs.w3 || 0) + O.K2 * b3) / ((cs.n || 0) + O.K2)) / b3);
+        x.loc = locd[i] - mloc;
+      }
       var d = c - cw, v = alpha[d < 0 ? d + 5 : d + 4];
       Object.keys(beta).forEach(function (n) { v += beta[n] * (x[n] || 0); });
       u[c] = v;

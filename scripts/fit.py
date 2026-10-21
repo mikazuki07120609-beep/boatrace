@@ -79,7 +79,7 @@ def snapshot_racer(r: dict, d: dt.date, course: int) -> dict:
             "r8": list(r.get("rs", []))[-RECENT_N:],
             "fp": sum(1 for x in r.get("f", []) if x >= ps),
             "cb": list(r.get("cb", [0, 0])),
-            "cs": {"n": cs.get("n", 0), "w1": cs.get("w1", 0), "w2": cs.get("w2", 0),
+            "cs": {"n": cs.get("n", 0), "w1": cs.get("w1", 0), "w2": cs.get("w2", 0), "w3": cs.get("w3", 0),
                    "km": {k: v for k, v in cs.get("km", {}).items() if v > 0},
                    "ls": {k: v for k, v in cs.get("ls", {}).items() if v > 0} if course == 1 else {}}}
 
@@ -552,7 +552,7 @@ def predict(th, sm, rec, S, rng):
 #   2着から順に「残った艇の中で、点数に応じた割合で選ばれる」として学習する(5着まで。段ごとに点数の効き方 λ を変える)
 # ======================================================================
 KG = {"逃げ": 0, "捲り": 1, "差し": 2, "捲り差し": 3, "抜き": 4}
-ORDER_FEATS = ["str", "st", "ex", "mot", "c2", "cb"]
+ORDER_FEATS = ["str", "st", "ex", "mot", "c2", "cb", "top3", "loc"]
 ORD_K2 = 8
 NF_ORD = len(ORDER_FEATS)
 
@@ -562,7 +562,7 @@ def rel_idx(d: int) -> int:
     return d + 5 if d < 0 else d + 4
 
 
-def order_feats(r: dict, base2: list, t=None) -> list:
+def order_feats(r: dict, base: dict, t=None) -> list:
     """6艇(コース順)の特徴。t はST(なければ実際のST)。"""
     B = r["b"]
     pts = [(b["pts"][0] + PTS_K * PTS_MEAN) / (b["pts"][1] + PTS_K) for b in B]
@@ -576,10 +576,13 @@ def order_feats(r: dict, base2: list, t=None) -> list:
     mots = [b.get("motor") for b in B]
     mm = [m for m in mots if m is not None]
     mmean = sum(mm) / len(mm) if mm else None
+    locd = [((b.get("lv") or [0, 0])[0] + LOC_K * pts[i]) / ((b.get("lv") or [0, 0])[1] + LOC_K) - pts[i] for i, b in enumerate(B)]
+    mloc = sum(locd) / 6
     out = []
     for i, b in enumerate(B):
         cs = b["cs"]
-        bc = base2[i]
+        bc = base["b2"][i]
+        b3 = base["b2"][i] + base["b3"][i] + 0.1                      # このコースの3連対率の全体の平均(の目安)
         c2 = math.log(((cs.get("w2", 0) + ORD_K2 * bc) / (cs.get("n", 0) + ORD_K2)) / bc)
         cb = b.get("cb") or [0, 0]
         out.append([pts[i] - mp,
@@ -587,11 +590,13 @@ def order_feats(r: dict, base2: list, t=None) -> list:
                     (exm - exs[i]) / 0.05 if ex_ok else 0.0,
                     (mots[i] - mmean) / 10 if mmean is not None and mots[i] is not None else 0.0,
                     c2,
-                    ((cb[0] + 2.5) / (cb[1] + 5) - 0.5) * 4])
+                    ((cb[0] + 2.5) / (cb[1] + 5) - 0.5) * 4,
+                    math.log(((cs.get("w1", 0) + cs.get("w2", 0) + cs.get("w3", 0) + ORD_K2 * b3) / (cs.get("n", 0) + ORD_K2)) / b3),
+                    locd[i] - mloc])
     return out
 
 
-def order_data(recs, base2):
+def order_data(recs, base):
     G, IDX, X, RK = [], [], [], []
     for r in recs:
         if not r["clean"] or r["y"] is None:
@@ -600,7 +605,7 @@ def order_data(recs, base2):
         if sorted(x for x in ranks if x) != [1, 2, 3, 4, 5, 6]:
             continue
         cw, k = CLASSES[r["y"]]
-        f = order_feats(r, base2)
+        f = order_feats(r, base)
         others = [c for c in range(1, 7) if c != cw]
         G.append(KG[k])
         IDX.append([rel_idx(c - cw) for c in others])
@@ -644,6 +649,22 @@ def order_nll(th, data):
     return f / max(1, n), g / max(1, n)
 
 
+def base_rates(recs) -> dict:
+    """コースごとの2着・3着の割合(全レース)。"""
+    return {"b2": base_of(recs, 2), "b3": base_of(recs, 3)}
+
+
+def base_of(recs, k: int) -> list:
+    n = [0] * 6
+    w = [0] * 6
+    for r in recs:
+        for i, b in enumerate(r["b"]):
+            if b.get("rank"):
+                n[i] += 1
+                w[i] += 1 if b["rank"] == k else 0
+    return [max(0.02, w[i] / n[i]) if n[i] else 1 / 6 for i in range(6)]
+
+
 def base2_of(recs) -> list:
     """コースごとの2着の割合(全レース)。"""
     n = [0] * 6
@@ -656,8 +677,8 @@ def base2_of(recs) -> list:
     return [max(0.02, w[i] / n[i]) if n[i] else 1 / 6 for i in range(6)]
 
 
-def fit_order(recs, base2):
-    data = order_data(recs, base2)
+def fit_order(recs, base):
+    data = order_data(recs, base)
     if len(data[0]) < 500:
         return None, data
     th0 = np.zeros(50 + NF_ORD + 3)
@@ -680,11 +701,12 @@ def order_eval(th, data):
     return {"races": int(len(G)), "hit2": round(hit2 * 100, 1), "hit23": round(hit23 * 100, 1), "ll2": round(ll2, 4)}
 
 
-def order_model(th, base2):
+def order_model(th, base):
     a, b, lam = order_unpack(th)
     return {"alpha": {k: [round(float(x), 4) for x in a[g]] for k, g in KG.items()},
             "beta": {n: round(float(v), 4) for n, v in zip(ORDER_FEATS, b)},
-            "lam": [round(float(x), 4) for x in lam], "K2": ORD_K2, "base2": [round(x, 4) for x in base2]}
+            "lam": [round(float(x), 4) for x in lam], "K2": ORD_K2, "base2": [round(x, 4) for x in base["b2"]],
+            "base3": [round(x, 4) for x in base["b3"]]}
 
 
 # ======================================================================
@@ -790,7 +812,7 @@ def main() -> int:
         if th_tr is not None:
             ev = evaluate(th_tr, sm_tr, test, f"学習に使っていない直近{eval_days}日")
     # 2着以下の並びの学習と答え合わせ(学習に使っていない直近の日で)
-    base2 = base2_of(recs)
+    base2 = base_rates(recs)
     ord_ev = None
     if len(train) >= 2000:
         th_o, _ = fit_order(train, base2)
