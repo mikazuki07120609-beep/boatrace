@@ -993,6 +993,48 @@
     return Math.min(T_MAX - 0.1, Math.max.apply(null, boats.map(function (b) { return b.done; })) + 2.0);
   }
 
+  // 1マークを出たあとの並び(ラベルの並び)を、映像の最後まで崩さない。
+  // その地点を過ぎた艇が前の艇に追いつきそうになったら、自分のラインのまま前の艇の後ろで速さを合わせる(直線では抜けない)
+  function holdOrder(order, sGate) {
+    var done = [];
+    order.forEach(function (B) {
+      var i0 = -1;
+      for (var i = 1; i < NF; i++) if (B.CS[i] >= sGate) { i0 = i; break; }
+      if (i0 < 0 || !done.length) { done.push(B); return; }
+      var X = B.X.slice(), Y = B.Y.slice(), H = B.H.slice(), CS = B.CS.slice(), CL = B.CL.slice(), V = B.V.slice();
+      var at = function (A, x) { var k = Math.min(Math.floor(x), NF - 2), u = x - k; return A[k] + (A[k + 1] - A[k]) * u; };
+      // はじめの間は、その地点を過ぎたときの実際の間(並んでいれば狭い)。そこから少しずつ広げる
+      var jf = i0, rate = 1, warped = false, gaps = done.map(function (A) { return Math.max(0.2, A.CS[i0] - CS[i0]); });
+      for (i = i0 + 1; i < NF; i++) {
+        var lim = 1e9, cl = at(CL, jf);
+        for (var q = 0; q < done.length; q++) {
+          var A = done[q], near = clamp((HULL_W + 2.2 - Math.abs(A.CL[i] - cl)) / 2.0, 0, 1);
+          var g = 1.0 + (HULL_L - 0.2) * near;                                 // 同じ筋なら艇1つ分あける(横に離れるほど詰めてよい)
+          if (g > gaps[q] + 0.06) g = gaps[q] + 0.06;                          // 間は少しずつ広げる(急に止めない)
+          gaps[q] = g;
+          lim = Math.min(lim, A.CS[i] - g);
+        }
+        // 自分の元の速さを超えず(1コマに1コマ分まで)、前の艇の手前まで進める(端数のコマは間を取る)
+        var jt = Math.min(jf + 1, i);
+        if (at(CS, jt) > lim) {
+          var lo = jf, hi = jt;
+          if (at(CS, lo) > lim) jt = jf;
+          else { for (var it = 0; it < 12; it++) { var mid = (lo + hi) / 2; if (at(CS, mid) <= lim) lo = mid; else hi = mid; } jt = lo; }
+        }
+        var want = jt - jf;
+        rate = Math.min(want, clamp(want, rate - 0.05, rate + 0.05));        // 速さは少しずつ変える(ただし前の艇は抜かない)
+        jf += Math.max(0, rate);
+        if (jf < i - 1e-6) warped = true;
+        if (warped) {
+          B.X[i] = at(X, jf); B.Y[i] = at(Y, jf); B.CS[i] = at(CS, jf); B.CL[i] = cl = at(CL, jf);
+          var k = Math.min(Math.floor(jf), NF - 2); B.H[i] = H[k] + angd(H[k + 1], H[k]) * (jf - k);
+          B.V[i] = Math.max(0, rate) * at(V, jf);
+        }
+      }
+      done.push(B);
+    });
+  }
+
   // ======================================================================
   // 全体: 戦法を決め、ラインと時間を作り、決着パターンどおりの先頭・決まり手になるまで調整する
   // ======================================================================
@@ -1165,6 +1207,7 @@
       }
       if (moved && (!fullOk || miss() > best)) { restore(bestSt); runOnce(false); if (miss() >= 1000) { restore(st0); runOnce(false); } }
     }
+    if (lab && rel) holdOrder(lab.order, rel.sLast);
     // 引き波の強さ(映像のしぶきと「沈む」に使う)
     headCache(boats);
     boats.forEach(function (b) {
