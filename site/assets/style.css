@@ -206,19 +206,20 @@ table.vt tbody th small{display:block;font-size:9.5px;font-weight:500}
 table.vt td{font-family:var(--mono);font-variant-numeric:tabular-nums}
 table.vt td.top{background:#e53935;color:#fff;font-weight:700}
 table.vt td.top .dim,table.vt td.top .tx{color:rgba(255,255,255,.9)}
-table.vt td.top .fon{background:#fff;color:#e53935}
+table.vt td.top .fon{background:#ffd400;color:#1b1b1b}
 table.vt tr.grp th{background:var(--accent-soft);color:var(--accent);text-align:left;font-size:11px;padding:4px 6px}
 table.vt .nm{font-family:var(--body);font-size:12.5px;display:block;line-height:1.25;font-weight:700}
 table.vt .tx{font-family:var(--body);font-size:11px;line-height:1.3;display:block}
 table.vt .dim{display:block;color:var(--muted);font-size:10.5px;font-family:var(--body)}
-table.vt .fon{display:inline-block;color:#fff;background:var(--red);border-radius:3px;padding:0 3px;font-weight:700}
+/* フライング・失格などの印は、1位の赤い塗りと見分けられるよう、黄色地に黒字(注意の色)にする */
+table.vt .fon{display:inline-block;color:#1b1b1b;background:#ffd400;border:1px solid #1b1b1b;border-radius:3px;padding:0 3px;font-weight:700}
 table.vt .moved{color:var(--red)}
 table.vt td .g{width:24px;height:24px;font-size:14px}
 table.vt .days{display:flex;flex-direction:column;gap:2px;align-items:center}
 table.vt .days em{font-style:normal;display:inline-flex;gap:1px;padding:0 3px;border:1px solid var(--line);border-radius:3px;font-size:11.5px}
 table.vt .days i{font-style:normal}
 table.vt .days i.top1{font-weight:700;color:var(--accent)}
-table.vt .days i.ng{color:var(--red);font-weight:700}
+table.vt .days i.ng{color:#1b1b1b;background:#ffd400;border-radius:2px;padding:0 1px;font-weight:700}
 table.vt td.top .days em{border-color:rgba(255,255,255,.6)}
 .ex1{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:13px;margin:10px 0 6px}
 .ex1 span{font-family:var(--mono)}

@@ -171,9 +171,13 @@
     function set(b, role, ref, over, under) { if (!b) return; b.role = role; b.ref = ref || null; b.over = over || []; b.under = under || null; }
     function midBoats(lo, hi) { return boats.filter(function (o) { return o.course > lo && o.course < hi; }); }
 
+    // 着順の並び(予想、または実際のレースの着順)が分かっていれば、それに合わない仕掛けはさせない
+    var tgt = opt.order || sc.order || null;
+    function tpos(c) { return tgt ? tgt.indexOf(c) : -1; }
     if (k === "逃げ") {
       A = natural();
-      if (A && A.course === 2 && margin(A) < 0.012) A = null;               // 2コースは少し出ても差しに回ることが多い
+      if (A && A.course === 2 && margin(A) < 0.03) A = null;                // 2コースは少し出ても差しに回ることが多い
+      if (A && tpos(A.course) === 1) A = null;                              // 2着に残る艇は、捲りに行って止められた形ではない(差し・ついて回る)
       if (A) { set(A, "makuri", b1); A.fail = true; set(b1, strong1() >= 0.45 ? "nigeHari" : "nige"); }  // 張り気味に先に回って止める
       else set(b1, byC[2] && byC[2].tac["差し"] >= 0.72 ? "kotsu" : "nige");
     } else if (k === "捲り") {
@@ -262,6 +266,20 @@
       }
       if (left && b.tac["差し"] >= 0.25 && c === 5) { set(b, "sashi", left); return; }
       set(b, "soto");
+    });
+    // 着順の並びが分かっていれば、仕掛けに関わらない艇の回り方をそれに合わせる:
+    // すぐ前の着の艇が内にいれば、その外について回る(マーク)。外にいれば、その内を差す
+    if (tgt) boats.forEach(function (X) {
+      if (X.win || X === A || X.role === "makuri" || X.role === "nidan" || X.role === "makurizashi" || X.course === 1) return;
+      if (W && (W.over.indexOf(X) >= 0 || W.under === X || W.ref === X)) return;           // 勝つ艇の決まり手に関わる艇はそのまま
+      var pX = tpos(X.course);
+      if (pX <= 0 || pX > 3) return;                                       // 4着までの艇だけ(下の着は動きを変えない)
+      var Y = byC[tgt[pX - 1]];
+      if (!Y) return;
+      if (Y.course < X.course && X.course >= 3 && (X.role === "sashi" || X.role === "soto" || X.role === "zen") && !(Y.win && k === "逃げ" && X.course === 2)) {
+        if (Y.win && k === "逃げ") { if (X.role === "soto") set(X, "zen"); }
+        else { set(X, "mark", Y); X.squeezed = false; }
+      } else if (Y.course > X.course && (X.role === "soto" || X.role === "zen" || X.role === "mark")) set(X, "sashi", Y);
     });
     boats.forEach(function (b) {
       if (b.role === "makurizashi" && !b.under) b.under = b1;
@@ -999,13 +1017,14 @@
       };
       var save = function () {
         return boats.map(function (b) {
-          return { b: b, vmax: b.bias.vmax, alat: b.bias.alat, dz: b.adj.dz, yo: b.adj.yo, fx: b.flowExtra, role: b.role, ref: b.ref, wait: b.wait,
+          return { b: b, vmax: b.bias.vmax, alat: b.bias.alat, dz: b.adj.dz, yo: b.adj.yo, fx: b.flowExtra, role: b.role, ref: b.ref, wait: b.wait, sinkZ: b.sinkZ,
                    extra: b.extra.map(function (z) { return Object.assign({}, z); }) };
         });
       };
       var restore = function (st) {
-        st.forEach(function (x) { var b = x.b; b.bias.vmax = x.vmax; b.bias.alat = x.alat; b.adj.dz = x.dz; b.adj.yo = x.yo; b.flowExtra = x.fx; b.extra = x.extra;
-                                  b.role = x.role; b.ref = x.ref; b.wait = x.wait; });
+        st.forEach(function (x) { var b = x.b; b.bias.vmax = x.vmax; b.bias.alat = x.alat; b.adj.dz = x.dz; b.adj.yo = x.yo; b.flowExtra = x.fx;
+                                  b.extra = x.extra.map(function (z) { return Object.assign({}, z); });   // 保存した形は書きかえない
+                                  b.role = x.role; b.ref = x.ref; b.wait = x.wait; b.sinkZ = x.sinkZ; });
       };
       var runOnce = function (fast) {
         // fast: 引き波は前回の計算の分をそのまま使う(途中の調整を軽くする。最後に1回、引き波も計算し直す)
@@ -1029,33 +1048,42 @@
         rel = relations(boats, iEnd);
         lab = labels(boats, rel, iEnd);
       };
-      var best = miss(), bestSt = save(), st0 = bestSt, moved = false, tries = {}, fullOk = false;
+      var best = miss(), bestSt = save(), st0 = bestSt, moved = false, tries = {}, fullOk = false, noBoost = {};
       for (var it = 0; it < (opt.orderIters || 7) && best > 0 && best < 1000; it++) {
         var cur = lab.order.map(function (b) { return b.course; }), k2 = -1;
         for (var q = 1; q < 5; q++) if (cur[q] !== tgt[q]) { k2 = q; break; }
         if (k2 < 0) break;
         var up = byC[tgt[k2]], dn = byC[cur[k2]];
         if (!up || !dn || up.win || dn.win) break;
-        var key = up.course + ">" + dn.course;
+        var key = up.course + ">" + dn.course, ahead = byC[tgt[k2 - 1]];
         tries[key] = (tries[key] || 0) + 1;
         if (tries[key] === 1) {
           // 1回目は動き方を変える: 捲られた1コースは張って流れる、外を回す艇は前の艇について行く、差し・まくり差しの艇は待つ
           if (dn.course === 1 && dn.role === "nokoshi" && up.course > 1) dn.role = "hari";
-          if ((up.role === "soto" || up.role === "zen") && k2 <= 3) { var ahead = byC[tgt[k2 - 1]]; if (ahead && ahead.course < up.course) { up.role = "mark"; up.ref = ahead; } }
+          if ((up.role === "soto" || up.role === "zen" || (up.role === "sashi" && dn.course < up.course)) && k2 <= 3 && ahead && ahead.course < up.course && !ahead.win) { up.role = "mark"; up.ref = ahead; }
           if (dn.role === "sashi" || dn.role === "makurizashi" || dn.role === "mark") dn.wait = Math.min(1.5, (dn.wait || 0) + 0.6);
         }
-        up.bias.vmax = Math.min(1.4, up.bias.vmax + 0.35);
-        up.bias.alat = Math.min(1.15, up.bias.alat * 1.05);
+        var soft = !!noBoost[key];                                          // 前の艇を抜いて先頭が崩れた組は、後ろの艇を下げるだけにする
+        if (tries[key] >= 2 && !dn.sinkZ && dn.P) {                        // 抜けないときは、前の艇が引き波に沈む形にする(出口で失速)
+          dn.sinkZ = true;
+          dn.extra.push({ s0: dn.P.sStart + (dn.P.sEnd - dn.P.sStart) * 0.3, s1: dn.P.sEnd + 10, f: 0.87, kind: "wake" });
+        }
+        if (tries[key] >= 3) { dn.flowExtra = Math.min(0.2, (dn.flowExtra || 0) + 0.04); hold(dn, 0.93); }   // 何度やっても抜けないときは、前の艇をもっと下げる
+        if (!soft) {
+          var stepV = ahead && !ahead.win ? 0.22 : 0.35;                   // すぐ前の着の艇まで抜いてしまわないよう、少しずつ
+          up.bias.vmax = Math.min(1.4, up.bias.vmax + stepV);
+          up.bias.alat = Math.min(1.15, up.bias.alat * 1.04);
+        } else up.adj.dz = Math.max(-1.2, up.adj.dz - 0.3);
         if ((up.role === "soto" || up.role === "zen" || up.role === "mark") && k2 <= 2) up.adj.dz = Math.max(-1.2, up.adj.dz - 0.5);   // 外を回す艇は内寄りに
-        dn.flowExtra = Math.min(0.16, (dn.flowExtra || 0) + 0.045);          // 出口で流れる(引き波に沈む)
-        hold(dn, 0.96);
-        if (dn.course !== 1) drift(dn, 0.4);
+        dn.flowExtra = Math.min(0.18, (dn.flowExtra || 0) + (soft ? 0.06 : 0.045));   // 出口で流れる(引き波に沈む)
+        hold(dn, soft ? 0.94 : 0.96);
+        if (dn.course !== 1) drift(dn, soft ? 0.6 : 0.4);
         runOnce(true);
         moved = true;
         var m2 = miss();
         if (m2 < best) { runOnce(false); m2 = miss(); }                    // 良くなったら、引き波も含めて確かめる
         if (m2 < best) { best = m2; bestSt = save(); fullOk = true; }
-        else if (m2 >= 1000) break;
+        else if (m2 >= 1000) { restore(bestSt); noBoost[key] = true; fullOk = false; }   // 先頭・決まり手が崩れたら戻して、別のやり方で
       }
       if (moved && (!fullOk || miss() > best)) { restore(bestSt); runOnce(false); if (miss() >= 1000) { restore(st0); runOnce(false); } }
     }

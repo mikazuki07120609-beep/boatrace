@@ -31,6 +31,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main          # 予約の時点ではなく、始まった時点の最新から(ほかの実行が送ったデータの上に足す)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

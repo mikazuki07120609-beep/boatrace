@@ -459,12 +459,11 @@
     var top = scen.slice(0, 6), max = top.length ? top[0].p : 1;
     $("#scen").innerHTML = top.map(function (s) {
       return '<div class="scen-row"><span class="waku w' + s.b.waku + '">' + s.b.waku + '</span><div><div>' + patName(s) +
-        '<span class="sub"> ・' + esc(s.b.name) + '</span>' + (s.ordW ? '<span class="ord">' + s.ordW.join("-") + "</span>" : "") +
-        '</div><div class="bar"><i style="width:' + (s.p / max * 100).toFixed(1) +
+        '<span class="sub"> ・' + esc(s.b.name) + '</span></div><div class="bar"><i style="width:' + (s.p / max * 100).toFixed(1) +
         '%"></i></div></div><span class="pct">' + s.p.toFixed(0) + "%</span></div>";
     }).join("");
     var lead = scen[0];
-    $("#scenLead").textContent = lead ? "本線は「" + patName(lead) + "」。上位6つの決着パターンと、起こりやすさの目安です。パターンごとの数字の並びは、その決着のときに一番ありそうな着順(枠番)です。" : "";
+    $("#scenLead").textContent = lead ? "本線は「" + patName(lead) + "」。上位6つの決着パターンと、起こりやすさの目安です。" : "";
     var p2box = $("#scen2");
     if (p2box) {
       // 本線のときの2着・3着の候補(確率)
@@ -501,6 +500,21 @@
       pts.push("2コース" + b2.name + "の方が1コースより勝率が上。差しが決まる場面に注意。");
     if (!R.M && b4 && R.aSt != null && b4.stUse != null && b4.stUse <= R.aSt - 0.02)
       pts.push("4コース(カド)" + b4.name + "はスタートが速い(平均ST" + fmt(b4.stUse, 2) + ")。内が凹めばカドまくりの展開。");
+    // 道中: 本線のときの2着争い(着順のモデル)。拮抗していれば2マークの競りになりやすい
+    if (lead && lead.ord) {
+      var byCw2 = {};
+      B.forEach(function (b) { byCw2[b.course] = b; });
+      var c2 = Object.keys(lead.ord.p2).map(Number).sort(function (a, b) { return lead.ord.p2[b] - lead.ord.p2[a]; });
+      var x1 = byCw2[c2[0]], x2 = byCw2[c2[1]], q1 = lead.ord.p2[c2[0]], q2 = lead.ord.p2[c2[1]];
+      if (x1 && x2) {
+        var d1 = dochu(x1), d2 = dochu(x2);
+        var rec = function (b, d) { return d.n >= 6 ? b.waku + "号艇は僅差の競り合い" + d.w + "勝" + (d.n - d.w) + "敗" : ""; };
+        var tail = [rec(x1, d1), rec(x2, d2)].filter(Boolean).join("、");
+        if (q1 - q2 < 0.12) pts.push("本線(" + patName(lead) + ")のときの2着争いは、" + x1.waku + "号艇(" + Math.round(q1 * 100) + "%)と" + x2.waku + "号艇(" + Math.round(q2 * 100) +
+          "%)が拮抗。1周2マークで競りになりやすい" + (tail ? "(" + tail + ")" : "") + "。");
+        else pts.push("本線(" + patName(lead) + ")のときの2着は、" + x1.waku + "号艇が有力(" + Math.round(q1 * 100) + "%)。次が" + x2.waku + "号艇(" + Math.round(q2 * 100) + "%)。");
+      }
+    }
     // 道中: 2マーク以降の競り合いに強い艇・弱い艇、抜いて着を上げる・抜かれる可能性
     var dws = B.map(function (b) { return { b: b, d: dochu(b) }; }).filter(function (x) { return x.d.n >= 8; });
     var strongD = dws.filter(function (x) { return x.d.rate >= 0.58; }).sort(function (a, b) { return b.d.rate - a.d.rate; })[0];
@@ -554,13 +568,13 @@
     var second = lead ? scen.filter(function (s) { return s.b !== lead.b; })[0] : null;
     if (second) lines.push("対抗の展開は" + second.b.course + "コース" + second.b.name + "の「" + second.kim + "」。");
     pts.slice(1, 3).forEach(function (p) { lines.push(p); });
-    lines.push("", "※データから見た展開の目安です。舟券の推奨ではありません。", "#ボートレース #" + V.name, location.href.split("#")[0]);
+    lines.push("", "※データから見た展開の目安です。舟券の推奨ではありません。", "#ボートレース #" + V.name);
     $("#post").value = lines.join("\n");
     updateView(R);
   }
 
   // ---- 1周1マーク展開ビュー(turn1.js)。展開の見立てと同じ決着パターンで、そのパターンになりやすいSTの組み合わせで動かす
-  var view = null, viewSig = "", patKey = "", patIdx = 0, pats = [], lastR = null, viewTimer = null, started = false, wasPlaying = false, showActual = false;
+  var view = null, viewSig = "", patKey = "", patIdx = 0, pats = [], lastR = null, viewTimer = null, started = false, wasPlaying = false;
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   function viewTitle() { return V.name + " " + D.race.no + "R 1周1マーク"; }
   function entriesFor(R, stByCourse, courseByWaku) {
@@ -575,28 +589,7 @@
     var s = pats[i];
     return { course: s.b.course, kim: s.kim, p: s.p, order: s.ord ? s.ord.order : null };
   }
-  // 終わったレースの再現: 実際の進入・ST・決まり手(翌日の競走成績か、レース直後に取り込んだ結果から)
-  function actualScen() {
-    var res = null, byW = {};
-    if (D.result) { res = D.result; res.entries.forEach(function (x) { byW[x.waku] = x; }); }
-    var kim = res ? res.kimarite : LR && LR.kimarite, win = null, courseByWaku = {}, stByCourse = [null, null, null, null, null, null];
-    if (res) {
-      win = res.entries.filter(function (x) { return x.rank === 1; })[0];
-      res.entries.forEach(function (x) { if (x.course) { courseByWaku[x.waku] = x.course; if (x.st != null && !x.flying) stByCourse[x.course - 1] = x.st; } });
-      win = win ? win.course : null;
-    } else if (LR && LR.course && LR.course.length === 6) {
-      LR.course.forEach(function (w, i) { courseByWaku[w] = i + 1; var t = LR.st ? LR.st[String(w)] : null; if (t != null && t >= 0) stByCourse[i] = t; });
-      var first = (LR.order || []).filter(function (o) { return o.rank === 1; })[0];
-      win = first ? courseByWaku[first.waku] : null;
-    } else return null;
-    if (!win || ["逃げ", "捲り", "差し", "捲り差し"].indexOf(kim) < 0 || Object.keys(courseByWaku).length !== 6) return null;
-    if (stByCourse.some(function (x) { return x == null; })) return null;
-    return { course: win, kim: kim, courseByWaku: courseByWaku, st: stByCourse };
-  }
-  var kotaeScen = null;
   function current() {
-    if (showActual && kotaeScen) return { sc: { course: kotaeScen.course, kim: kotaeScen.kim, p: null, label: "結果" },
-                                          ents: entriesFor(lastR, kotaeScen.st, kotaeScen.courseByWaku), fixed: true };   // 実際のSTはそのまま使う
     var s = pats[patIdx], post = lastR.M ? lastR.M.postST(s.i) : null;
     return { sc: scenOf(patIdx), ents: entriesFor(lastR, post) };
   }
@@ -604,19 +597,16 @@
     var box = $("#t1Pats");
     if (!box) return;
     box.innerHTML = pats.map(function (s, i) {
-      var on = !showActual && i === patIdx;
+      var on = i === patIdx;
       return '<button type="button" class="pat' + (on ? " on" : "") + '" data-i="' + i + '" aria-pressed="' + on + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + "</span>" +
-        '<span class="pn">' + s.b.course + "コース " + s.kim + (s.ordW ? '<span class="ord">' + s.ordW.join("-") + "</span>" : "") + "</span>" +
+        '<span class="pn">' + s.b.course + "コース " + s.kim + "</span>" +
         '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
-    }).join("") + (kotaeScen ? '<button type="button" class="pat' + (showActual ? " on" : "") + '" data-i="actual" aria-pressed="' + showActual + '">実際のレース</button>' : "");
+    }).join("");
   }
-  var actualFirst = true;
   function updateView(R) {
     lastR = R;
     var canvas = $("#t1view");
     if (!canvas || !window.Turn1) return;
-    kotaeScen = actualScen();
-    if (kotaeScen && actualFirst) { showActual = true; actualFirst = false; }      // 終わったレースは、まず実際のレースを再現する
     pats = R.scen.filter(function (s) { return s.kim !== "抜き" && s.kim !== "恵まれ"; }).slice(0, 4);
     if (!pats.length) return;
     var pk = pats.map(function (s) { return s.b.waku + s.kim; }).join(",");
@@ -665,7 +655,7 @@
       var b = e.target.closest("button[data-i]");
       if (!b || !view) return;
       var k = b.getAttribute("data-i");
-      if (k === "actual") showActual = true; else { showActual = false; patIdx = +k; }
+      patIdx = +k;
       showNow();
     });
     $("#t1Replay").addEventListener("click", function () { if (view) { view.replay(); started = true; pause.textContent = "一時停止"; } });
@@ -687,7 +677,7 @@
         var name = "suimen-" + D.race.date.replace(/-/g, "") + "-" + V.code + "-" + no + "R." + (mp4 ? "mp4" : "webm");
         var file = typeof File !== "undefined" ? new File([blob], name, { type: blob.type }) : null;
         var canShare = file && navigator.canShare && navigator.canShare({ files: [file] });
-        out.innerHTML = (canShare ? '<button class="primary" type="button" id="t1Share">共有する(Xなど)</button>' : "") +
+        out.innerHTML = (canShare ? '<button class="primary" type="button" id="t1Share">共有する</button>' : "") +
           '<button type="button" id="t1Dl">端末に保存</button>';
         out.hidden = false;
         if (canShare) $("#t1Share").addEventListener("click", function () {

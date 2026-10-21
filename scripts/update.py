@@ -9,6 +9,7 @@
 """
 import argparse
 import datetime as dt
+import os
 import pathlib
 import shutil
 import sys
@@ -22,8 +23,8 @@ from common import DATA, OUT as OUT_DIR, PROGRAM, RAW, RESULTS, load_json, save_
 HISTORY_DAYS = 365       # 選手のコース別成績・戦法の傾向に使う期間
 COMPACT_AFTER = 10       # この日数より前の成績は、集計に使う項目だけに縮めて保存する
 BACKFILL_FIRST = 30      # 成績データがほとんどないときに、1回で取り込む過去の日数
-BACKFILL_PER_RUN = 10    # ふだんの1回で取り込む過去の日数
-REFETCH_PER_RUN = 12     # 風・展示タイムを残していなかった古い縮めた成績を、取り直す日数(1回あたり)
+BACKFILL_PER_RUN = int(os.environ.get("BACKFILL_PER_RUN") or 10)   # ふだんの1回で取り込む過去の日数
+REFETCH_PER_RUN = int(os.environ.get("REFETCH_PER_RUN") or 12)     # 風・展示タイムを残していなかった古い縮めた成績を、取り直す日数(1回あたり)
 STATE = DATA / "fetch_state.json"
 
 

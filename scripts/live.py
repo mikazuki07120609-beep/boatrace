@@ -254,12 +254,19 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
             continue
         v = venues.setdefault(code, {"date": day.isoformat(), "code": code})
         if kind == "l":
-            fl = parse_racelist(page)
+            try:
+                fl = parse_racelist(page)
+            except Exception:  # noqa: BLE001
+                fl = {}
             if fl:
                 v.setdefault("fl", {}).update(fl)
                 changed.add(code)
             continue
-        info = parse_before(page) if kind == "b" else parse_result(page)
+        try:
+            info = parse_before(page) if kind == "b" else parse_result(page)
+        except Exception as ex:  # noqa: BLE001  見慣れない形のページは、とばして次へ
+            print("読み取れませんでした:", kind, code, no, ex, flush=True)
+            continue
         if not info:
             continue
         info["fetched"] = dt.datetime.now(JST).strftime("%H:%M")
@@ -293,19 +300,70 @@ def remaining(day: dt.date, now: dt.datetime) -> bool:
     return not done and now <= last + dt.timedelta(minutes=RESULT_GIVEUP)
 
 
+def _git(*a):
+    return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True)
+
+
+def _merge_live(theirs, ours, key=""):
+    """同じファイルをほかの実行も書き換えていたときに、両方の取り込みを残す(どちらにもある所は、こちらを優先)。
+    ただし直前情報は、展示が出そろった方(ready)を優先する。"""
+    if not isinstance(theirs, dict) or not isinstance(ours, dict):
+        return ours if ours is not None else theirs
+    out = dict(theirs)
+    for k, v in ours.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            if key == "before" and out[k].get("ready") and not v.get("ready"):
+                continue
+            out[k] = _merge_live(out[k], v, k)
+        elif key == "tries" and isinstance(v, int) and isinstance(out.get(k), int):
+            out[k] = max(v, out[k])
+        else:
+            out[k] = v
+    return out
+
+
+def _sync_with_remote(msg: str) -> None:
+    """送れなかったとき: リポジトリの最新に合わせてから、こちらで取り込んだ分を足して送り直す。"""
+    _git("rebase", "--abort")
+    mine = {}
+    for f in LIVE.rglob("*.json"):
+        try:
+            mine[f] = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            pass                                   # 壊れたファイル(衝突の印が入ったものなど)は捨てて、リポジトリの方を使う
+    _git("fetch", "-q", "origin", "main")
+    _git("reset", "-q", "--hard", "origin/main")
+    for f, ours in mine.items():
+        theirs = load_json(f, None) if f.exists() else None
+        try:
+            save_json(f, _merge_live(theirs, ours) if theirs is not None else ours)
+        except Exception as ex:  # noqa: BLE001
+            print("合わせられませんでした:", f, ex, flush=True)
+    _git("add", "data/live")
+    if _git("diff", "--cached", "--quiet").returncode != 0:
+        _git("commit", "-q", "-m", msg)
+
+
 def git_push(msg: str) -> None:
-    """取り込んだものをリポジトリに送る(GitHub Actions の中で)。"""
-    def run(*a):
-        return subprocess.run(list(a), cwd=ROOT, capture_output=True, text=True)
-    run("git", "add", "data/live")
-    if run("git", "diff", "--cached", "--quiet").returncode == 0:
+    """取り込んだものをリポジトリに送る(GitHub Actions の中で)。ほかの実行と同じファイルを書き換えていても、両方の分を残す。"""
+    _git("add", "data/live")
+    if _git("diff", "--cached", "--quiet").returncode == 0 and _git("status", "-sb").stdout.find("ahead") < 0:
         return
-    run("git", "commit", "-q", "-m", msg)
+    if _git("diff", "--cached", "--quiet").returncode != 0:
+        _git("commit", "-q", "-m", msg)
     for _ in range(4):
-        if run("git", "pull", "--rebase", "--autostash", "-q", "origin", "main").returncode == 0 and run("git", "push", "-q").returncode == 0:
+        if _git("pull", "--rebase", "-q", "origin", "main").returncode != 0:
+            _sync_with_remote(msg)
+        if _git("push", "-q").returncode == 0:
             return
         time.sleep(5)
     print("送れませんでした(次の回にまとめて送ります)", flush=True)
+
+
+def git_sync() -> None:
+    """読みに行く前に、リポジトリの最新(ほかの実行が送った分)を取り込む。"""
+    if _git("pull", "--rebase", "-q", "origin", "main").returncode != 0:
+        _sync_with_remote("直前情報・結果(合わせ直し) [skip ci]")
 
 
 def after_change(day: dt.date) -> None:
@@ -322,14 +380,22 @@ def loop(minutes: float, push: bool) -> None:
         if now.hour < 7:                     # 日付が変わったら終わる(朝の実行に任せる)
             print("今日の開催は終わりました", flush=True)
             return
-        changed = cycle(day, now)
-        if changed:
-            after_change(day)
-        if push:
-            git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
-        if not remaining(day, now):
-            print("今日の分は終わりました", flush=True)
-            return
+        try:
+            if push:
+                git_sync()
+            changed = cycle(day, now)
+            if changed:
+                after_change(day)
+            if push:
+                git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
+            if not remaining(day, now):
+                print("今日の分は終わりました", flush=True)
+                return
+        except Exception:  # noqa: BLE001  1回の失敗で止めず、次の回にやり直す
+            import traceback
+            traceback.print_exc()
+            if push:
+                _sync_with_remote(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
         left = minutes * 60 - (time.time() - t0)
         if left < CYCLE_SEC:
             return

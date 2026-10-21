@@ -224,7 +224,7 @@ def review_text(vname, rno, res, url):
     if fl:
         lines.append("フライング: " + "、".join(f"{x['waku']}号艇 {x['name']}" for x in fl) + "。")
     lines.append(f"天候 {res.get('weather', '')}・風 {res.get('wind_dir', '')}{res.get('wind', '')}m・波 {res.get('wave', '')}cm。")
-    lines += ["", f"#ボートレース #{vname}", url]
+    lines += ["", f"#ボートレース #{vname}"]
     return "\n".join(lines)
 
 
@@ -342,7 +342,7 @@ def result_banner(res_live, result) -> str:
 
 
 RACE_NOTES = [
-    "出走表:「このコース」は、枠番と同じコースに入ったとき(展示で進入が変わったら、そのコース)の直近1年の成績です。1着・2着・3着の率、平均STと走数。赤い枠は、その項目で一番良い艇です。",
+    "出走表:「このコース」は、枠番と同じコースに入ったとき(展示で進入が変わったら、そのコース)の直近1年の成績です。1着・2着・3着の率、平均STと走数。赤い枠は、その項目で一番良い艇です。黄色の印はフライング(F)と、今節の失格・出遅れ・欠場です。",
     "勝ち方は、そのコースで1着になったときの決まり手の回数。2着の時は、2着になったレースでどう動いたかの推定です(公式の記録は1着の決まり手だけなので、1着の艇のコース・決まり手と、スタートの並びから推定)。"
     "1コースは差され・捲られなど負け方、2〜6コースは差し(勝った艇の内の筋)・捲り(内より先に出て外から)・捲差(間の艇の前を横切って内へ)・残し(外に先に回られたが残した)・道中(道中の抜き合い)。",
     "逃げ・逃がしは、1コースのときに逃げた割合と、2コースのときに1コースが逃げた割合(逃がし率。低いほど1コースを崩している)。",
@@ -356,8 +356,9 @@ RACE_NOTES = [
     "1周1マークの映像・スタートの見立て・展開の見立ては、スタート展示の進入とSTが出てから計算します。スタートの見立ては、選手の平均ST・ばらつき・フライング持ち・コース・風・展示STから、"
     "過去のレースで実際に起きたスタートのずれ方を当てはめた400通りのスタートで計算し、展開の見立てはそれぞれのスタートでどのコースがどの決まり手で1着になりやすいかを平均したものです。式の重みは毎晩学習し直しています。",
     "映像の差しは内の艇の後ろから内へ、捲りは内の艇の外を全速で、まくり差しは隣の艇の前を横切ってさらに内の艇の内へ。吹き出しの戦法名は、走らせた結果の位置関係から決めています。",
-    "2着〜6着の並びは、1着の艇と決まり手ごとに、1着の艇から見た位置・勝率・スタート・展示タイム・モーター・そのコースの2着率から、過去のレースで学習した式で出しています。"
-    "映像は、この並びになるように各艇の伸びと回り方を少しずつ合わせています(合わせきれないときは、近い並びで止めます)。",
+    "本線の2着・3着は、1着の艇と決まり手ごとに、1着の艇から見た位置・勝率・スタート・展示タイム・モーター・そのコースの2着率から、過去のレースで学習した式で出しています。"
+    "映像は、決着パターンごとに一番ありそうな着順になるように、各艇の伸びと回り方を合わせています。",
+    "終わったレースの映像も、スタート展示のあとに出した見立てのままです(各艇が実際にどう回ったかは公式の記録にないため、レースの再現はしていません)。",
     "道中の競り合いは、ゴールで0.6秒差以内だった相手との勝ち負けから見ています。",
     "結果(3連単の払戻金・決まり手)は、レースの数分後に BOAT RACE オフィシャルウェブサイトから取り込みます。",
 ]
@@ -389,7 +390,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     rel = "../" * depth
     names = "".join(f'<li><span class="waku w{x["waku"]}">{x["waku"]}</span> {e(x["name"])} <span class="small">{e(x["cls"])} {e(x["branch"])}</span></li>' for x in ents)
     card = ('<section><h2>出走表</h2><div id="cardBox"><ul class="plain">' + names + "</ul></div>"
-            '<p class="note">赤い枠は、その項目で一番良い艇です。</p></section>')
+            '<p class="note">赤い枠は、その項目で一番良い艇です。黄色の印はフライング(F)と、今節の失格・出遅れ・欠場です。</p></section>')
     before_html = ('<section aria-labelledby="h-before"><div class="row-head"><h2 id="h-before">直前情報</h2><span class="sub" id="beforeAt"></span></div>'
                    '<div id="beforeBox"><p class="wait">展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。</p></div>'
                    '<div id="ex1Box"></div><p class="note">赤い枠は、その項目で一番良い艇です。推定の数字は、過去のレースのタイムと展示タイムから計算した目安です。</p></section>')
@@ -410,7 +411,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                 '<p class="sub" id="scenLead"></p><div class="scen" id="scen"></div><div class="p2" id="scen2"></div></div></section>'
                 '<section class="gated"><h2>道中のポイント</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
                 '<ul class="points" id="points"></ul><div class="boats" id="boats"></div></div></section>'
-                '<section class="gated"><div class="row-head"><h2>解説文(X・note用)</h2><button id="btnCopy" type="button">コピー</button></div>'
+                '<section class="gated"><div class="row-head"><h2>解説文</h2><button id="btnCopy" type="button">コピー</button></div>'
                 '<p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden><textarea id="post" aria-label="解説文"></textarea>'
                 '<p class="note" id="copyMsg" aria-live="polite"></p></div></section>')
     # 結果の詳細(翌日の競走成績ファイルから)
@@ -430,7 +431,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                     f'<span class="sub">{e(result.get("weather"))}・風 {e(result.get("wind_dir"))}{e(result.get("wind"))}m・波 {e(result.get("wave"))}cm</span></div>'
                     '<div class="scroll"><table><thead><tr><th class="num">着</th><th>枠</th><th>選手</th><th class="num">進入</th>'
                     f'<th class="num">ST</th><th class="num">展示</th><th class="num">タイム</th></tr></thead><tbody>{trs}</tbody></table></div>'
-                    '<div class="row-head"><h2>回顧文(X・note用)</h2><button id="btnCopyR" type="button">コピー</button></div>'
+                    '<div class="row-head"><h2>回顧文</h2><button id="btnCopyR" type="button">コピー</button></div>'
                     f'<textarea id="review" aria-label="回顧文">{e(rv)}</textarea><p class="note" id="copyMsgR" aria-live="polite"></p></section>')
     # 場
     vrows = ""
