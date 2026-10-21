@@ -1200,13 +1200,20 @@
         return;
       }
       var txt = null, pr = 3.2, gi = gTurn;
+      // 捲った艇の外について回ったか(ついて行く相手をたどって、捲った艇に行き着くか)
+      var follows = function (x) {
+        for (var k = 0, y = x; k < 5 && y && y.role === "mark" && y.ref; k++) { y = y.ref; if (L[y.course].kind === "makuri") return true; }
+        return false;
+      };
+      var wMk = P.winner && P.winner !== b && L[P.winner.course].kind === "makuri" && c > P.winner.course;
       if (l.kind === "makurizashi") { txt = "まくり差し"; pr = 2.6; }
+      else if (l.kind === "makuri" && !b.win && (wMk || follows(b))) { txt = "捲りについて行く"; pr = 3.4; }
       else if (l.kind === "makuri") {
         var twoStep = l.overAll.concat(l.outOf).some(function (o) { return (o.role === "makuri" || o.role === "nidan") && o !== b; }) || b.role === "nidan";
         txt = twoStep ? "二段まくり" : "捲る"; pr = 2.4; gi = gIn;
       } else if (l.kind === "sashi") { txt = "差す"; pr = 2.8; }
       else if ((b.role === "makuri" || b.role === "nidan") && b.fail) { txt = "捲りに行く"; pr = 2.7; gi = gIn; }
-      else if (b.role === "mark" && b.ref && L[b.ref.course].kind === "makuri") { txt = "捲りについて行く"; pr = 3.4; }
+      else if (follows(b)) { txt = "捲りについて行く"; pr = 3.4; }
       // 勝つ艇でない差し・捲りは、実際に内の艇を抜いて順位を2つ以上上げたときだけ出す
       if (txt && !b.win && (l.kind === "sashi" || l.kind === "makuri") && (l.pos > b.course - 2 || !(l.inOf.length || l.outOf.length))) txt = null;
       // 勝つ艇でない艇の戦法の吹き出しは、3着以内に入る艇だけ(後ろの艇が外を回って少し前に出ただけのものは出さない)
