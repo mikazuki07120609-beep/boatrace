@@ -603,10 +603,13 @@
         '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
     }).join("");
   }
+  var pendingR = null;
   function updateView(R) {
     lastR = R;
-    var canvas = $("#t1view");
+    var canvas = $("#t1view"), pane = $("#pane-t1");
     if (!canvas || !window.Turn1) return;
+    if (pane && pane.hidden) { pendingR = R; return; }                   // 1S1Mのタブを開いたときに作る(ページを軽くするため)
+    pendingR = null;
     pats = R.scen.filter(function (s) { return s.kim !== "抜き" && s.kim !== "恵まれ"; }).slice(0, 4);
     if (!pats.length) return;
     var pk = pats.map(function (s) { return s.b.waku + s.kim; }).join(",");
@@ -731,7 +734,7 @@
       $$(".pane").forEach(function (pn) { pn.hidden = pn.id !== "pane-" + name; });
       if (keep && history.replaceState) history.replaceState(null, "", "#" + name);
       $$(".chips a.chip").forEach(function (a) { a.href = a.getAttribute("href").split("#")[0] + "#" + name; });
-      if (name === "t1") window.dispatchEvent(new Event("resize"));
+      if (name === "t1") { if (pendingR) updateView(pendingR); window.dispatchEvent(new Event("resize")); }
     }
     tabs.forEach(function (b) { b.addEventListener("click", function () { show(b.getAttribute("data-tab"), true); }); });
     var h = (location.hash || "").slice(1);

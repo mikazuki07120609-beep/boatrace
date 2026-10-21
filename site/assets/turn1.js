@@ -123,7 +123,7 @@
     boats.forEach(function (b) {
       byC[b.course] = b;
       b.bias = { vmax: 0, alat: 1 }; b.slow = []; b.role = null; b.ref = null; b.over = []; b.under = null;
-      b.win = b.course === cw; b.adj = { dz: 0, yo: 0 }; b.wait = 0; b.stAdj = 0; b.fail = false; b.squeezed = false;
+      b.win = b.course === cw; b.adj = { dz: 0, yo: 0 }; b.wait = 0; b.stAdj = 0; b.fail = false; b.squeezed = false; b.byOrder = false; b.goWide = false;
       b.tac = tacShares(b, vkim);
     });
     var b1 = byC[1], W = byC[cw] || boats[0], A = null;
@@ -177,7 +177,7 @@
     if (k === "逃げ") {
       A = natural();
       if (A && A.course === 2 && margin(A) < 0.03) A = null;                // 2コースは少し出ても差しに回ることが多い
-      if (A && tpos(A.course) === 1) A = null;                              // 2着に残る艇は、捲りに行って止められた形ではない(差し・ついて回る)
+      if (A && tgt && tpos(A.course) <= 1) A = null;                        // 2着に残る艇は、捲りに行って止められた形ではない(差し・ついて回る)
       if (A) { set(A, "makuri", b1); A.fail = true; set(b1, strong1() >= 0.45 ? "nigeHari" : "nige"); }  // 張り気味に先に回って止める
       else set(b1, byC[2] && byC[2].tac["差し"] >= 0.72 ? "kotsu" : "nige");
     } else if (k === "捲り") {
@@ -231,6 +231,43 @@
         }
       }
     }
+    // 着順の並び(見立て)が分かっていれば、仕掛けに関わらない艇の回り方を、その並びになる形にする:
+    //   自分より内で、自分より後ろの着になる艇は、その前を横切って内へ切り込む(まくり差し)。
+    //   そうでなければ、前の着の内の艇について外を回るか(マーク)、内の艇の後ろを差す(2コース)。下の着の外の艇は外を回す
+    if (tgt) {
+      // 決着パターンに関わる艇(仕掛けた艇に捲られる内の艇、横切られる艇・待つ艇)は、そのままにする
+      boats.forEach(function (o) { o.crit = !!o.role || o.wait > 0 || !!(A && !A.fail && o.course > 1 && o.course < A.course); });
+      for (var p0 = 1; p0 < 6; p0++) {
+        var X = byC[tgt[p0]];
+        if (!X || X.crit || X.role || X.course === 1) continue;
+        X.byOrder = true;
+        // 前の着の艇のうち、自分より内で一番外の艇(その後ろを回る)。勝つ艇の内へは切り込まない(逃げの1コースの後ろは別)
+        var ahead = boats.filter(function (o) { return tpos(o.course) < p0 && (o !== W || k === "逃げ"); });
+        // 見立ての着順で自分のすぐ前にいる内の艇(その後ろを回る)
+        var U = ahead.filter(function (o) { return o.course < X.course; }).sort(function (a, b) { return tpos(b.course) - tpos(a.course); })[0] || null;
+        var S = boats.filter(function (o) { return o.course < X.course && tpos(o.course) > p0; });
+        var over = U ? S.filter(function (o) { return o.course > U.course; }) : [];
+        // 前の艇が外へ膨らんで回るなら、その内へ切り込むと抜いてしまうので、外について回る(内の艇は待たせる)
+        var wideU = U && (["zensoku", "hari", "makuri", "nidan", "zen", "mark", "soto"].indexOf(U.role) >= 0 || U.fail || U.flowOut);
+        if (over.length && wideU) {
+          set(X, "mark", U);
+          over.forEach(function (o) { o.wait = Math.max(o.wait, 0.8); });
+        } else if (over.length) {
+          // 内の艇の前を横切って、前の着の艇の後ろへ切り込む(足りなければスタートで合わせる。横切られる艇は差し構えで待つ)
+          force(X, over, 0.012);
+          set(X, "makurizashi", null, over, U);
+          over.forEach(function (o) { o.wait = Math.max(o.wait, 0.6); });
+        } else if (U) {
+          if (X.course === 2) set(X, "sashi", U);
+          else if (p0 >= 4 && X.course >= 4 && !S.length) set(X, "soto");
+          else set(X, "mark", U);
+        } else if (W.course < X.course) {
+          set(X, "mark", W);                                                 // 勝つ艇(捲り・まくり差し)の外について回る
+        } else {
+          set(X, "sashi", byC[tgt[p0 - 1]] || W); X.wait = Math.max(X.wait, 0.5);
+        }
+      }
+    }
     // ほかの艇: 仕掛けた艇との位置関係で動く
     boats.forEach(function (b) {
       if (b.role) return;
@@ -267,24 +304,10 @@
       if (left && b.tac["差し"] >= 0.25 && c === 5) { set(b, "sashi", left); return; }
       set(b, "soto");
     });
-    // 着順の並びが分かっていれば、仕掛けに関わらない艇の回り方をそれに合わせる:
-    // すぐ前の着の艇が内にいれば、その外について回る(マーク)。外にいれば、その内を差す
-    if (tgt) boats.forEach(function (X) {
-      if (X.win || X === A || X.role === "makuri" || X.role === "nidan" || X.role === "makurizashi" || X.course === 1) return;
-      if (W && (W.over.indexOf(X) >= 0 || W.under === X || W.ref === X)) return;           // 勝つ艇の決まり手に関わる艇はそのまま
-      var pX = tpos(X.course);
-      if (pX <= 0 || pX > 3) return;                                       // 4着までの艇だけ(下の着は動きを変えない)
-      var Y = byC[tgt[pX - 1]];
-      if (!Y) return;
-      if (Y.course < X.course && X.course >= 3 && (X.role === "sashi" || X.role === "soto" || X.role === "zen") && !(Y.win && k === "逃げ" && X.course === 2)) {
-        if (Y.win && k === "逃げ") { if (X.role === "soto") set(X, "zen"); }
-        else { set(X, "mark", Y); X.squeezed = false; }
-      } else if (Y.course > X.course && (X.role === "soto" || X.role === "zen" || X.role === "mark")) set(X, "sashi", Y);
-    });
     boats.forEach(function (b) {
       if (b.role === "makurizashi" && !b.under) b.under = b1;
       // 勝つ艇の前を横切ったり、勝つ艇の内を差したりする動きは、決着パターンと食い違うのでさせない(後ろから差すか、ついて行く)
-      if (!b.win && b.role === "makurizashi" && (b.over.indexOf(W) >= 0 || b.under === W)) {
+      if (!b.win && b.role === "makurizashi" && (b.over.indexOf(W) >= 0 || b.under === W) && !(b.byOrder && k === "逃げ" && b.under === W)) {
         if (A && A !== b && !A.win) set(b, b.tac["差し"] >= 0.3 ? "sashi" : "mark", A); else set(b, "sashi", W);
         b.over = [];
       }
@@ -1062,6 +1085,7 @@
           if (dn.course === 1 && dn.role === "nokoshi" && up.course > 1) dn.role = "hari";
           if ((up.role === "soto" || up.role === "zen" || (up.role === "sashi" && dn.course < up.course)) && k2 <= 3 && ahead && ahead.course < up.course && !ahead.win) { up.role = "mark"; up.ref = ahead; }
           if (dn.role === "sashi" || dn.role === "makurizashi" || dn.role === "mark") dn.wait = Math.min(1.5, (dn.wait || 0) + 0.6);
+          if (up.wait) up.wait = Math.max(0, up.wait - 0.4);                  // 前に出したい艇は、待ちを短く
         }
         var soft = !!noBoost[key];                                          // 前の艇を抜いて先頭が崩れた組は、後ろの艇を下げるだけにする
         if (tries[key] >= 2 && !dn.sinkZ && dn.P) {                        // 抜けないときは、前の艇が引き波に沈む形にする(出口で失速)
