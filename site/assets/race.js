@@ -616,6 +616,16 @@
     }).join("");
   }
   var pendingR = null;
+  function drawWaiting() {                                         // 映像ができるまでの表示
+    var c = $("#t1view");
+    if (!c || view) return;
+    var dpr = Math.min(2, window.devicePixelRatio || 1), w = c.clientWidth || 640;
+    c.width = Math.round(w * dpr); c.height = Math.round(c.width * 10 / 16);
+    var g = c.getContext("2d");
+    g.fillStyle = "#0b4d63"; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = "rgba(255,255,255,0.85)"; g.font = Math.round(c.width / 26) + "px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("映像を作っています…", c.width / 2, c.height / 2);
+  }
   function updateView(R) {
     lastR = R;
     var canvas = $("#t1view"), pane = $("#pane-t1");
@@ -747,7 +757,13 @@
       $$(".pane").forEach(function (pn) { pn.hidden = pn.id !== "pane-" + name; });
       if (keep && history.replaceState) history.replaceState(null, "", "#" + name);
       $$(".chips a.chip").forEach(function (a) { a.href = a.getAttribute("href").split("#")[0] + "#" + name; });
-      if (name === "t1") { if (pendingR) updateView(pendingR); window.dispatchEvent(new Event("resize")); }
+      if (name === "t1") {
+        if (pendingR) {                                               // 映像を作るあいだ固まって見えないよう、先にタブを出してから作る
+          var R1 = pendingR;
+          drawWaiting();
+          setTimeout(function () { if (pendingR === R1) updateView(R1); window.dispatchEvent(new Event("resize")); }, 40);
+        } else window.dispatchEvent(new Event("resize"));
+      }
     }
     tabs.forEach(function (b) { b.addEventListener("click", function () { show(b.getAttribute("data-tab"), true); }); });
     var h = (location.hash || "").slice(1);
