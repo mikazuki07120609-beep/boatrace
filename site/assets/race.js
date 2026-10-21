@@ -225,7 +225,7 @@
   // ---- 学習済みの見立てモデル(model.js)で計算する
   function analyzeModel(B, W) {
     var race = { vt: D.vt, nt: D.nt, wind: W.wspd, date: D.race.date, venue: V.code,
-                 boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], est: estOf(b.waku),
+                 boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], est: estOf(b.waku), cb: b.cb || [0, 0],
                                                       cs: b.cs || {}, motor2: b.motor2, ex: b.ex }; }) };
     var M = MODEL.predict(race, PARAMS, { samples: 400 });
     if (!M) return null;
@@ -236,6 +236,13 @@
     scen.forEach(function (s) { s.p = s.w / tot * 100; });
     scen.sort(function (a, b) { return b.p - a.p; });
     M.st.forEach(function (s) { byC[s.course].stf = s; });
+    // 上位の決着パターンは、2着〜6着の並びも出す(枠番で)
+    scen.slice(0, 8).forEach(function (s) {
+      var o = M.order ? M.order(s.i) : null;
+      if (!o) return;
+      s.ord = o;
+      s.ordW = o.order.map(function (c) { return byC[c] ? byC[c].waku : c; });
+    });
     return { scen: scen, M: M, race: race };
   }
 
@@ -388,11 +395,24 @@
     var top = scen.slice(0, 6), max = top.length ? top[0].p : 1;
     $("#scen").innerHTML = top.map(function (s) {
       return '<div class="scen-row"><span class="waku w' + s.b.waku + '">' + s.b.waku + '</span><div><div>' + patName(s) +
-        '<span class="sub"> ・' + esc(s.b.name) + '</span></div><div class="bar"><i style="width:' + (s.p / max * 100).toFixed(1) +
+        '<span class="sub"> ・' + esc(s.b.name) + '</span>' + (s.ordW ? '<span class="ord">' + s.ordW.join("-") + "</span>" : "") +
+        '</div><div class="bar"><i style="width:' + (s.p / max * 100).toFixed(1) +
         '%"></i></div></div><span class="pct">' + s.p.toFixed(0) + "%</span></div>";
     }).join("");
     var lead = scen[0];
-    $("#scenLead").textContent = lead ? "本線は「" + patName(lead) + "」。上位6つの決着パターンと、起こりやすさの目安です。" : "";
+    $("#scenLead").textContent = lead ? "本線は「" + patName(lead) + "」。上位6つの決着パターンと、起こりやすさの目安です。パターンごとの数字の並びは、その決着のときに一番ありそうな着順(枠番)です。" : "";
+    var p2box = $("#scen2");
+    if (p2box) {
+      // 本線のときの2着・3着の候補(確率)
+      var o = lead && lead.ord, byCw = {};
+      B.forEach(function (b) { byCw[b.course] = b; });
+      function cands(pp) {
+        return Object.keys(pp).map(Number).sort(function (a, b) { return pp[b] - pp[a]; }).slice(0, 3).map(function (c) {
+          var b = byCw[c]; return '<span class="cand"><span class="waku w' + b.waku + '">' + b.waku + "</span>" + Math.round(pp[c] * 100) + "%</span>";
+        }).join("");
+      }
+      p2box.innerHTML = o ? '<div class="p2row"><span class="lbl">本線の2着</span>' + cands(o.p2) + '</div><div class="p2row"><span class="lbl">本線の3着</span>' + cands(o.p3) + "</div>" : "";
+    }
     // ポイント
     var pts = [];
     var b1 = byCourse(1), b2 = byCourse(2), b3 = byCourse(3), b4 = byCourse(4);
@@ -489,7 +509,7 @@
   }
   function scenOf(i) {
     var s = pats[i];
-    return { course: s.b.course, kim: s.kim, p: s.p };
+    return { course: s.b.course, kim: s.kim, p: s.p, order: s.ord ? s.ord.order : null };
   }
   // 終わったレースの再現: 実際の進入・ST・決まり手(翌日の競走成績か、レース直後に取り込んだ結果から)
   function actualScen() {
@@ -522,7 +542,8 @@
     box.innerHTML = pats.map(function (s, i) {
       var on = !showActual && i === patIdx;
       return '<button type="button" class="pat' + (on ? " on" : "") + '" data-i="' + i + '" aria-pressed="' + on + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + "</span>" +
-        s.b.course + "コース " + s.kim + '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
+        '<span class="pn">' + s.b.course + "コース " + s.kim + (s.ordW ? '<span class="ord">' + s.ordW.join("-") + "</span>" : "") + "</span>" +
+        '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
     }).join("") + (kotaeScen ? '<button type="button" class="pat' + (showActual ? " on" : "") + '" data-i="actual" aria-pressed="' + showActual + '">実際のレース</button>' : "");
   }
   var actualFirst = true;
@@ -537,7 +558,7 @@
     var pk = pats.map(function (s) { return s.b.waku + s.kim; }).join(",");
     if (pk !== patKey) { patKey = pk; patIdx = 0; }
     drawPats();
-    var cur = current(), sig = JSON.stringify([cur.sc.course, cur.sc.kim, cur.ents.map(function (e) { return [e.waku, e.course, e.st, e.ex]; })]);
+    var cur = current(), sig = JSON.stringify([cur.sc.course, cur.sc.kim, cur.sc.order, cur.ents.map(function (e) { return [e.waku, e.course, e.st, e.ex]; })]);
     if (sig === viewSig) return;
     viewSig = sig;
     if (!view) {
@@ -551,7 +572,7 @@
   }
   function showNow() {
     var cur = current();
-    viewSig = JSON.stringify([cur.sc.course, cur.sc.kim, cur.ents.map(function (e) { return [e.waku, e.course, e.st, e.ex]; })]);
+    viewSig = JSON.stringify([cur.sc.course, cur.sc.kim, cur.sc.order, cur.ents.map(function (e) { return [e.waku, e.course, e.st, e.ex]; })]);
     drawPats();
     view.setScenario(cur.sc, cur.ents, viewTitle(), !!cur.fixed); started = true; $("#t1Pause").textContent = "一時停止";
   }

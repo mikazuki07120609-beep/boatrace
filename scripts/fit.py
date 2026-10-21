@@ -77,7 +77,9 @@ def snapshot_racer(r: dict, d: dt.date, course: int) -> dict:
     return {"pts": list(r.get("pts", [0, 0])), "stx": list(r.get("stx", [0, 0.0, 0.0])),
             "r8": list(r.get("rs", []))[-RECENT_N:],
             "fp": sum(1 for x in r.get("f", []) if x >= ps),
-            "cs": {"n": cs.get("n", 0), "w1": cs.get("w1", 0), "km": {k: v for k, v in cs.get("km", {}).items() if v > 0},
+            "cb": list(r.get("cb", [0, 0])),
+            "cs": {"n": cs.get("n", 0), "w1": cs.get("w1", 0), "w2": cs.get("w2", 0),
+                   "km": {k: v for k, v in cs.get("km", {}).items() if v > 0},
                    "ls": {k: v for k, v in cs.get("ls", {}).items() if v > 0} if course == 1 else {}}}
 
 
@@ -481,6 +483,147 @@ def predict(th, sm, rec, S, rng):
 
 
 # ======================================================================
+# 2着〜6着の並び(1着の艇と決まり手ごと)。model.js の orderFor と同じ式
+#   1着以外の5艇の点数 u = α[決まり手][1着の艇から見た位置] + β・(勝率・ST・展示・モーター・そのコースの2着率・競り合いの強さ)
+#   2着から順に「残った艇の中で、点数に応じた割合で選ばれる」として学習する(5着まで。段ごとに点数の効き方 λ を変える)
+# ======================================================================
+KG = {"逃げ": 0, "捲り": 1, "差し": 2, "捲り差し": 3, "抜き": 4}
+ORDER_FEATS = ["str", "st", "ex", "mot", "c2", "cb"]
+ORD_K2 = 8
+NF_ORD = len(ORDER_FEATS)
+
+
+def rel_idx(d: int) -> int:
+    """1着の艇から見た位置(-5〜-1, 1〜5)を 0〜9 に。"""
+    return d + 5 if d < 0 else d + 4
+
+
+def order_feats(r: dict, base2: list, t=None) -> list:
+    """6艇(コース順)の特徴。t はST(なければ実際のST)。"""
+    B = r["b"]
+    pts = [(b["pts"][0] + PTS_K * PTS_MEAN) / (b["pts"][1] + PTS_K) for b in B]
+    mp = sum(pts) / 6
+    sts = list(t) if t is not None else [b.get("st") for b in B]
+    ok = [x for x in sts if x is not None]
+    sm = sum(ok) / len(ok) if ok else 0.15
+    exs = [b.get("ex") for b in B]
+    ex_ok = all(isinstance(x, (int, float)) and 6.0 <= x <= 7.6 for x in exs)
+    exm = sum(exs) / 6 if ex_ok else None
+    mots = [b.get("motor") for b in B]
+    mm = [m for m in mots if m is not None]
+    mmean = sum(mm) / len(mm) if mm else None
+    out = []
+    for i, b in enumerate(B):
+        cs = b["cs"]
+        bc = base2[i]
+        c2 = math.log(((cs.get("w2", 0) + ORD_K2 * bc) / (cs.get("n", 0) + ORD_K2)) / bc)
+        cb = b.get("cb") or [0, 0]
+        out.append([pts[i] - mp,
+                    (sm - sts[i]) / U if sts[i] is not None else 0.0,
+                    (exm - exs[i]) / 0.05 if ex_ok else 0.0,
+                    (mots[i] - mmean) / 10 if mmean is not None and mots[i] is not None else 0.0,
+                    c2,
+                    ((cb[0] + 2.5) / (cb[1] + 5) - 0.5) * 4])
+    return out
+
+
+def order_data(recs, base2):
+    G, IDX, X, RK = [], [], [], []
+    for r in recs:
+        if not r["clean"] or r["y"] is None:
+            continue
+        ranks = [b.get("rank") for b in r["b"]]
+        if sorted(x for x in ranks if x) != [1, 2, 3, 4, 5, 6]:
+            continue
+        cw, k = CLASSES[r["y"]]
+        f = order_feats(r, base2)
+        others = [c for c in range(1, 7) if c != cw]
+        G.append(KG[k])
+        IDX.append([rel_idx(c - cw) for c in others])
+        X.append([f[c - 1] for c in others])
+        RK.append([ranks[c - 1] for c in others])
+    return np.array(G, dtype=int), np.array(IDX, dtype=int), np.array(X, dtype=float).reshape(-1, 5, NF_ORD), np.array(RK, dtype=int)
+
+
+def order_unpack(th):
+    a = th[:50].reshape(5, 10)
+    b = th[50:50 + NF_ORD]
+    lam = np.concatenate([[1.0], th[50 + NF_ORD:50 + NF_ORD + 3]])
+    return a, b, lam
+
+
+def order_nll(th, data):
+    G, IDX, X, RK = data
+    a, b, lam = order_unpack(th)
+    Uu = a[G[:, None], IDX] + X @ b
+    n = len(G)
+    dU = np.zeros_like(Uu)
+    ll = 0.0
+    glam = np.zeros(4)
+    for m in range(4):
+        rem = RK >= m + 2
+        ch = RK == m + 2
+        z = np.where(rem, lam[m] * Uu, -np.inf)
+        zmax = z.max(axis=1, keepdims=True)
+        e = np.where(rem, np.exp(z - zmax), 0.0)
+        ssum = e.sum(axis=1, keepdims=True)
+        p = e / ssum
+        ll += (lam[m] * (Uu * ch).sum(axis=1) - (np.log(ssum[:, 0]) + zmax[:, 0])).sum()
+        dU += lam[m] * (ch - p)
+        glam[m] = ((Uu * ch).sum(axis=1) - (p * np.where(rem, Uu, 0)).sum(axis=1)).sum()
+    ga = np.zeros((5, 10))
+    np.add.at(ga, (np.repeat(G, 5), IDX.ravel()), dU.ravel())
+    gb = np.einsum("ij,ijk->k", dU, X)
+    reg_a, reg_b, reg_l = 0.01, 0.5, 2.0
+    f = -ll + reg_a * (a ** 2).sum() + reg_b * (b ** 2).sum() + reg_l * ((lam[1:] - 1) ** 2).sum()
+    g = np.concatenate([-ga.ravel() + 2 * reg_a * a.ravel(), -gb + 2 * reg_b * b, -glam[1:] + 2 * reg_l * (lam[1:] - 1)])
+    return f / max(1, n), g / max(1, n)
+
+
+def base2_of(recs) -> list:
+    """コースごとの2着の割合(全レース)。"""
+    n = [0] * 6
+    w = [0] * 6
+    for r in recs:
+        for i, b in enumerate(r["b"]):
+            if b.get("rank"):
+                n[i] += 1
+                w[i] += 1 if b["rank"] == 2 else 0
+    return [max(0.02, w[i] / n[i]) if n[i] else 1 / 6 for i in range(6)]
+
+
+def fit_order(recs, base2):
+    data = order_data(recs, base2)
+    if len(data[0]) < 500:
+        return None, data
+    th0 = np.zeros(50 + NF_ORD + 3)
+    th0[50 + NF_ORD:] = 1.0
+    res = minimize(lambda x: order_nll(x, data), th0, jac=True, method="L-BFGS-B", options={"maxiter": 800})
+    return res.x, data
+
+
+def order_eval(th, data):
+    """2着の艇を当てた割合と、2着・3着の対数尤度(1レースあたり)。"""
+    G, IDX, X, RK = data
+    a, b, lam = order_unpack(th)
+    Uu = a[G[:, None], IDX] + X @ b
+    hit2 = float(np.mean(np.argmax(Uu, axis=1) == np.argmax(RK == 2, axis=1)))
+    p = np.exp(Uu - Uu.max(axis=1, keepdims=True))
+    p /= p.sum(axis=1, keepdims=True)
+    ll2 = float(np.mean(np.log(p[RK == 2])))
+    o3 = np.argsort(-Uu, axis=1)[:, :2]
+    hit23 = float(np.mean((np.take_along_axis(RK, o3, axis=1) == np.array([2, 3])).all(axis=1)))
+    return {"races": int(len(G)), "hit2": round(hit2 * 100, 1), "hit23": round(hit23 * 100, 1), "ll2": round(ll2, 4)}
+
+
+def order_model(th, base2):
+    a, b, lam = order_unpack(th)
+    return {"alpha": {k: [round(float(x), 4) for x in a[g]] for k, g in KG.items()},
+            "beta": {n: round(float(v), 4) for n, v in zip(ORDER_FEATS, b)},
+            "lam": [round(float(x), 4) for x in lam], "K2": ORD_K2, "base2": [round(x, 4) for x in base2]}
+
+
+# ======================================================================
 # 答え合わせ
 # ======================================================================
 def evaluate(th, sm, recs, label):
@@ -582,6 +725,14 @@ def main() -> int:
         th_tr, _ = fit_dev(train)
         if th_tr is not None:
             ev = evaluate(th_tr, sm_tr, test, f"学習に使っていない直近{eval_days}日")
+    # 2着以下の並びの学習と答え合わせ(学習に使っていない直近の日で)
+    base2 = base2_of(recs)
+    ord_ev = None
+    if len(train) >= 2000:
+        th_o, _ = fit_order(train, base2)
+        if th_o is not None:
+            ord_ev = order_eval(th_o, order_data(test, base2))
+    th_ord, _ = fit_order(recs, base2)
     # 全期間で学習し直す(翌日からの見立てに使う)
     sm = fit_start(sts)
     th, D = fit_dev(recs)
@@ -595,13 +746,15 @@ def main() -> int:
              "classes": ["%d%s" % ck for ck in CLASSES],
              "dev": {n: round(float(v), 4) for n, v in zip(PARAMS, th)},
              "start": sm, "cond_st": conditional_st(th, sm, recs)}
+    if th_ord is not None:
+        model["order"] = order_model(th_ord, base2)
     save_json(DATA / "model.json", model)
     if ev:
         hist = load_json(DATA / "eval.json", {}) or {}
         runs = [x for x in hist.get("runs", []) if x.get("fitted") != model["fitted"]][-29:]
         runs.append({"fitted": model["fitted"], "races": ev["races"], "nll": ev["nll"], "nll_prior": ev["nll_prior"],
-                     "top1": ev["top1"], "top3": ev["top3"], "winner_course": ev["winner_course"]})
-        save_json(DATA / "eval.json", {"latest": ev, "runs": runs})
+                     "top1": ev["top1"], "top3": ev["top3"], "winner_course": ev["winner_course"], "order": ord_ev})
+        save_json(DATA / "eval.json", {"latest": ev, "order": ord_ev, "runs": runs})
     print(json.dumps({"train_races": D.n, "start_rmse": sm["rmse"], "eval": {k: ev[k] for k in ("races", "nll", "nll_prior", "nll_with_st",
                                                                                                "top1", "top3", "winner_course", "top1_with_st",
                                                                                                "st_rmse", "out", "dent")} if ev else None},

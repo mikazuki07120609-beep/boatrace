@@ -230,10 +230,48 @@
       return n >= 8 ? { n: n, p: a.map(function (x) { return x / n; }) } : null;
     }
     return { classes: CLASSES, p: pm, st: st, staticU: st0, postST: postST, whenBoat: whenBoat, samples: samples, probs: probs,
+             order: function (i) { return orderFor(race, P, i, postST(i)); },
              withST: function (t) { return softmax(addST(st0.u.slice(), t, race.wind, P)); } };
   }
 
-  var api = { predict: predict, CLASSES: CLASSES, CI: CI, prior: prior, startMeans: startMeans, startParts: startParts, racerScale: racerScale,
+  // ---- 2着〜6着の並び(fit.py の order_feats・order_model と同じ式)。ci: 決着パターン、t: そのパターンでのST(1〜6コース)
+  //      戻り値: { order: [1着のコース, 2着, …6着], p2: {コース: 2着になる確率}, p3: {コース: 3着になる確率} }
+  var KG = { "逃げ": 0, "捲り": 1, "差し": 2, "捲り差し": 3, "抜き": 4 };
+  function orderFor(race, P, ci, t) {
+    var O = P && P.order, B = race.byC;
+    if (!O || !B || B.length !== 6) return null;
+    var cw = CLASSES[ci][0], k = CLASSES[ci][1], alpha = O.alpha[k], beta = O.beta, K = P.const;
+    var pts = B.map(function (b) { return ((b.pts || [0, 0])[0] + K.PTS_K * K.PTS_MEAN) / ((b.pts || [0, 0])[1] + K.PTS_K); });
+    var mp = pts.reduce(function (s, x) { return s + x; }, 0) / 6;
+    var sts = t && t.length === 6 ? t : B.map(function (b) { return b.mu; }), sm = sts.reduce(function (s, x) { return s + x; }, 0) / 6;
+    var exs = B.map(function (b) { return b.ex; }), exOk = exs.every(function (x) { return x != null && isFinite(x) && x >= 6.0 && x <= 7.6; });
+    var exm = exOk ? exs.reduce(function (s, x) { return s + x; }, 0) / 6 : null;
+    var mots = B.map(function (b) { return b.motor2; }), mm = mots.filter(function (x) { return x != null; });
+    var mmean = mm.length ? mm.reduce(function (s, x) { return s + x; }, 0) / mm.length : null;
+    var u = {};
+    B.forEach(function (b, i) {
+      var c = i + 1;
+      if (c === cw) return;
+      var cs = (b.cs || {})[String(c)] || {}, bc = O.base2[i], cb = b.cb || [0, 0];
+      var x = { str: pts[i] - mp, st: (sm - sts[i]) / K.U, ex: exOk ? (exm - exs[i]) / 0.05 : 0,
+                mot: mmean != null && mots[i] != null ? (mots[i] - mmean) / 10 : 0,
+                c2: Math.log((((cs.w2 || 0) + O.K2 * bc) / ((cs.n || 0) + O.K2)) / bc), cb: ((cb[0] + 2.5) / (cb[1] + 5) - 0.5) * 4 };
+      var d = c - cw, v = alpha[d < 0 ? d + 5 : d + 4];
+      Object.keys(beta).forEach(function (n) { v += beta[n] * (x[n] || 0); });
+      u[c] = v;
+    });
+    var rest = Object.keys(u).map(Number), order = rest.slice().sort(function (a, b) { return u[b] - u[a]; });
+    function soft(set, lam) { var m = -1e9, s = 0, o = {}; set.forEach(function (c) { m = Math.max(m, lam * u[c]); }); set.forEach(function (c) { o[c] = Math.exp(lam * u[c] - m); s += o[c]; }); set.forEach(function (c) { o[c] /= s; }); return o; }
+    var p2 = soft(rest, O.lam[0]), p3 = {};
+    rest.forEach(function (c) { p3[c] = 0; });
+    rest.forEach(function (a) {                       // 3着の確率: 2着がそれぞれの艇だったときの和
+      var q = soft(rest.filter(function (c) { return c !== a; }), O.lam[1]);
+      Object.keys(q).forEach(function (c) { p3[c] += p2[a] * q[c]; });
+    });
+    return { order: [cw].concat(order), p2: p2, p3: p3, u: u };
+  }
+
+  var api = { predict: predict, orderFor: orderFor, CLASSES: CLASSES, CI: CI, prior: prior, startMeans: startMeans, startParts: startParts, racerScale: racerScale,
               staticU: staticU, addST: addST, softmax: softmax, periodStart: periodStart };
   root.SuimenModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

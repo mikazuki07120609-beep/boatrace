@@ -352,6 +352,8 @@ RACE_NOTES = [
     "1周1マークの映像・スタートの見立て・展開の見立ては、スタート展示の進入とSTが出てから計算します。スタートの見立ては、選手の平均ST・ばらつき・フライング持ち・コース・風・展示STから、"
     "過去のレースで実際に起きたスタートのずれ方を当てはめた400通りのスタートで計算し、展開の見立てはそれぞれのスタートでどのコースがどの決まり手で1着になりやすいかを平均したものです。式の重みは毎晩学習し直しています。",
     "映像の差しは内の艇の後ろから内へ、捲りは内の艇の外を全速で、まくり差しは隣の艇の前を横切ってさらに内の艇の内へ。吹き出しの戦法名は、走らせた結果の位置関係から決めています。",
+    "2着〜6着の並びは、1着の艇と決まり手ごとに、1着の艇から見た位置・勝率・スタート・展示タイム・モーター・そのコースの2着率から、過去のレースで学習した式で出しています。"
+    "映像は、この並びになるように各艇の伸びと回り方を少しずつ合わせています(合わせきれないときは、近い並びで止めます)。",
     "道中の競り合いは、ゴールで0.6秒差以内だった相手との勝ち負けから見ています。",
     "結果(3連単の払戻金・決まり手)は、レースの数分後に BOAT RACE オフィシャルウェブサイトから取り込みます。",
 ]
@@ -390,7 +392,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                 '<th class="num">出る</th><th class="num">凹む</th><th>出たときの展開</th></tr></thead><tbody id="stRows"></tbody></table></div>'
                 '<ul class="points" id="stNotes"></ul></div></section>'
                 '<section class="gated"><h2>展開の見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
-                '<p class="sub" id="scenLead"></p><div class="scen" id="scen"></div></div></section>'
+                '<p class="sub" id="scenLead"></p><div class="scen" id="scen"></div><div class="p2" id="scen2"></div></div></section>'
                 '<section class="gated"><h2>道中のポイント</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
                 '<ul class="points" id="points"></ul><div class="boats" id="boats"></div></div></section>'
                 '<section class="gated"><div class="row-head"><h2>解説文(X・note用)</h2><button id="btnCopy" type="button">コピー</button></div>'
