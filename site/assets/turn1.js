@@ -1115,7 +1115,7 @@
   }
 
   // 吹き出し(艇の上に出して、艇についていく)
-  function bubble(ctx, text, b, sx, sy, cw, ch, u, alpha, wantBelow, others, rBoat, memo) {
+  function bubble(ctx, text, b, sx, sy, cw, ch, u, alpha, wantBelow, others, rBoat, memo, placed) {
     var fs = Math.max(11, u * 2.4), col = COLORS[b.waku] || COLORS[1];
     ctx.font = "700 " + fs + "px " + FONT;
     var tw = ctx.measureText(text).width, chip = fs * 1.3, pad = fs * 0.45;
@@ -1126,15 +1126,21 @@
     var pick = null;
     function at(k) { var bl = cands[k][0]; return [bl, clamp(sx - w / 2 + cands[k][1] * w, u, cw - w - u), bl ? sy + gap : sy - h - gap]; }
     function fits(p) { return p[2] >= u * 11 && p[2] + h <= ch - u * 7; }
-    if (memo.k != null && fits(at(memo.k))) pick = at(memo.k);      // 一度決めた置き場所は、出ている間は変えない(ちらつかない)
+    function clash(p) {                                               // ほかの吹き出しと重なるか
+      return placed.some(function (r) { return p[1] < r[0] + r[2] + u && p[1] + w + u > r[0] && p[2] < r[1] + r[3] + u * 0.6 && p[2] + h + u * 0.6 > r[1]; });
+    }
+    function hits(p) { return others.some(function (o) { return o[0] + rBoat > p[1] && o[0] - rBoat < p[1] + w && o[1] + rBoat > p[2] && o[1] - rBoat < p[2] + h; }); }
+    // 一度決めた置き場所は、ほかの艇や吹き出しにかからない限り変えない(ちらつかない)
+    if (memo.k != null && fits(at(memo.k)) && !clash(at(memo.k)) && !hits(at(memo.k))) pick = at(memo.k);
     for (var k = 0; k < cands.length && !pick; k++) {
       var p = at(k);
-      if (!fits(p)) continue;
-      var hit = others.some(function (o) { return o[0] + rBoat > p[1] && o[0] - rBoat < p[1] + w && o[1] + rBoat > p[2] && o[1] - rBoat < p[2] + h; });
-      if (!hit) { pick = p; memo.k = k; }
+      if (fits(p) && !clash(p) && !hits(p)) { pick = p; memo.k = k; }
     }
+    if (!pick && memo.k != null && fits(at(memo.k)) && !clash(at(memo.k))) pick = at(memo.k);
+    for (k = 0; k < cands.length && !pick; k++) { var q = at(k); if (fits(q) && !clash(q)) { pick = q; memo.k = k; } }
     if (!pick) { var bl0 = !(sy - h - gap >= u * 11); pick = [bl0, clamp(sx - w / 2, u, cw - w - u), bl0 ? sy + gap : sy - h - gap]; }
     var below = pick[0], bx = pick[1], by = pick[2];
+    placed.push([bx, by, w, h]);
     var tx = clamp(sx, bx + h * 0.6, bx + w - h * 0.6);
     ctx.globalAlpha = alpha;
     ctx.fillStyle = "rgba(255,255,255,0.96)";
@@ -1244,12 +1250,12 @@
         ctx.globalAlpha = 1;
       }
     });
-    var spots = now.map(scr), rBoat = HULL_L * 0.55 * sc + 6;
+    var spots = now.map(scr), rBoat = HULL_L * 0.55 * sc + 6, placed = [];
     P.events.forEach(function (e) {
       if (t < e.t - 0.15 || t > e.t + 2.0) { e.k = null; return; }   // 出ていないときは置き場所を忘れる(次に出るとき選び直す)
       var k = P.boats.indexOf(e.b), s2 = spots[k];
       var a = Math.min(sstep(e.t - 0.15, e.t + 0.1, t), 1 - sstep(e.t + 1.7, e.t + 2.0, t));
-      bubble(ctx, e.text, e.b, s2[0], s2[1], cw, ch, u, a, e.below, spots.filter(function (_, j) { return j !== k; }), rBoat, e);
+      bubble(ctx, e.text, e.b, s2[0], s2[1], cw, ch, u, a, e.below, spots.filter(function (_, j) { return j !== k; }), rBoat, e, placed);
     });
     function pill(text, x, y, align, bg, fg, size) {
       ctx.font = "700 " + size + "px " + FONT; ctx.textBaseline = "middle";
