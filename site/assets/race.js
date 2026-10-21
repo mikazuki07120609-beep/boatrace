@@ -379,7 +379,7 @@
   }
   function current() {
     if (showActual && kotaeScen) return { sc: { course: kotaeScen.course, kim: kotaeScen.kim, p: null, label: "結果" },
-                                          ents: entriesFor(lastR, kotaeScen.st, kotaeScen.courseByWaku) };
+                                          ents: entriesFor(lastR, kotaeScen.st, kotaeScen.courseByWaku), fixed: true };   // 実際のSTはそのまま使う
     var s = pats[patIdx], post = lastR.M ? lastR.M.postST(s.i) : null;
     return { sc: scenOf(patIdx), ents: entriesFor(lastR, post) };
   }
@@ -405,19 +405,19 @@
     if (sig === viewSig) return;
     viewSig = sig;
     if (!view) {
-      view = Turn1.mount(canvas, { entries: cur.ents, scen: cur.sc, title: viewTitle(), kimarite: V.kimarite, brand: "水面ノート",
+      view = Turn1.mount(canvas, { entries: cur.ents, scen: cur.sc, title: viewTitle(), kimarite: V.kimarite, brand: "水面ノート", fixedST: !!cur.fixed,
                                    onEnd: function () { var b = $("#t1Pause"); if (b) b.textContent = "再生"; } });
       watch(canvas);
     } else {
       clearTimeout(viewTimer);
-      viewTimer = setTimeout(function () { view.setScenario(cur.sc, cur.ents, viewTitle()); $("#t1Pause").textContent = "一時停止"; }, 700);
+      viewTimer = setTimeout(function () { view.setScenario(cur.sc, cur.ents, viewTitle(), !!cur.fixed); $("#t1Pause").textContent = "一時停止"; }, 700);
     }
   }
   function showNow() {
     var cur = current();
     viewSig = JSON.stringify([cur.sc.course, cur.sc.kim, cur.ents.map(function (e) { return [e.waku, e.course, e.st, e.ex]; })]);
     drawPats();
-    view.setScenario(cur.sc, cur.ents, viewTitle()); started = true; $("#t1Pause").textContent = "一時停止";
+    view.setScenario(cur.sc, cur.ents, viewTitle(), !!cur.fixed); started = true; $("#t1Pause").textContent = "一時停止";
   }
   // 画面に見えたら再生し、見えなくなったら止める(電池と動作の重さのため)
   function watch(canvas) {

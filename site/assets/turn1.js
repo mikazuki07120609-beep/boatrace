@@ -1,11 +1,26 @@
 /* 1周1マーク シミュレーション
-   出走表のデータ(平均ST・モーター・展示タイム・級別・進入コース)と、展開の見立て(決着パターン)から、
+   出走表のデータ(ST・モーター・展示タイム・級別・進入コース)と、展開の見立て(決着パターン)から、
    スタートから全艇が1周1マークを回り切るまでを、上空から見た映像として描く。
-   各艇は、スタート後の位置関係から自分の行き方(逃げ・差し・捲り・捲り差し・外を回す)を選び、
-   スタートが良ければ内に絞り、前の艇との間合い(速度)と横の艇との間隔を自分で取りながら走る。
+
+   戦法の動き(公式の用語の定義と、過去の成績で実際に起きていることに合わせる):
+     逃げ        1コースが最初に回る(先マイ)。2コースが差し巧者なら小回り、外が全速型なら大きめに回る
+     差し        左の艇(内の艇)を先に回らせ、その内側(ブイ際)を小回りで抜く。先に回る艇が膨らむほど、内に入る余地ができる。
+                 余地がなければ、その艇の真後ろに続く(差し届かず)
+     捲り        左の艇の外を、減速せずに全速で回る。スタートで前に出て、内の艇の前へ絞ってから回る。
+                 捲られた艇は引き波を受けて沈みやすい(そのぶん、外の艇の差し・まくり差しが届きやすくなる)
+     まくり差し  左の艇の前を横切って(捲って)、さらに左の艇の内側を差す(3〜6コースだけ)
+     二段まくり  先に捲りに行った艇の、さらに外から捲る
+     マーク      捲った艇の外について回る
+     絞る        前に出た艇が、内の艇の前へ寄せていく。1艇身以上前に出るまでは内の艇の外にとどまり、寄せた位置は1マークまで保つ
+     張る        捲りに来た艇を、1コースが外へ膨らんで止めに行く(2艇とも流れて、内が空く)
+     残す        捲りに来た艇を先に行かせ、1コースが小回りで内に残る
+   動かし方: 戦法から各艇のライン(走る道筋)を決め、優先する艇(前を横切る艇・先に回る艇)から順に時間を決める。
+   後から決める艇は、先に決めた艇とぶつからないよう、手前から速度を落として譲る(差しは後ろから内へ、捲られる艇は捲る艇を先に行かせる)。
+   引き波は、先に通った艇の跡(旋回の外側に強く、真後ろは泡)を横切ると速度が落ちる。
+   吹き出しは、走らせた結果の位置関係(どちら側を通って前に出たか・前を横切ったか)から決める。
    単位はメートルと秒。ホームストレッチを左から右へ走り、右の1マークを左回りに回る。
-   使い方: var v = Turn1.mount(canvas, {entries:[{waku,course,name,st,motor2,ex,cls}], scen:{course,kim,p}, kimarite, title});
-           v.play(); v.replay(); v.setScenario(scen); v.record() -> Promise<Blob>(対応ブラウザのみ) */
+   使い方: var v = Turn1.mount(canvas, {entries:[{waku,course,name,st,motor2,ex,cls,km,ls,n,w1}], scen:{course,kim,p}, kimarite, title, fixedST});
+           v.play(); v.replay(); v.setScenario(scen, entries, title, fixedST); v.record() -> Promise<Blob>(対応ブラウザのみ) */
 (function (root) {
   "use strict";
   var D = 140;                                   // スタートラインから1マークまでの距離
@@ -14,6 +29,11 @@
   var LANE0 = 7, LANE_W = 6;                     // スタート時の横位置(1コースが一番内側)
   var HULL_L = 4.4, HULL_W = 1.8;
   var T0 = -2.6, DT = 1 / 60, T_MAX = 22;        // スタートの2.6秒前から描く
+  var NF = Math.round((T_MAX - T0) / DT) + 1;
+  var R0 = 8;                                    // 位置関係を比べるときの、旋回部分の目盛り(半周 = R0*π m)
+  var KM3 = ["捲り", "捲り差し", "差し"];
+  // 全国のコース別の1着の決まり手の割合(捲り・捲り差し・差し)。場のデータがないときに使う
+  var PRIOR = { 2: [0.28, 0.0, 0.64], 3: [0.42, 0.37, 0.12], 4: [0.49, 0.25, 0.17], 5: [0.16, 0.65, 0.07], 6: [0.27, 0.45, 0.12] };
   var COLORS = { 1: ["#f4f6f8", "#14212b"], 2: ["#1b1b1b", "#ffffff"], 3: ["#d7282f", "#ffffff"],
                  4: ["#1d5fbf", "#ffffff"], 5: ["#f2cf1d", "#14212b"], 6: ["#1f9a4b", "#ffffff"] };
   var FONT = '"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif';
@@ -22,13 +42,14 @@
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
   function avg(a) { var v = a.filter(function (x) { return x != null && !isNaN(x); }); return v.length ? v.reduce(function (s, x) { return s + x; }, 0) / v.length : null; }
+  function angd(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
   // ---- 選手ごとの性能
   function prepare(entries) {
     var boats = entries.map(function (e) {
       return { waku: e.waku, course: e.course || e.waku, name: e.name || (e.waku + "号艇"),
-               st: e.st == null ? 0.16 : clamp(e.st, 0.05, 0.3), motor2: e.motor2, ex: e.ex, cls: e.cls,
-               km: e.km || {}, ls: e.ls || {}, n: e.n || 0, w1: e.w1 || 0 };   // このコースでの勝ち方・負け方・走数・1着数
+               st: e.st == null ? 0.16 : clamp(e.st, 0.01, 0.35), st0: e.st == null ? 0.16 : clamp(e.st, 0.01, 0.35),
+               motor2: e.motor2, ex: e.ex, cls: e.cls, km: e.km || {}, ls: e.ls || {}, n: e.n || 0, w1: e.w1 || 0 };
     }).sort(function (a, b) { return a.course - b.course; });
     var am = avg(boats.map(function (b) { return b.motor2; })), ae = avg(boats.map(function (b) { return b.ex; }));
     boats.forEach(function (b) {
@@ -41,316 +62,742 @@
       b.vmax0 = clamp(vm, 20.8, 23.4);
       b.alat0 = 17 * ({ A1: 1.06, A2: 1.03, B1: 1.0, B2: 0.96 }[b.cls] || 1);     // 旋回の上手さ(横向きの加速度)
       b.lane = LANE0 + LANE_W * (b.course - 1);
+      b.X = new Float32Array(NF); b.Y = new Float32Array(NF); b.H = new Float32Array(NF);
+      b.V = new Float32Array(NF); b.S = new Float32Array(NF); b.WK = new Float32Array(NF);
+      b.adj = { dz: 0, yo: 0 }; b.extra = [];
     });
     return boats;
   }
 
-  // ---- スタート後の直線を、よけ合いなしで走らせたときの位置と速さ(行き方を決めるのに使う)
-  function straightRun(b, t) {
-    if (t < b.st) { var r = b.st - t; return { x: -(b.vline * r - b.apre * r * r / 2), v: b.vline - b.apre * r }; }
-    var x = 0, v = b.vline, vmax = b.vmax0 + b.bias.vmax;
-    for (var s = b.st; s < t; s += DT) { v = Math.min(vmax, v + (0.95 * (vmax - v) + 0.6) * DT); x += v * DT; }
+  // 選手の戦法の傾向: このコースで勝ったときの決まり手(捲り・捲り差し・差し)を、場の傾向で補って割合にする
+  function tacShares(b, vkim) {
+    var c = b.course, t = vkim && vkim[c - 1], pr, s;
+    if (t && (t[1] + t[2] + t[3]) > 0) { s = t[1] + t[2] + t[3]; pr = { "捲り": t[1] / s, "差し": t[2] / s, "捲り差し": t[3] / s }; }
+    else { var p = PRIOR[c] || [0.34, 0.33, 0.33]; s = p[0] + p[1] + p[2]; pr = { "捲り": p[0] / s, "捲り差し": p[1] / s, "差し": p[2] / s }; }
+    var tot = 0, W0 = 3, out = { prior: pr };
+    KM3.forEach(function (k) { tot += b.km[k] || 0; });
+    KM3.forEach(function (k) { out[k] = ((b.km[k] || 0) + W0 * pr[k]) / (tot + W0); });
+    out.n = tot;
+    return out;
+  }
+
+  // ---- スタート後の直線を、よけ合いなしで走らせたときの位置と速さ(eq: 全艇ST.15・同じモーターとしたとき)
+  function straightRun(b, t, eq) {
+    var st = eq ? 0.15 : b.st, vmax = eq ? 22 : b.vmax0 + (b.bias ? b.bias.vmax : 0);
+    if (t < st) { var r = st - t; return { x: -(b.vline * r - b.apre * r * r / 2), v: b.vline - b.apre * r }; }
+    var x = 0, v = b.vline;
+    for (var s = st; s < t; s += DT) { v = Math.min(vmax, v + (0.95 * (vmax - v) + 0.6) * DT); x += v * DT; }
     return { x: x, v: v };
   }
-
-  // ---- 行き方を決める。勝つ艇は決着パターンどおり。ほかの艇は、スタートして少し走った時点で
-  //      内の艇より前に出ているか(平均STとモーターの伸びの結果)を見て、絞る・捲る・捲り差し・差しを選ぶ
-  function assignRoles(boats, sc, vkim) {
-    var cw = sc.course, k = sc.kim, byC = {};
+  // 先頭が xLead まで来たときの、各艇の位置
+  function project(boats, xLead, eq) {
+    var t = 0, out = {};
+    while (t < 9 && !boats.some(function (b) { return straightRun(b, t, eq).x >= xLead; })) t += 0.04;
+    boats.forEach(function (b) { out[b.course] = straightRun(b, t, eq); });
+    return out;
+  }
+  // 直線の見込みの表(0.02秒ごとの位置)。絞る艇が内の艇の前に出たかを見るのに使う
+  function runTable(b) {
+    var n = 601, out = new Float32Array(n), vmax = b.vmax0 + b.bias.vmax, x = 0, v = b.vline, tp = b.st;
+    for (var k = 0; k < n; k++) {
+      var tk = k * 0.02;
+      if (tk < b.st) { var r = b.st - tk; out[k] = -(b.vline * r - b.apre * r * r / 2); continue; }
+      while (tp < tk - 1e-9) { var h = Math.min(0.01, tk - tp); v = Math.min(vmax, v + (0.95 * (vmax - v) + 0.6) * h); x += v * h; tp += h; }
+      out[k] = x;
+    }
+    b.run = out;
+  }
+  function runX(b, t) { var f = t / 0.02, k = Math.floor(f); if (k < 0) return b.run[0]; if (k >= 600) return b.run[600]; return b.run[k] + (b.run[k + 1] - b.run[k]) * (f - k); }
+  function runT(b, x) {
+    var R = b.run, lo = 0, hi = 600;
+    if (x <= R[0]) return 0;
+    if (x >= R[600]) return 12;
+    while (hi - lo > 1) { var m = (lo + hi) >> 1; if (R[m] < x) lo = m; else hi = m; }
+    return (lo + (x - R[lo]) / ((R[hi] - R[lo]) || 1)) * 0.02;
+  }
+  function decide(boats, sc, vkim, opt) {
+    var byC = {}, cw = sc.course, k = sc.kim || "逃げ";
+    if (cw === 1) k = "逃げ";
+    if (k === "抜き" || k === "恵まれ") k = "差し";
+    if (cw === 2 && k === "捲り差し") k = "差し";              // まくり差しは3〜6コースだけ
     boats.forEach(function (b) {
       byC[b.course] = b;
-      b.bias = { vmax: 0, alat: 1 };
-      b.flow = 0;                                // 1マークで外に流れる量
-      b.squeeze = 0;                             // 直線で内に絞る量
-      b.hari = 0;                                // 1コースが外へ張る量
-      b.delExtra = 0;
-      b.slow = [];                               // 他艇とぶつからないよう、手前から速度を抑える区間
-      b.win = b.course === cw;
-      b.role = null; b.note = null;
+      b.bias = { vmax: 0, alat: 1 }; b.slow = []; b.role = null; b.ref = null; b.over = []; b.under = null;
+      b.win = b.course === cw; b.adj = { dz: 0, yo: 0 }; b.wait = 0; b.stAdj = 0; b.fail = false; b.squeezed = false;
+      b.tac = tacShares(b, vkim);
     });
-    var w = byC[cw], b1 = byC[1];
-    if (w) {
-      w.role = cw === 1 ? "nige" : ({ "差し": "sashi", "捲り": "makuri", "捲り差し": "makurizashi" }[k] || "sashi");
-      if (w.role === "nige") { w.bias.alat = 1.04; w.bias.vmax = 0.15; }
-      if (w.role === "sashi") w.bias.alat = 1.08;
-      if (w.role === "makuri") w.bias.vmax = 0.6;
-      if (w.role === "makurizashi") w.bias.alat = 1.06;
-    }
-    // 先頭が45m進んだ時点の並び(平均STとモーターの伸びの結果)
-    var tDec = 0;
-    while (tDec < 6 && !boats.some(function (b) { return straightRun(b, tDec).x >= 45; })) tDec += 0.05;
-    boats.forEach(function (b) { var r = straightRun(b, tDec); b.xDec = r.x; b.vDec = r.v; });
-    function lead(b) { var i = byC[b.course - 1]; return i ? b.xDec - i.xDec : 0; }
-    function tend(c) { return vkim && vkim[c - 1] ? vkim[c - 1] : [0, 1, 1, 1, 0, 0]; }
-    // 選手の戦法の傾向: このコースで勝ったときの決まり手(捲り・捲り差し・差し)を、場の傾向で補って割合にする
-    boats.forEach(function (b) {
-      var t = tend(b.course), prior = { "捲り": t[1], "捲り差し": t[3], "差し": t[2] }, ps = (t[1] + t[2] + t[3]) || 1, tot = 0, W0 = 3;
-      ["捲り", "捲り差し", "差し"].forEach(function (k) { tot += b.km[k] || 0; });
-      b.tac = { n: tot };
-      ["捲り", "捲り差し", "差し"].forEach(function (k) { b.tac[k] = ((b.km[k] || 0) + W0 * prior[k] / ps) / (tot + W0); });
-    });
-    // 捲り型の選手ほど、少し前に出ただけでも仕掛ける(カドはダッシュの分、前に出やすい)
-    function thrOf(b) { return (b.course === 4 ? 4.2 : 1.8) - 2.0 * (b.tac["捲り"] - 0.3); }
-    // 仕掛けやすさ: 内の艇より前に出ている分と、まだ伸びている分(カドはダッシュで速い分を差し引く)
-    function score(b) { var i = byC[b.course - 1]; return lead(b) - thrOf(b) + (i ? (b.vDec - i.vDec - (b.course === 4 ? 0.6 : 0)) * 1.2 : 0); }
-    // 捲れないときの狙い方: 選手の傾向で、捲り差しか差しか(5・6コースは外を回すことも)
-    function fallback(b) {
-      var c = b.course, tc = b.tac;
-      if (c >= 5 && tc["差し"] < 0.45 && tc["捲り差し"] < 0.45) return "soto";
-      if (c === 6 && tc["差し"] < 0.5) return "soto";
-      return tc["差し"] > tc["捲り差し"] ? "sashi" : "makurizashi";
-    }
-
-    // 1) 捲りに行く艇(展開を作る艇)
-    var attacker = null;
-    if (w && w.role === "makuri") attacker = w;
-    else {
-      var cands = boats.filter(function (b) { return !b.win && b.course >= 2 && b.course <= 5; });
-      if (k === "差し" || k === "捲り差し") {
-        // 差し・捲り差しが決まるのは、内か外で誰かが仕掛けて1コースが外へ持っていかれたとき
-        cands = cands.filter(function (b) { return cw === 2 ? (b.course === 3 || b.course === 4) : b.course < cw; });
-        cands.sort(function (a, b) { return score(b) - score(a); });
-        if (cands[0] && score(cands[0]) > -1.5) attacker = cands[0];
-      } else {
-        cands.sort(function (a, b) { return score(b) - score(a); });
-        if (cands[0] && score(cands[0]) >= 0) attacker = cands[0];   // 本当に前に出ている艇だけが捲りに行く
-      }
-      if (attacker) attacker.role = "makuri";
-    }
-    var A = attacker ? attacker.course : 99;
-
-    // 2) 1コースの判断: 捲りに来た艇に張って対抗するか、小回りで着を残しに行くか
+    var b1 = byC[1], W = byC[cw] || boats[0], A = null;
     var avgV = avg(boats.map(function (b) { return b.vmax0; }));
-    if (b1 && !b1.win) {
-      if (attacker) {
-        var strong = ({ A1: 1, A2: 0.6, B1: 0.3, B2: 0 }[b1.cls] || 0.3) + (b1.vmax0 - avgV) * 0.6;
-        if (b1.n >= 5) strong += (b1.w1 / b1.n - 0.55) * 2;               // 1コースでよく逃げている選手は対抗する
-        var resist = k === "差し" || k === "捲り差し" || (strong >= 0.6 && attacker.xDec - b1.xDec < 3.5);
-        if (resist) { b1.role = "nige"; b1.hari = 3.5; b1.flow = 9; b1.bias.alat = 0.92; b1.note = "張る"; }
-        else { b1.role = "nokoshi"; b1.bias.alat = 0.97; b1.note = "残す"; }
-      } else {
-        b1.role = "nige";
-        if (k === "差し") { b1.flow = 10; b1.bias.alat = 0.9; b1.note = "流れる"; }
-        else if (k === "捲り差し") { b1.flow = 6; b1.bias.alat = 0.95; b1.note = "流れる"; }
-      }
-    } else if (b1 && b1.win && attacker && attacker.xDec - b1.xDec > -3) {
-      b1.hari = 2.0; b1.note = "張る";                                  // 張って先に回る
+    var Q = project(boats, 95, true), P = null;
+    function reproject() { P = project(boats, 95, false); }
+    reproject();
+    // a が b より何秒ぶん前にいるか(ダッシュの助走の差は除く。ST差0.05秒 ≒ 1m)
+    function lead(a, b) { return a && b ? ((P[a.course].x - P[b.course].x) - (Q[a.course].x - Q[b.course].x)) / 19 : 0; }
+    function inner(a) { return boats.filter(function (o) { return o.course < a.course; }); }
+    function leadIn(a) { var m = Infinity; inner(a).forEach(function (o) { m = Math.min(m, lead(a, o)); }); return m === Infinity ? 0 : m; }
+    // 捲りに行くのに必要な、内の艇より前に出ている量(秒)。捲り型の選手ほど小さい
+    function thr(b) {
+      var base = { 2: 0.065, 3: 0.05, 4: 0.04, 5: 0.05, 6: 0.07 }[b.course] || 0.06;
+      return clamp(base - 0.06 * (b.tac["捲り"] - b.tac.prior["捲り"]), 0.025, 0.09);
     }
+    function margin(b) { return leadIn(b) - thr(b); }
+    // 決着パターンに必要なだけ前に出す(足りない分はSTで。実際のSTを使うときはモーターの伸びで)
+    function force(x, set, m) {
+      if (!x) return;
+      var need = 0;
+      set.forEach(function (o) { need = Math.max(need, m - lead(x, o)); });
+      if (need <= 0.001) return;
+      if (opt.fixedST) { x.bias.vmax += Math.min(1.4, need * 19 / 2.2); reproject(); return; }
+      // 足りない分は、まず仕掛ける艇のST(早めるのは合計0.04秒まで)、残りは相手のSTを遅らせる(合計0.05秒まで)
+      var dx = Math.max(0, Math.min(need, 0.04 + x.stAdj));
+      x.st = Math.max(0.01, x.st - dx); x.stAdj -= dx;
+      if (need - dx > 0.001) set.forEach(function (o) { var d = Math.max(0, Math.min(need - dx, 0.05 - o.stAdj)); o.st = Math.min(0.35, o.st + d); o.stAdj += d; });
+      reproject();
+    }
+    function strong1() {
+      var s = { A1: 0.9, A2: 0.6, B1: 0.3, B2: 0.1 }[b1.cls] || 0.3;
+      if (b1.n >= 6) s += (b1.w1 / b1.n - 0.55) * 1.5;
+      return s + (b1.vmax0 - avgV) * 0.4;
+    }
+    function natural() {
+      var best = null, bm = 0;
+      boats.forEach(function (b) {
+        if (b.course < 2) return;
+        var m = margin(b);
+        if (m >= 0 && (!best || m > bm)) { best = b; bm = m; }
+      });
+      return best;
+    }
+    function set(b, role, ref, over, under) { if (!b) return; b.role = role; b.ref = ref || null; b.over = over || []; b.under = under || null; }
+    function midBoats(lo, hi) { return boats.filter(function (o) { return o.course > lo && o.course < hi; }); }
 
-    // 3) ほかの艇は、仕掛けた艇との位置関係で動く
+    if (k === "逃げ") {
+      A = natural();
+      if (A && A.course === 2 && margin(A) < 0.012) A = null;               // 2コースは少し出ても差しに回ることが多い
+      if (A) { set(A, "makuri", b1); A.fail = true; set(b1, strong1() >= 0.45 ? "nigeHari" : "nige"); }  // 張り気味に先に回って止める
+      else set(b1, byC[2] && byC[2].tac["差し"] >= 0.72 ? "kotsu" : "nige");
+    } else if (k === "捲り") {
+      A = W;
+      force(W, inner(W), Math.max(0.035, thr(W) * 0.7));
+      set(W, "makuri", b1);
+      set(b1, strong1() >= 0.8 && lead(W, b1) < 0.05 ? "hari" : "nokoshi");
+    } else if (k === "差し") {
+      if (cw === 2) {
+        // 2コースの差しが決まるのは、1コースが全速で流れるか、外の捲りに張って2艇とも流れたとき
+        var cand = [byC[3], byC[4]].filter(Boolean).sort(function (a, b) { return margin(b) - margin(a); })[0];
+        if (cand && margin(cand) >= -0.03) { A = cand; force(A, inner(A), 0.025); set(A, "makuri", b1); set(b1, "hari"); A.flowOut = true; }
+        else set(b1, "zensoku");
+        set(W, "sashi", b1);
+      } else {
+        // 内の艇が捲り、1コースが張って2艇とも流れる → 空いた内を差す
+        A = byC[cw - 1];
+        if (cw >= 5 && byC[cw - 2] && margin(byC[cw - 2]) > margin(A)) A = byC[cw - 2];
+        force(A, inner(A), 0.03);
+        set(A, "makuri", b1); set(b1, "hari"); set(W, "sashi", A); A.flowOut = true;      // 張られて2艇とも流れる
+        force(A, [W], 0.02); force(W, [A], -0.03);                                      // 捲る艇が前、差す艇はそのすぐ後ろ
+        midBoats(1, A.course).forEach(function (o) { o.wait = 1; });
+        midBoats(A.course, cw).forEach(function (o) { o.wait = 1; });
+      }
+    } else if (k === "捲り差し") {
+      var nb = byC[cw - 1];
+      if (cw === 3) {
+        // 2コースが差し構えで待つところを、3コースが2コースの舳先の前を横切り、1コースの内へ
+        force(W, [nb], 0.0);
+        set(b1, "zensoku"); set(nb, "sashi", b1); nb.wait = 1;
+        set(W, "makurizashi", null, [nb], b1);
+      } else {
+        // 4〜6コースのまくり差し: 隣の艇(と、その内の艇)の前を横切って、先に回った艇の内へ。
+        // 隣より内の艇が捲って1コースを流していれば、その捲った艇の内へ(例: 2コースのジカまくり → 5コースのまくり差し)
+        var cands = midBoats(1, cw - 1).filter(function (o) { return o.course >= 2; }).sort(function (a, b) { return margin(b) - margin(a); });
+        var att = cands[0] && margin(cands[0]) >= -0.03 ? cands[0] : null;
+        if (att) {
+          A = att; force(A, inner(A), 0.03);
+          set(A, "makuri", b1); set(b1, strong1() >= 0.6 ? "hari" : "nokoshi"); A.flowOut = true;
+          var ov2 = midBoats(A.course, cw);
+          force(A, [W], 0.02); force(W, ov2, 0.012); force(W, [A], -0.03);
+          set(W, "makurizashi", null, ov2, A);
+          ov2.forEach(function (o) { set(o, "sashi", A); o.wait = 1; });
+          midBoats(1, A.course).forEach(function (o) { o.wait = 1; });
+        } else {
+          var ov = midBoats(1, cw);
+          force(W, ov, 0.012);
+          set(b1, "zensoku");
+          set(W, "makurizashi", null, ov, b1);
+          ov.forEach(function (o) { set(o, "sashi", b1); o.wait = 1; });   // 前を横切られる艇は、差し構えで待つ
+        }
+      }
+    }
+    // ほかの艇: 仕掛けた艇との位置関係で動く
     boats.forEach(function (b) {
       if (b.role) return;
-      var c = b.course, inner = byC[c - 1];
-      if (c < A) { b.role = "sashi"; b.flow = 4; b.bias.alat = 0.96; return; }        // 捲られる側(引き波で沈むかは走らせて決まる)
-      if (c === A + 1) {
-        // 捲った艇のすぐ外: 並んでいて捲り型なら捲りについて行く、そうでなければ空いた内を差し型は差し、ほかは捲り差しで狙う
-        if (b.xDec - attacker.xDec >= -2.5 && b.vDec >= attacker.vDec - 0.3 && b.tac["差し"] < 0.5) { b.role = "mark"; return; }
-        b.role = b.tac["差し"] > b.tac["捲り差し"] ? "sashi" : "makurizashi";
+      var c = b.course;
+      if (c === 1) { set(b, A && !A.fail ? (strong1() >= 0.8 && lead(A, b) < 0.04 ? "hari" : "nokoshi") : "nige"); return; }
+      if (A && c < A.course) { set(b, "sashi", b1); b.squeezed = true; return; }          // 捲られる側: 内で小回り(遅れる)
+      if (A && c === A.course + 1) {
+        var lc = lead(b, A);
+        if (lc >= 0.03 && b.tac["捲り"] >= 0.4 && !A.win) { set(b, "nidan", A); return; }         // さらに外から捲る
+        if (lc >= -0.02 && b.tac["捲り"] >= 0.33 && b.tac["差し"] < 0.45) { set(b, "mark", A); return; }   // 捲りについて行く
+        if (b.tac["捲り差し"] >= b.tac["差し"]) set(b, "makurizashi", null, midBoats(1, A.course), A);
+        else set(b, "sashi", A);
         return;
       }
-      if (c > A + 1) { b.role = fallback(b); return; }
-      if (c === 2) { b.role = "sashi"; return; }                                         // 仕掛けがなければ2コースは差し構え
-      if (c <= 5 && lead(inner) <= -1.2 && b.tac["差し"] < 0.6) { b.role = "makurizashi"; return; }   // 内の艇が凹んでいる
-      b.role = fallback(b);
+      if (A && c > A.course + 1) {
+        var inb = byC[c - 1];
+        if (c <= 5 && inb && inb.role === "mark" && b.tac["差し"] >= 0.3) set(b, "sashi", inb);      // 捲りについて行った艇の内を差す
+        else set(b, "soto");
+        return;
+      }
+      // 仕掛けがないとき(または仕掛けた艇より内)
+      if (c === 2) { set(b, "sashi", b1); return; }                                        // 2コースは差し構え
+      if (c === 3) {
+        if (lead(b, byC[2]) >= 0.015 && b.tac["捲り差し"] >= 0.3 && !byC[2].win && !b1.win) set(b, "makurizashi", null, [byC[2]], b1);
+        else set(b, "zen");                                                                // 1・2コースの外を全速で
+        return;
+      }
+      var left = byC[c - 1];
+      if (c === 4) { set(b, b.tac["差し"] >= 0.3 || !left ? "sashi" : "mark", left || b1); return; }   // 3コースの後を追う(または内を差す)
+      // 5・6コース: 内の艇が遅れていれば、その前を横切ってさらに内の艇の内へ(まくり差し)。そうでなければ差すか外を回す
+      if (left && lead(b, left) >= 0.02 && b.tac["捲り差し"] >= 0.4 && byC[c - 2] && byC[c - 2].role !== "sashi" && !left.win && !byC[c - 2].win) {
+        set(b, "makurizashi", null, [left], byC[c - 2]); left.wait = Math.max(left.wait, 0.5); return;
+      }
+      if (left && b.tac["差し"] >= 0.25 && c === 5) { set(b, "sashi", left); return; }
+      set(b, "soto");
     });
-
-    // 4) スタートが良い艇は内に絞る(捲りに行く艇は大きく)
     boats.forEach(function (b) {
-      var c = b.course;
-      if (c === 1) return;
-      if (b.role === "makuri") b.squeeze = 3.3;
-      else if (b.role === "mark") b.squeeze = 1.5;
-      else if (lead(b) >= thrOf(b) * 0.6 && c > A) b.squeeze = 2.0;
+      if (b.role === "makurizashi" && !b.under) b.under = b1;
+      // 勝つ艇の前を横切ったり、勝つ艇の内を差したりする動きは、決着パターンと食い違うのでさせない(後ろから差すか、ついて行く)
+      if (!b.win && b.role === "makurizashi" && (b.over.indexOf(W) >= 0 || b.under === W)) {
+        if (A && A !== b && !A.win) set(b, b.tac["差し"] >= 0.3 ? "sashi" : "mark", A); else set(b, "sashi", W);
+        b.over = [];
+      }
+      if ((b.role === "sashi" || b.role === "mark" || b.role === "nidan" || b.role === "makuri") && !b.ref) b.ref = b1;
+    });
+    return { attacker: A, kim: k };
+  }
+
+  // ======================================================================
+  // ライン(走る道筋): 1マークに入る横位置(yi)、ブイに一番近づく距離(dz)、出口の横位置(yo)、旋回の膨らみ方(rho = 出口の半径/入口の半径)
+  // ======================================================================
+  function natY(c) { return 5.8 + 4.2 * (c - 1); }          // 仕掛けがないときに、1マークの手前で寄っている位置
+  var ORDER = { nige: 0, nigeHari: 0, kotsu: 0, zensoku: 0, hari: 0, nokoshi: 0, makuri: 1, nidan: 2, mark: 2, zen: 3, sashi: 4, makurizashi: 4, soto: 5 };
+
+  // 1マークの手前に着く順番の目安(直線の見込みと、戦法ごとの待ち)。差しの「内の壁」(先に回る艇)を決めるのに使う
+  function arrivals(boats) {
+    boats.forEach(function (b) {
+      var w = 0;
+      if (b.role === "sashi") w += b.squeezed ? 0.16 : 0.1;
+      if (b.wait) w += 0.12 * b.wait;
+      if (b.role === "nokoshi") w += 0.06;
+      if (b.role === "mark") w += 0.12;
+      if (b.role === "soto") w += 0.08;
+      b.tArr = runT(b, 118) + w;
     });
   }
 
-  // ---- 走るライン。1マークに入る横位置(ye)は内外の順番を崩さず、出る横位置(yx)は回り方で決める
-  //      (差しは内、捲り差しはその外、逃げは小回り、捲りと外を回す艇は外)
-  function computeLines(boats) {
-    var prev = null;
-    boats.slice().sort(function (a, b) { return a.course - b.course; }).forEach(function (b) {
-      var L = b.lane;
-      b.ysq = L - b.squeeze;
-      var pref = { nige: Math.min(L, 6.5) + b.hari, nokoshi: Math.min(L, 6.5), sashi: L - 4, makurizashi: L - 2,
-                   makuri: L - 3.3, mark: L - 2.5, soto: L - 3 }[b.role];
-      b.ye = prev == null ? pref : Math.max(prev + 4.0, pref);
-      prev = b.ye;
-      b.pref = { nige: 0, nokoshi: 0.2, sashi: 0.5, makurizashi: 1.5, makuri: 3, mark: 3.4, soto: 4 }[b.role] + 0.1 * b.course + b.flow / 3 + b.hari / 3;
+  // X が Y の内を差すときのライン: Y と、X より先に回る内側の艇(内の壁)の間。内の壁がなければブイ際。入る余地がなければ null
+  function gapLine(X, Y, boats) {
+    var wall = null;
+    boats.forEach(function (o) {
+      // 先に回る艇と、ブイ際を小回りする1コース(ほぼ同時に回るなら、その内は通れない)
+      if (o === X || o === Y || !o.sp) return;
+      if (!(o.course === 1 && o.sp.dz <= 4.4) && o.tArr > X.tArr - 0.04) return;
+      if (o.sp.dz < Y.sp.dz - 0.5 && (!wall || o.sp.dz > wall.sp.dz)) wall = o;
     });
-    // 1マークを回る順(内から): 出口の横位置と、ブイの外へ振る量を、内から一定の間隔で割り振る(同心円の重なりを作らない)
-    boats.slice().sort(function (a, b) { return a.pref - b.pref; }).forEach(function (b, r) { b.yx = -12 - 4.0 * r; b.rank = r; });
-    boats.forEach(function (b) {
-      var c = b.course;
-      var base = { nige: 3.5 + b.hari * 0.5, nokoshi: 3.0, sashi: 2 + 0.5 * (c - 2), makurizashi: 6 + (c - 3), makuri: 6 + 1.5 * (c - 2),
-                   mark: 8 + 1.5 * (c - 2), soto: 12 + 2 * Math.max(0, c - 6) }[b.role] + b.flow * 0.4;
-      b.del = Math.max(base, 3.5 + 3.0 * b.rank) + b.delExtra;
-      b.asym = (b.role === "makurizashi" ? 2 : b.role === "sashi" ? 0.5 : 0) - b.flow / 4;   // 大きく入って小さく出る(切り込む)/流れる
-      var xw = { nige: b.hari ? [72, 118] : [60, 115], nokoshi: [60, 115], sashi: [70, 120], makurizashi: [60, 115], makuri: [70, 112],
-                 mark: [65, 112], soto: [70, 120] }[b.role];
-      b.xa = xw[0]; b.xb = xw[1];
-    });
+    var wdz = wall ? wall.sp.dz : CLEAR, gap = Y.sp.dz - wdz;
+    if (gap < 2.4) return null;
+    // 内の壁のすぐ外(艇1つ分あけて)を小さく回る。間が広くても真ん中ではなく、内寄りを突く
+    if (wall) return { dz: Math.min(wdz + 2.6, Y.sp.dz - 2.0), yo: clamp(wall.sp.yo - 3.2, Y.sp.yo + 2.6, -7.2), wall: wall };
+    return { dz: CLEAR + 0.45 + Math.max(0, (gap - 3.5) * 0.08), yo: clamp(Y.sp.yo + 2.6, -9.8, -7.2), wall: null };   // ブイ際を小さく回る
   }
 
-  function makePath(b, del) {
-    var pts = [], half = (b.ye - b.yx) / 2, r1 = half + b.asym, cyc = b.ye - r1, r2 = cyc - b.yx;
-    var cx = D + del - (r1 + r2) / 2, i, q, phi, r;
-    var xb = Math.min(b.xb, cx - 4), xa = Math.min(b.xa, xb - 10);
-    for (var x = 0; x < cx; x += 0.5) {
-      pts.push([x, b.lane + (b.ysq - b.lane) * sstep(12, 55, x) + (b.ye - b.ysq) * sstep(xa, xb, x)]);
+  function specOf(b, byC, boats) {
+    var c = b.course, L = b.lane, sp, b1 = byC[1];
+    var s1 = b1 && b1.sp ? b1.sp : { yi: 6, dz: 4.2, yo: -11, rho: 1.3 };
+    var ref = b.ref && b.ref.sp ? b.ref : null, rs = ref ? ref.sp : s1;
+    switch (b.role) {
+      case "nige": sp = { yi: 6.0, dz: 4.2, yo: -11.0, rho: 1.3 }; break;
+      case "nigeHari": sp = { yi: 7.6, dz: 4.9, yo: -12.2, rho: 1.25, late: true }; break;          // 張り気味に先に回る
+      case "kotsu": sp = { yi: 5.6, dz: 3.8, yo: -9.6, rho: 1.25 }; break;                          // 小回り(差しの余地をなくす)
+      case "zensoku": sp = { yi: 6.4, dz: 6.2, yo: -15.5, rho: 1.35 }; break;                       // 全速で回って膨らむ
+      case "hari": sp = { yi: L + 3.2, dz: 7.6, yo: -18.0, rho: 1.3, late: true }; break;           // 外へ張って止めに行く
+      case "nokoshi": sp = { yi: 5.6, dz: 3.7, yo: -9.0, rho: 1.3 }; break;                         // 小回りで残す
+      case "makuri": sp = { yi: rs.yi + 3.4, dz: rs.dz + 3.4, yo: Math.min(-12.5, rs.yo - 2.4), rho: 1.08, sq: true }; break;
+      case "nidan": sp = { yi: rs.yi + 3.3, dz: rs.dz + 3.2, yo: rs.yo - 2.6, rho: 1.06, sq: true }; break;
+      case "mark": sp = { yi: rs.yi + 3.0, dz: rs.dz + 2.2, yo: rs.yo - 2.0, rho: rs.rho || 1.1, follow: true }; break;
+      case "zen": sp = { yi: Math.max(natY(c), s1.yi + 7.0), dz: s1.dz + 4.2, yo: s1.yo - 3.8, rho: 1.15 }; break;
+      case "sashi": {
+        // 絞って捲りに行った艇の内を差すときは、その艇の後ろについて内へ寄っていく
+        var Y = ref || b1, g = gapLine(b, Y, boats), tr = Y.sp.sq && Y.course < c ? Y : null;
+        var yiS = tr ? Y.sp.yi + 2.8 : Math.max(Y.sp.yi + 2.8, natY(c) - 0.8);
+        if (g) sp = { yi: yiS, dz: g.dz, yo: g.yo, rho: 1.65, trail: tr };
+        else sp = { yi: yiS, dz: Y.sp.dz + 0.25, yo: Y.sp.yo + 0.6, rho: (Y.sp.rho || 1.3) + 0.15, queue: true, trail: tr };
+        break;
+      }
+      case "makurizashi": {
+        // 差す相手が絞って捲った艇なら、その後ろについて内へ寄り、1マークでその内へ。そうでなければ1マークの手前で内の艇の前を横切る
+        var U = b.under && b.under.sp ? b.under : b1, gu = gapLine(b, U, boats), tu = U.sp.sq ? U : null;
+        var base = { yi: U.sp.yi + (tu ? 2.8 : 3.0), cross: !tu, trail: tu };
+        if (gu) { base.dz = gu.dz; base.yo = gu.yo; base.rho = 1.55; }
+        else { base.dz = U.sp.dz + 0.3; base.yo = U.sp.yo + 0.6; base.rho = (U.sp.rho || 1.3) + 0.15; base.queue = true; }
+        sp = base;
+        break;
+      }
+      default: {                                                               // 外マイ: 内の艇の全部の外を回る
+        var inn = boats.filter(function (o) { return o.sp && o !== b && o.course < c && !o.sp.queue; });
+        var dmax = inn.length ? Math.max.apply(null, inn.map(function (o) { return o.sp.dz; })) : 4;
+        var ymin = inn.length ? Math.min.apply(null, inn.map(function (o) { return o.sp.yo; })) : -11;
+        sp = { yi: natY(c) - (c >= 5 ? 1.0 : 0), dz: dmax + 3.0, yo: ymin - 2.6, rho: 1.1 };
+      }
     }
-    var iStart = pts.length;
-    for (i = 0; i <= 160; i++) {
-      q = i / 160; phi = Math.PI / 2 - Math.PI * q; r = r1 + (r2 - r1) * sstep(0, 1, q);
-      pts.push([cx + r * Math.cos(phi), cyc + r * Math.sin(phi)]);
+    if (b.fail) { sp.dz += 2.4; sp.yo -= 3.0; }                                // 張られて流れる
+    else if (b.flowOut) { sp.dz += 1.2; sp.yo -= 2.0; }                        // 全速で回って膨らむ(内を差される)
+    sp.dz += b.adj.dz; sp.yo += b.adj.yo;
+    return finishSpec(sp);
+  }
+  function finishSpec(sp) {
+    sp.dz = clamp(sp.dz, CLEAR + 0.35, 15);
+    var R1 = (sp.yi - sp.yo) / (1 + sp.rho);
+    if (R1 < 5.0) { R1 = 5.0; sp.yo = sp.yi - R1 * (1 + sp.rho); }
+    sp.R1 = R1; sp.R2 = R1 * sp.rho;
+    sp.dz = Math.min(sp.dz, Math.min(sp.yi, -sp.yo) - 0.3);
+    sp.xin = solveXin(sp);
+    return sp;
+  }
+
+  // 旋回の入口の位置 xin を、ブイに一番近づく距離が dz になるように決める
+  function turnMinDist(xin, yi, R1, R2) {
+    var x = xin, y = yi, th = 0, n = 72, dth = Math.PI / n, md = 1e9, cross = null;
+    for (var i = 0; i <= n; i++) {
+      var d = Math.hypot(x - BUOY.x, y - BUOY.y);
+      if (d < md) md = d;
+      if (cross == null && y <= BUOY.y) cross = x;
+      var R = R1 + (R2 - R1) * (i / n);
+      x += R * Math.cos(th) * dth; y -= R * Math.sin(th) * dth; th += dth;
+    }
+    if (cross == null || cross < BUOY.x + 0.5) return -1;                     // ブイを回り込んでいない
+    if (xin > BUOY.x) md = Math.min(md, Math.abs(yi));
+    return md;
+  }
+  function solveXin(sp) {
+    var lo = 95, hi = 175;
+    for (var it = 0; it < 34; it++) {
+      var m = (lo + hi) / 2;
+      if (turnMinDist(m, sp.yi, sp.R1, sp.R2) < sp.dz) lo = m; else hi = m;
+    }
+    return hi;
+  }
+
+  // ラインを決める順: 相手(捲る相手・差す相手・ついて行く相手)と、先に回る内の艇のラインを先に決める
+  function deps(b, byC, boats) {
+    var d = [];
+    if (b.ref) d.push(b.ref);
+    if (b.under) d.push(b.under);
+    if ((b.role === "zen" || b.role === "makurizashi" || b.role === "sashi") && byC[1]) d.push(byC[1]);
+    if (b.role === "sashi" || b.role === "makurizashi")
+      boats.forEach(function (o) { if (o.course < b.course && o.tArr < b.tArr - 0.04 && o.role !== "soto") d.push(o); });
+    if (b.role === "soto") boats.forEach(function (o) { if (o.course < b.course && o.role !== "soto") d.push(o); });
+    return d.filter(function (o) { return o && o !== b; });
+  }
+  function specs(boats, byC) {
+    boats.forEach(function (b) { b.sp = null; });
+    var left = boats.slice().sort(function (a, b) { return (ORDER[a.role] * 10 + a.course) - (ORDER[b.role] * 10 + b.course); });
+    while (left.length) {
+      var k = 0;
+      for (var i = 0; i < left.length; i++) if (deps(left[i], byC, boats).every(function (o) { return o.sp; })) { k = i; break; }
+      var b = left.splice(k, 1)[0];
+      b.sp = specOf(b, byC, boats);
+    }
+    boats.forEach(function (x) {
+      if (x.role !== "makurizashi") return;
+      x.over.forEach(function (o) { if (o.sp && !o.win && o.sp.yi < x.sp.yi + 1.6) { o.sp.yi = x.sp.yi + 1.6; finishSpec(o.sp); } });
+    });
+  }
+
+  // 1マークまでの横の動き(1mごと)。絞る・前を横切る艇は、内の艇より1艇身以上前に出るまで、その艇の外にとどまる
+  function smooth1(a, r) {
+    var n = a.length, out = new Float32Array(n);
+    for (var i = 0; i < n; i++) { var s = 0, m = 0; for (var j = Math.max(0, i - r); j <= Math.min(n - 1, i + r); j++) { s += a[j]; m++; } out[i] = s / m; }
+    for (i = 0; i < n; i++) a[i] = out[i];
+  }
+  function slopeLimit(a, g) {
+    for (var i = 1; i < a.length; i++) a[i] = clamp(a[i], a[i - 1] - g, a[i - 1] + g);
+    for (i = a.length - 2; i >= 0; i--) a[i] = clamp(a[i], a[i + 1] - g, a[i + 1] + g);
+  }
+  function approachOf(b, sorted) {
+    var sp = b.sp, L = b.lane, xe = Math.max(30, sp.xin - 12), n = Math.ceil(sp.xin) + 2, ys = new Float32Array(n), k;
+    var w0 = sp.sq ? 14 : sp.cross ? sp.xin - 56 : sp.late ? sp.xin - 58 : sp.follow ? 40 : 22, w1 = sp.sq ? Math.min(95, xe) : sp.cross ? sp.xin - 5 : xe;
+    var tr = sp.trail && sp.trail.ay ? sp.trail.ay : null;
+    for (k = 0; k < n; k++) {
+      if (tr) {                                                               // 前の艇の外(2.8m)について寄っていく
+        var base = tr[Math.min(k, tr.length - 1)] + 2.8;
+        ys[k] = L + (base - L) * sstep(10, 75, k);
+        ys[k] += (sp.yi - ys[k]) * sstep(xe - 10, xe, k);
+      } else ys[k] = L + (sp.yi - L) * sstep(w0, w1, k);
+    }
+    var floors = [];
+    if (!sp.cross && !tr) {
+      sorted.forEach(function (o) {
+        if (o.course >= b.course || !o.ay) return;
+        var fl = new Float32Array(n).fill(-99);
+        for (var k2 = 0; k2 < n; k2++) {
+          var xo = runX(o, runT(b, k2));
+          if (sp.sq && k2 - xo >= 1.2) break;                                   // 絞る艇は、舳先が内の艇の舳先より前に出たら寄せ始める(内の艇は引いて入れる)
+          fl[k2] = o.ay[clamp(Math.round(xo), 0, o.ay.length - 1)] + 2.7;      // ほかの艇は内の艇の外にとどまる
+        }
+        floors.push(fl);
+      });
+    }
+    function applyFloors() { floors.forEach(function (fl) { for (var k3 = 0; k3 < n; k3++) if (ys[k3] < fl[k3]) ys[k3] = fl[k3]; }); }
+    // 横の動きの速さの上限(前に進む量に対する割合)。横切る艇は1マークの手前で舳先を内に向けて切り込む
+    applyFloors(); smooth1(ys, 5); applyFloors(); slopeLimit(ys, sp.cross ? 0.42 : sp.sq ? 0.2 : 0.16); applyFloors(); smooth1(ys, 2);
+    return ys;
+  }
+  function approach(boats) {
+    var sorted = boats.slice().sort(function (a, b) { return a.course - b.course; });
+    sorted.forEach(function (b) { b.ay = null; });
+    sorted.forEach(function (b) {
+      var ys = approachOf(b, sorted), sp = b.sp, yEnd = ys[ys.length - 1];
+      if (yEnd > sp.yi + 0.6) {                                               // 寄せきれなかった(内の艇が壁になった) → その位置から回る
+        var d = yEnd - sp.yi;
+        sp.yi = yEnd; sp.dz += d * 0.8; sp.yo -= d * 0.8; sp.blocked = d;
+        finishSpec(sp);
+        ys = approachOf(b, sorted);
+      }
+      b.ay = ys;
+    });
+  }
+
+  function makePath(b) {
+    var sp = b.sp, pts = [], i, ay = b.ay;
+    for (var x = 0; x < sp.xin; x += 0.5) {
+      var k = Math.min(ay.length - 2, Math.floor(x)), f = x - k;
+      pts.push([x, ay[k] + (ay[k + 1] - ay[k]) * f]);
+    }
+    var iStart = pts.length, n = 200, dth = Math.PI / n, px = sp.xin, py = sp.yi, th = 0;
+    for (i = 0; i <= n; i++) {
+      pts.push([px, py]);
+      var R = sp.R1 + (sp.R2 - sp.R1) * (i / n);
+      px += R * Math.cos(th) * dth; py -= R * Math.sin(th) * dth; th += dth;
     }
     var iEnd = pts.length - 1, ex = pts[iEnd];
-    for (var d = 0.5; d <= 220; d += 0.5) pts.push([ex[0] - d, ex[1] + 3 * sstep(0, 45, d)]);
+    for (var d = 0.5; d <= 240; d += 0.5) pts.push([ex[0] - d, ex[1] + 2.2 * sstep(12, 80, d)]);   // 2マークへ向けて少しずつ内へ
     // つなぎ目の折れをなくす(前後の点でならす)
-    var n = pts.length, sm = new Array(n);
-    for (i = 0; i < n; i++) {
+    var N = pts.length, sm = new Array(N);
+    for (i = 0; i < N; i++) {
       if (i < 8) { sm[i] = pts[i]; continue; }
       var sx = 0, sy = 0, m = 0;
-      for (var u = i - 7; u <= i + 7; u++) { if (u < 0 || u >= n) continue; sx += pts[u][0]; sy += pts[u][1]; m++; }
+      for (var u = i - 7; u <= i + 7; u++) { if (u < 0 || u >= N) continue; sx += pts[u][0]; sy += pts[u][1]; m++; }
       sm[i] = [sx / m, sy / m];
     }
-    var s = [0], k = [0], minB = 1e9;
-    for (i = 1; i < n; i++) s.push(s[i - 1] + Math.hypot(sm[i][0] - sm[i - 1][0], sm[i][1] - sm[i - 1][1]));
-    for (i = 1; i < n - 1; i++) {
+    var s = new Float32Array(N), kk = new Float32Array(N), minB = 1e9;
+    for (i = 1; i < N; i++) s[i] = s[i - 1] + Math.hypot(sm[i][0] - sm[i - 1][0], sm[i][1] - sm[i - 1][1]);
+    for (i = 1; i < N - 1; i++) {
       var a1 = Math.atan2(sm[i][1] - sm[i - 1][1], sm[i][0] - sm[i - 1][0]);
       var a2 = Math.atan2(sm[i + 1][1] - sm[i][1], sm[i + 1][0] - sm[i][0]);
-      var da = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
-      k.push(da / ((s[i + 1] - s[i - 1]) / 2 || 1));
+      kk[i] = Math.abs(angd(a2, a1)) / ((s[i + 1] - s[i - 1]) / 2 || 1);
     }
-    k.push(0);
-    for (i = 0; i < n; i++) minB = Math.min(minB, Math.hypot(sm[i][0] - BUOY.x, sm[i][1] - BUOY.y));
-    var ks = k.map(function (_, j) { var sum = 0, c = 0; for (var u = Math.max(0, j - 6); u <= Math.min(n - 1, j + 6); u++) { sum += k[u]; c++; } return sum / c; });
-    return { pts: sm, s: s, k: ks, sStart: s[iStart], sEnd: s[iEnd], minB: minB };
-  }
-
-  // ブイから必ず CLEAR + 余裕 を空けるまで、外への振り出しを広げる
-  function buildPath(b) {
-    var del = b.del, P = null;
-    for (var tries = 0; tries < 40; tries++) {
-      P = makePath(b, del);
-      if (P.minB >= CLEAR + 0.5) break;
-      del += 0.4;
-    }
-    return P;
+    for (i = 0; i < N; i++) minB = Math.min(minB, Math.hypot(sm[i][0] - BUOY.x, sm[i][1] - BUOY.y));
+    var ks = new Float32Array(N);
+    for (i = 0; i < N; i++) { var sum = 0, c = 0; for (u = Math.max(0, i - 6); u <= Math.min(N - 1, i + 6); u++) { sum += kk[u]; c++; } ks[i] = sum / c; }
+    var px2 = new Float32Array(N), py2 = new Float32Array(N), ph = new Float32Array(N);
+    for (i = 0; i < N; i++) { px2[i] = sm[i][0]; py2[i] = sm[i][1]; }
+    for (i = 0; i < N; i++) { var a = Math.max(0, i - 1), z = Math.min(N - 1, i + 1); ph[i] = Math.atan2(py2[z] - py2[a], px2[z] - px2[a]); }
+    return { x: px2, y: py2, h: ph, s: s, k: ks, sStart: s[iStart], sEnd: s[iEnd], minB: minB };
   }
 
   // 道のり s の地点の位置と向き
   function pathAt(P, sv) {
     var s = P.s, lo = 0, hi = s.length - 1;
-    if (sv <= 0) return { x: P.pts[0][0], y: P.pts[0][1], h: 0 };
-    if (sv >= s[hi]) { var a = P.pts[hi - 1], z = P.pts[hi]; return { x: z[0], y: z[1], h: Math.atan2(z[1] - a[1], z[0] - a[0]) }; }
+    if (sv <= 0) return { x: P.x[0], y: P.y[0], h: P.h[0] };
+    if (sv >= s[hi]) return { x: P.x[hi], y: P.y[hi], h: P.h[hi] };
     while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (s[mid] <= sv) lo = mid; else hi = mid; }
-    var f = (sv - s[lo]) / (s[hi] - s[lo] || 1), p = P.pts[lo], n = P.pts[hi];
-    return { x: p[0] + (n[0] - p[0]) * f, y: p[1] + (n[1] - p[1]) * f, h: Math.atan2(n[1] - p[1], n[0] - p[0]) };
+    var f = (sv - s[lo]) / (s[hi] - s[lo] || 1);
+    return { x: P.x[lo] + (P.x[hi] - P.x[lo]) * f, y: P.y[lo] + (P.y[hi] - P.y[lo]) * f, h: P.h[lo] + angd(P.h[hi], P.h[lo]) * f };
   }
 
-  // ---- 時間を進めて全艇を走らせる
-  function simulate(boats) {
-    var N = Math.round((T_MAX - T0) / DT) + 1;
-    computeLines(boats);
+  // 位置関係を比べるための座標: s = コースに沿って進んだ量(旋回部分はブイのまわりの角度)、l = 内からの距離(直線はブイの線から、旋回はブイから)
+  function cframe(x, y) {
+    if (x <= BUOY.x) return y >= BUOY.y ? [x, y - BUOY.y] : [BUOY.x + R0 * Math.PI + (BUOY.x - x), BUOY.y - y];
+    var phi = Math.atan2(y - BUOY.y, x - BUOY.x);
+    return [BUOY.x + R0 * (Math.PI / 2 - phi), Math.hypot(x - BUOY.x, y - BUOY.y)];
+  }
+
+  function geometry(boats, byC) {
+    specs(boats, byC);
+    approach(boats);
     boats.forEach(function (b) {
-      b.vmax = b.vmax0 + b.bias.vmax;
-      b.alat = b.alat0 * b.bias.alat;
-      b.P = buildPath(b);
-      var P = b.P, n = P.s.length, vl = new Array(n);
-      for (var i = 0; i < n; i++) vl[i] = Math.min(b.vmax, Math.sqrt(b.alat / Math.max(P.k[i], 1e-4)));
-      for (i = n - 2; i >= 0; i--) vl[i] = Math.min(vl[i], Math.sqrt(vl[i + 1] * vl[i + 1] + 2 * 6.5 * (P.s[i + 1] - P.s[i])));
-      b.vl = vl;
-      b.X = new Float32Array(N); b.Y = new Float32Array(N); b.H = new Float32Array(N); b.V = new Float32Array(N); b.S = new Float32Array(N);
-      b.sv = 0; b.v = b.vline; b.off = 0; b.offV = 0; b.done = null; b.acc = null; b.wakeLoss = 0; b.sinkI = null;
+      for (var tries = 0; tries < 5; tries++) {
+        b.P = makePath(b);
+        if (b.P.minB >= CLEAR + 0.15) break;
+        b.sp.dz += CLEAR + 0.3 - b.P.minB; finishSpec(b.sp);
+      }
+      speedProfile(b);
     });
-    function vlimAt(b, sv) {
-      var s = b.P.s, lo = 0, hi = s.length - 1, f = 1;
-      b.slow.forEach(function (z) { var w = sstep(z.s0 - 12, z.s0, sv) * (1 - sstep(z.s1, z.s1 + 12, sv)); f *= 1 - (1 - z.f) * w; });
-      if (sv >= s[hi]) return b.vl[hi] * f;
-      while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (s[mid] <= sv) lo = mid; else hi = mid; }
-      return b.vl[lo] * f;
+  }
+
+  // ======================================================================
+  // 速さと時間
+  // ======================================================================
+  // 走れる速さ: 曲がり具合(横向きの加速度の上限)・直線の最高速・旋回中の上限(大回りでも全速のままでは回れない。捲りは握って回るぶん速い)
+  function speedProfile(b) {
+    var P = b.P, n = P.s.length, vl = new Float32Array(n);
+    var full = (b.role === "makuri" || b.role === "nidan" || b.role === "zen") && !b.fail;
+    var vt0 = full ? 11.4 : 10.4;
+    for (var i = 0; i < n; i++) { var kk = Math.max(P.k[i], 1e-4); vl[i] = Math.min(b.vmax, Math.sqrt(b.alat / kk), vt0 + 0.25 / kk); }
+    for (i = n - 2; i >= 0; i--) vl[i] = Math.min(vl[i], Math.sqrt(vl[i + 1] * vl[i + 1] + 2 * 6.5 * (P.s[i + 1] - P.s[i])));
+    b.vl = vl;
+  }
+  function zoneF(b, sv) {
+    var f = 1, Z = b.slow;
+    for (var j = 0; j < Z.length; j++) {
+      var z = Z[j];
+      if (sv < z.s0 - 14 || sv > z.s1 + 12) continue;
+      f *= 1 - (1 - z.f) * sstep(z.s0 - 14, z.s0, sv) * (1 - sstep(z.s1, z.s1 + 12, sv));
     }
-    for (var i = 0; i < N; i++) {
+    return f;
+  }
+  function vlimAt(b, sv) {
+    var s = b.P.s, lo = 0, hi = s.length - 1, base;
+    if (sv >= s[hi]) base = b.vl[hi];
+    else if (sv <= 0) base = b.vl[0];
+    else { while (hi - lo > 1) { var m = (lo + hi) >> 1; if (s[m] <= sv) lo = m; else hi = m; } base = b.vl[lo]; }
+    return base * zoneF(b, sv);
+  }
+
+  // 1艇を時間に沿って走らせる。先に決めた艇(planned)が前にいれば、間合いを取る
+  function integrate(b, planned) {
+    var X = b.X, Y = b.Y, H = b.H, V = b.V, S = b.S, P = b.P, s = 0, v = b.vline, started = false;
+    b.done = null;
+    for (var i = 0; i < NF; i++) {
       var t = T0 + i * DT;
-      // 1) 前のコマの位置関係から、加速と横の動きを決める
-      boats.forEach(function (b) {
-        if (t < b.st || i === 0) return;
-        var hb = b.H[i - 1], cs = Math.cos(hb), sn = Math.sin(hb), lead = null, gap = 1e9, latF = 0;
-        boats.forEach(function (a) {
-          if (a === b) return;
-          var dx = a.X[i - 1] - b.X[i - 1], dy = a.Y[i - 1] - b.Y[i - 1];
-          var fwd = dx * cs + dy * sn, lat = -dx * sn + dy * cs;     // lat>0: 相手が右(外)側
-          if (fwd > 0 && fwd < 30 && Math.abs(lat) < HULL_W + 1.4) {
-            var g = fwd - HULL_L - 0.3;
-            if (g < gap) { gap = g; lead = a; }
-          }
-          if (Math.abs(fwd) < HULL_L + 1.5 && Math.abs(lat) < 3.6) {
-            var m = 3.6 - Math.abs(lat);
-            latF += -(lat >= 0 ? 1 : -1) * (m * m * 3.2 + (Math.abs(lat) < 2.3 ? (2.3 - Math.abs(lat)) * 30 : 0));
-          }
-        });
-        var bx = b.X[i - 1] - BUOY.x, by = b.Y[i - 1] - BUOY.y, bd = Math.hypot(bx, by);
-        if (bd < CLEAR + 1.0) latF += ((bx * -sn + by * cs) >= 0 ? 1 : -1) * (CLEAR + 1.0 - bd) * 24;   // ブイからは離れる
-        // 引き波: 少し前に他艇が通った跡を横切ると失速する(真後ろを追うときは少しだけ)
-        var wake = 0;
-        boats.forEach(function (a) {
-          if (a === b) return;
-          for (var lag = 15; lag <= 90; lag += 15) {
-            var j = i - 1 - lag;
-            if (j < 0 || T0 + j * DT < a.st) break;
-            var wx = b.X[i - 1] - a.X[j], wy = b.Y[i - 1] - a.Y[j];
-            if (wx * wx + wy * wy < 6.8) {
-              var ang = Math.abs(Math.atan2(Math.sin(hb - a.H[j]), Math.cos(hb - a.H[j])));
-              wake += (ang > 0.35 ? 1 : 0.25) * (1 - lag / 110);
-            }
-          }
-        });
-        var aWake = wake > 0 ? -Math.min(6, 3.5 * wake) : 0;
-        if (wake > 0) latF += Math.sin(t * 23 + b.course * 1.7) * 1.6 * Math.min(1, wake);   // 波で少し揺れる
-        // 前に艇がいれば間合いを取る(車間をとる考え方: 近く・速く迫るほど強く減速)
-        var v0 = vlimAt(b, b.sv + b.v * 0.3);
-        var aFree = b.v < v0 ? Math.min(0.95 * (b.vmax - b.v) + 0.6, (v0 - b.v) * 2.5) : -Math.min(8, (b.v - v0) * 3);
-        var aInt = 0;
-        if (lead) {
-          var dv = b.v - lead.V[i - 1], sStar = 1.2 + b.v * 0.22 + b.v * dv / (2 * Math.sqrt(18));
-          aInt = -3 * Math.pow(Math.max(0, sStar) / Math.max(0.2, gap), 2);
+      if (t < b.st) {
+        var r = b.st - t;
+        X[i] = -(b.vline * r - b.apre * r * r / 2); Y[i] = b.lane; H[i] = 0; V[i] = b.vline - b.apre * r; S[i] = 0;
+        continue;
+      }
+      if (started) {
+        var vlim = vlimAt(b, s + v * 0.25);
+        var a = v < vlim ? Math.min(0.95 * (b.vmax - v) + 0.6, (vlim - v) * 2.5) : -Math.min(9, (v - vlim) * 3);
+        var hb = H[i - 1], cs = Math.cos(hb), sn = Math.sin(hb), gap = 1e9, lv = 0;
+        for (var q = 0; q < planned.length; q++) {
+          var o = planned[q], dx = o.X[i - 1] - X[i - 1], dy = o.Y[i - 1] - Y[i - 1];
+          if (dx * dx + dy * dy > 900) continue;
+          var fw = dx * cs + dy * sn, lt = -dx * sn + dy * cs;
+          if (fw > 0 && Math.abs(lt) < HULL_W + 1.0) { var g = fw - HULL_L - 0.4; if (g < gap) { gap = g; lv = o.V[i - 1]; } }
         }
-        b.acc = clamp(aFree + aInt + aWake, -12, 4.5);
-        b.latF = latF;
-        if (aWake < 0 && b.v > 6) {
-          b.wakeLoss += -aWake * DT;
-          if (b.sinkI == null && b.wakeLoss >= 1.6) b.sinkI = i;
-        }
-      });
-      // 2) 動かす
-      boats.forEach(function (b) {
-        var x, y, h, v;
-        if (t < b.st) {                                          // スタート前: 平均STでラインを越えるように助走
-          var r = b.st - t;
-          x = -(b.vline * r - b.apre * r * r / 2); y = b.lane; h = 0; v = b.vline - b.apre * r;
-        } else {
-          if (b.acc != null) {
-            b.v = Math.max(5, b.v + b.acc * DT);
-            var lim = Math.min(3, 0.16 * b.v);                  // 横の動きは前に進む速さの一部まで(低速でくるくる回らない)
-            b.offV = clamp(b.offV + (b.latF - b.off * 2.0 - b.offV * 3.0) * DT, -lim, lim);
-            b.off = clamp(b.off + b.offV * DT, -6, 6);
-          }
-          b.sv += b.v * DT;
-          var p = pathAt(b.P, b.sv);
-          x = p.x - Math.sin(p.h) * b.off; y = p.y + Math.cos(p.h) * b.off; h = p.h; v = b.v;
-          if (b.done == null && b.sv >= b.P.sEnd) b.done = t;
-        }
-        b.X[i] = x; b.Y[i] = y; b.H[i] = h; b.V[i] = v; b.S[i] = b.sv;
-      });
+        if (gap < 1e8) { var dv = v - lv, ss = 1.0 + v * 0.2 + v * dv / (2 * Math.sqrt(18)); a -= 3 * Math.pow(Math.max(0, ss) / Math.max(0.25, gap), 2); }
+        v = Math.max(4, v + clamp(a, -12, 4.5) * DT);
+        s += v * DT;
+      }
+      started = true;
+      var p = pathAt(P, s);
+      X[i] = p.x; Y[i] = p.y; V[i] = v; S[i] = s;
+      H[i] = i > 0 ? H[i - 1] + angd(p.h, H[i - 1]) : p.h;
+      if (b.done == null && s >= P.sEnd) b.done = t;
     }
-    boats.forEach(function (b) { if (b.done == null) b.done = T_MAX; smoothTrack(b, N); });
-    var tEnd = Math.min(T_MAX - 0.1, Math.max.apply(null, boats.map(function (b) { return b.done; })) + 2.0);
-    return { N: N, tEnd: tEnd };
+    if (b.done == null) b.done = T_MAX;
+  }
+
+  // 向きのある長方形どうしが重なるか
+  function sat(ax, ay, ah, bx, by, bh, hl, hw) {
+    var ca = Math.cos(ah), sa = Math.sin(ah), cb = Math.cos(bh), sb = Math.sin(bh), dx = bx - ax, dy = by - ay;
+    var axes = [ca, sa, -sa, ca, cb, sb, -sb, cb];
+    for (var k = 0; k < 8; k += 2) {
+      var nx = axes[k], ny = axes[k + 1];
+      var ra = hl * Math.abs(ca * nx + sa * ny) + hw * Math.abs(-sa * nx + ca * ny);
+      var rb = hl * Math.abs(cb * nx + sb * ny) + hw * Math.abs(-sb * nx + cb * ny);
+      if (Math.abs(dx * nx + dy * ny) > ra + rb) return false;
+    }
+    return true;
+  }
+  var ML = 0.5, MW = 0.6;                                     // ぶつからないように空ける余裕(前後・横)
+  function firstConflict(b, planned) {
+    var best = null, i0b = Math.max(0, Math.round((b.st - T0) / DT));
+    for (var q = 0; q < planned.length; q++) {
+      var o = planned[q], i0 = Math.max(i0b, Math.round((o.st - T0) / DT));
+      for (var i = i0; i < NF; i++) {
+        if (best && i >= best.i) break;
+        var dx = o.X[i] - b.X[i], dy = o.Y[i] - b.Y[i];
+        if (dx * dx + dy * dy > 30) continue;
+        if (sat(b.X[i], b.Y[i], b.H[i], o.X[i], o.Y[i], o.H[i], (HULL_L + ML) / 2, (HULL_W + MW) / 2)) { best = { i: i, o: o }; break; }
+      }
+    }
+    return best;
+  }
+  // ぶつかる地点に b を置いたまま、相手がそこを抜けるまでの時間(これだけ遅らせれば先に行かせられる)
+  function clearTime(b, cf) {
+    var i = cf.i, o = cf.o, x = b.X[i], y = b.Y[i], h = b.H[i], j = i;
+    while (j < NF - 1 && sat(x, y, h, o.X[j], o.Y[j], o.H[j], (HULL_L + ML + 0.4) / 2, (HULL_W + MW + 0.3) / 2)) j++;
+    return Math.max(0.08, (j - i) * DT + 0.12);
+  }
+  // 相手が後ろから突っ込んでくる形か(この場合は b を遅らせても避けられない)
+  function rearEnd(b, cf) {
+    var i = cf.i, o = cf.o, dx = o.X[i] - b.X[i], dy = o.Y[i] - b.Y[i];
+    var fw = dx * Math.cos(b.H[i]) + dy * Math.sin(b.H[i]);
+    return fw < -1.2 && Math.abs(angd(o.H[i], b.H[i])) < 0.7 && o.V[i] > b.V[i];
+  }
+  // sv の手前で need 秒ぶん遅らせる(近くに譲る区間があれば、まとめて強める)
+  function addYield(b, sv, need) {
+    var vb = Math.max(9, vlimAt(b, Math.max(0, sv - 15))), Lz = clamp(need * 80, 26, 80), add = need * vb / Lz;
+    for (var j = 0; j < b.slow.length; j++) {
+      var z = b.slow[j];
+      if (z.kind === "yield" && sv - Lz < z.s1 + 6 && sv + 2 > z.s0 - 6) {
+        z.s0 = Math.min(z.s0, sv - Lz); z.s1 = Math.max(z.s1, sv + 2);
+        z.f = Math.max(0.45, 1 / (1 / z.f + add));
+        return;
+      }
+    }
+    b.slow.push({ s0: sv - Lz, s1: sv + 2, f: Math.max(0.45, 1 / (1 + add)), kind: "yield" });
+  }
+  // 1マークの手前(x=128)を通る時刻と、そのときの道のり
+  var X_GATE = 128;
+  function gateOf(b) {
+    for (var i = Math.max(1, Math.round((b.st - T0) / DT)); i < NF; i++) {
+      if (b.X[i] >= X_GATE && b.Y[i] > -2 && b.S[i] < b.P.sStart + 6) {
+        var f = (X_GATE - b.X[i - 1]) / ((b.X[i] - b.X[i - 1]) || 1);
+        return { t: T0 + (i - 1 + f) * DT, s: b.S[i - 1] + (b.S[i] - b.S[i - 1]) * f };
+      }
+      if (b.S[i] > b.P.sStart + 6) break;
+    }
+    return null;
+  }
+  // この艇が1マークの手前で後ろにいるべき艇(戦法の上で、先に回らせる艇)
+  function mustFollow(b, boats) {
+    var out = [];
+    if ((b.role === "sashi" || b.role === "mark") && b.ref) out.push(b.ref);
+    if (b.role === "makurizashi" && b.under) out.push(b.under);
+    boats.forEach(function (x) {
+      if (x === b) return;
+      if (x.role === "makurizashi" && x.over.indexOf(b) >= 0) out.push(x);
+      if ((x.role === "makuri" || x.role === "nidan") && !x.fail && b.course < x.course &&
+          ((x.ref === b && b.role !== "hari") || b.squeezed)) out.push(x);
+    });
+    return out;
+  }
+  // 決めた順に時間を決める。後の艇が譲る。後ろから突っ込まれる形になったら、順番の入れ替えを返す
+  function timing(order, noSwap) {
+    var planned = [], boats = order.slice();
+    for (var q = 0; q < order.length; q++) {
+      var b = order[q], mf = mustFollow(b, boats).filter(function (o) { return planned.indexOf(o) >= 0; });
+      b.slow = b.baseSlow.slice();
+      for (var it = 0; it < 40; it++) {
+        integrate(b, planned);
+        var cf = firstConflict(b, planned);
+        if (cf) {
+          if (!noSwap && rearEnd(b, cf)) return { first: b, then: cf.o };
+          addYield(b, b.S[cf.i], clearTime(b, cf));
+          continue;
+        }
+        var gb = gateOf(b), need = 0;
+        if (gb) mf.forEach(function (o) { var go = gateOf(o); if (go) need = Math.max(need, go.t + 0.1 - gb.t); });
+        if (need <= 0.005) break;
+        addYield(b, gb.s, need + 0.02);
+      }
+      planned.push(b);
+    }
+    return null;
+  }
+
+  // ---- 優先する順番: 前を横切る艇・捲る艇・先に回る艇が先。差す艇・ついて行く艇・外を回す艇は後(譲る)
+  function priorityOrder(boats, byC, swaps) {
+    var edges = [];
+    function e(a, b) { if (a && b && a !== b) edges.push([a, b]); }
+    boats.forEach(function (x) {
+      if ((x.role === "makuri" || x.role === "nidan") && !x.fail) boats.forEach(function (o) { if (o.course < x.course) e(x, o); });
+      if (x.role === "nidan" && x.ref) e(x, x.ref);
+      if ((x.role === "makuri" || x.role === "nidan") && x.fail && byC[1]) e(byC[1], x);
+      if (x.role === "sashi") {
+        if (x.ref) e(x.ref, x);
+        boats.forEach(function (o) { if (o.course < x.course && o.role !== "sashi" && o.role !== "makurizashi") e(o, x); });
+      }
+      if (x.role === "makurizashi") { if (x.under) e(x.under, x); x.over.forEach(function (o) { e(x, o); }); }
+      if (x.role === "mark" && x.ref) e(x.ref, x);
+      if (x.role === "soto" || x.role === "zen") boats.forEach(function (o) { if (o.course < x.course && !o.squeezed && o.role !== "makurizashi") e(o, x); });
+    });
+    (swaps || []).forEach(function (s) {                                   // 後ろから突っ込む形になった組は、前にいる艇を先に(戦法の決まりより優先)
+      edges = edges.filter(function (ed) { return !(ed[0] === s.then && ed[1] === s.first); });
+      e(s.first, s.then);
+    });
+    var left = boats.slice(), out = [];
+    while (left.length) {
+      var free = left.filter(function (b) { return !edges.some(function (ed) { return ed[1] === b && left.indexOf(ed[0]) >= 0 && ed[0] !== b; }); });
+      if (!free.length) free = left.slice();                                  // 決まりが食い違うときは、着く順で
+      free.sort(function (a, b) { return (a.tArr - b.tArr) || (a.course - b.course); });
+      out.push(free[0]); left.splice(left.indexOf(free[0]), 1);
+    }
+    return out;
+  }
+
+  // ---- 戦法ごとの減速(差し構え・待ち・残す・ついて行く)と、捲られた艇が引き波で沈む分
+  function roleSlows(b, boats) {
+    var P = b.P, s0 = P.sStart, tl = P.sEnd - P.sStart, z = [];
+    if (b.role === "sashi") z.push({ s0: s0 - 40, s1: s0 - 4, f: b.squeezed ? 0.93 : 0.955 });
+    if (b.wait) z.push({ s0: s0 - 45, s1: s0 - 4, f: 0.95 - 0.04 * b.wait });
+    if (b.role === "nokoshi") z.push({ s0: s0 - 30, s1: s0, f: 0.95 });
+    if (b.role === "mark") z.push({ s0: s0 - 40, s1: s0 - 6, f: 0.975 });
+    // 減速せずに回って流れた艇(全速の1コース・張った1コース・張られた艇)は、膨らんだぶん出口で失速する
+    var flow = (b.fail ? 0.85 : b.role === "hari" ? 0.86 : b.role === "zensoku" ? 0.9 : b.flowOut ? 0.87 : b.role === "nigeHari" ? 0.96 : 1) - (b.flowExtra || 0);
+    if (flow < 1) z.push({ s0: s0 + tl * 0.35, s1: P.sEnd + 14, f: Math.max(0.7, flow), kind: "flow" });
+    b.sunk = 0;
+    boats.forEach(function (a) {                                              // 前に出て捲った艇の引き波
+      if ((a.role !== "makuri" && a.role !== "nidan") || a.fail || a === b || b.course > a.course) return;
+      var victim = a.ref === b || (b.squeezed && b.course < a.course) || (a.role === "nidan" && a.ref === b);
+      if (!victim) return;
+      var f = a.ref === b ? 0.85 : 0.9;
+      z.push({ s0: s0 + tl * 0.25, s1: s0 + tl * 0.95, f: f, kind: "wake" });
+      b.sunk = Math.max(b.sunk, 1 - f);
+    });
+    return z;
+  }
+
+  // ---- 引き波: 少し前に他艇が通った跡。左回りの旋回では外側に強い波が残り、内側は弱い。真後ろは泡で進みにくい
+  function wakeExposure(b, boats) {
+    var W = b.WK, iS = Math.max(1, Math.round((b.st + 0.8 - T0) / DT)), iE = Math.min(NF - 1, Math.round((b.done + 1.5 - T0) / DT));
+    W.fill(0);
+    boats.forEach(function (a) { if (!a.HC) { a.HC = new Float32Array(NF); a.HS = new Float32Array(NF); } for (var j = 0; j < NF; j++) { a.HC[j] = Math.cos(a.H[j]); a.HS[j] = Math.sin(a.H[j]); } });
+    for (var i = iS; i <= iE; i++) {
+      var hb = b.H[i], w = 0;
+      for (var q = 0; q < boats.length; q++) {
+        var a = boats[q];
+        if (a === b) continue;
+        var ddx = a.X[i] - b.X[i], ddy = a.Y[i] - b.Y[i];
+        if (ddx * ddx + ddy * ddy > 1600) continue;
+        for (var lag = 9; lag <= 96; lag += 9) {
+          var j = i - lag;
+          if (j < 1 || T0 + j * DT < a.st + 0.2) break;
+          var hx = a.HC[j], hy = a.HS[j], dx = b.X[i] - a.X[j], dy = b.Y[i] - a.Y[j];
+          var fw = dx * hx + dy * hy;
+          if (fw > 2.2 || fw < -2.2) continue;
+          var lt = -dx * hy + dy * hx, tau = lag * DT, spread = 0.5 + 2.2 * tau, decay = Math.exp(-tau / 1.1);
+          var turn = clamp(Math.abs(a.H[j] - a.H[j - 1]) / DT / 0.7, 0, 1);
+          var outer = (0.3 + 0.7 * turn) * decay, inner = (0.3 - 0.15 * turn) * decay, cr = Math.abs(angd(hb, a.H[j])) > 0.26 ? 1 : 0.5, ww = 0;
+          if (Math.abs(lt - spread) < 1.0) ww += outer * (1 - Math.abs(lt - spread));
+          if (Math.abs(lt + spread) < 1.0) ww += inner * (1 - Math.abs(lt + spread));
+          if (Math.abs(lt) < Math.max(0.4, spread - 1.0) && tau < 0.7) ww += 0.45 * Math.exp(-tau / 0.45);
+          w += ww * cr;
+        }
+      }
+      W[i] = Math.min(1.5, w);
+    }
+  }
+  // 引き波を受けた区間で速度を落とす(区間ごとに、受けた強さに応じて)
+  function wakeDips(boats) {
+    boats.forEach(function (b) {
+      wakeExposure(b, boats);
+      b.wakeSlow = [];
+      var W = b.WK, i = 0;
+      while (i < NF) {
+        if (W[i] < 0.3) { i++; continue; }
+        var i0 = i, pk = 0;
+        while (i < NF && W[i] >= 0.15) { pk = Math.max(pk, W[i]); i++; }
+        if (b.S[i - 1] - b.S[i0] > 1.5) b.wakeSlow.push({ s0: b.S[i0], s1: b.S[i - 1], f: 1 - Math.min(0.3, 0.2 * pk), kind: "wake", pk: pk });
+      }
+    });
   }
 
   // 軌跡をならして(約0.1秒の幅)、向きは実際の進み方から出す
-  function smoothTrack(b, N) {
-    var X = b.X, Y = b.Y, sx = new Float32Array(N), sy = new Float32Array(N), K = [], R = 9, sig = 4, i, j, w, sum;
+  function smoothTrack(b) {
+    var N = NF, X = b.X, Y = b.Y, sx = new Float32Array(N), sy = new Float32Array(N), K = [], R = 9, sig = 4, i, j, w, sum;
     for (j = -R; j <= R; j++) K.push(Math.exp(-j * j / (2 * sig * sig)));
     for (i = 0; i < N; i++) {
       var ax = 0, ay = 0; sum = 0;
@@ -361,45 +808,249 @@
     for (i = 0; i < N; i++) {
       var a = Math.max(0, i - 2), c = Math.min(N - 1, i + 2), dx = sx[c] - sx[a], dy = sy[c] - sy[a];
       var hh = dx * dx + dy * dy > 1e-6 ? Math.atan2(dy, dx) : prev;
-      hh = prev + Math.atan2(Math.sin(hh - prev), Math.cos(hh - prev));   // 角度の折り返しをなくす
+      hh = prev + angd(hh, prev);
       H[i] = hh; prev = hh;
     }
     b.X = sx; b.Y = sy; b.H = H;
   }
 
-  function leaderAt(boats, i) {
-    var best = null;
-    boats.forEach(function (b) { if (b.done <= T0 + i * DT && (!best || b.X[i] < best.X[i])) best = b; });
-    return best;
+  // ======================================================================
+  // 位置関係: コースに沿った同じ地点(s)を、どちらが先に・どちら側(内外)を通ったか
+  // ======================================================================
+  var G0 = 70, GS = 0.5, NG = 360;                  // s = 70〜250
+  function gridOf(b, iEnd) {
+    var T = new Float32Array(NG).fill(NaN), Lg = new Float32Array(NG).fill(NaN), gi = 0;
+    var i0 = Math.max(1, Math.round((b.st - T0) / DT) + 1);
+    for (var i = i0; i <= iEnd && gi < NG; i++) {
+      var s0 = b.CS[i - 1], s1 = b.CS[i];
+      while (gi < NG && G0 + gi * GS <= s1) {
+        var sg = G0 + gi * GS;
+        if (sg >= s0) { var f = s1 > s0 ? (sg - s0) / (s1 - s0) : 0; T[gi] = T0 + (i - 1 + f) * DT; Lg[gi] = b.CL[i - 1] + (b.CL[i] - b.CL[i - 1]) * f; }
+        gi++;
+      }
+    }
+    b.Tg = T; b.Lg = Lg;
+  }
+  function gIdx(s) { return clamp(Math.round((s - G0) / GS), 0, NG - 1); }
+  var S_GATE = 125;
+  // X から見た Y との関係(同じ地点を通った時刻と、内外)
+  function pairRel(X, Y, sLast) {
+    var r = { pass: null, crossFront: null, crossBehind: null, gateAhead: false, endAhead: false, dTend: 0, overAt: false };
+    var prevT = null, prevL = null, g, gA = gIdx(98), gB = gIdx(sLast), gGate = gIdx(S_GATE);
+    for (g = gA; g <= gB; g++) {
+      var tx = X.Tg[g], ty = Y.Tg[g], lx = X.Lg[g], ly = Y.Lg[g];
+      if (isNaN(tx) || isNaN(ty)) { prevT = prevL = null; continue; }
+      var dT = tx - ty, dL = lx - ly, sg = G0 + g * GS;
+      if (prevT != null) {
+        if (prevT > 0.02 && dT <= 0.02 && sg >= 115) r.pass = { s: sg, g: g, inside: dL < 0 };            // 後ろから前へ(抜いた)。どちら側か
+        if (prevL > 0 && dL <= 0 && sg <= 185) {                                                       // 外から内へ線を横切った
+          if (dT < -0.1) r.crossFront = r.crossFront || { s: sg, g: g, dT: dT };
+          else if (dT > 0.1 && sg >= 115) r.crossBehind = r.crossBehind || { s: sg, g: g, dT: dT };
+        }
+        if (dT > 0.02 && prevT <= 0.02 && r.pass) r.pass = null;                                      // 抜き返された
+      }
+      prevT = dT; prevL = dL;
+    }
+    r.gateDT = 0;
+    if (!isNaN(X.Tg[gGate]) && !isNaN(Y.Tg[gGate])) { r.gateDT = X.Tg[gGate] - Y.Tg[gGate]; r.gateAhead = r.gateDT < -0.03; }
+    if (!isNaN(X.Tg[gB]) && !isNaN(Y.Tg[gB])) { r.dTend = X.Tg[gB] - Y.Tg[gB]; r.endAhead = r.dTend < 0; }
+    else r.endAhead = !isNaN(X.Tg[gB]) && isNaN(Y.Tg[gB]);
+    var gm = gIdx(BUOY.x + R0 * Math.PI * 0.4);                 // 旋回の中ほど(ブイの横)で、外を回りながら前にいたか
+    r.overAt = !isNaN(X.Tg[gm]) && !isNaN(Y.Tg[gm]) && X.Tg[gm] < Y.Tg[gm] - 0.05 && X.Lg[gm] > Y.Lg[gm];
+    return r;
+  }
+  function relations(boats, iEnd) {
+    boats.forEach(function (b) { gridOf(b, iEnd); });
+    // 全艇が通った一番先の地点まで比べる
+    var sLast = Math.min.apply(null, boats.map(function (b) { for (var g = NG - 1; g >= 0; g--) if (!isNaN(b.Tg[g])) return G0 + g * GS; return G0; }));
+    sLast = clamp(sLast, 170, 248);
+    var rel = { sLast: sLast };
+    boats.forEach(function (X) { boats.forEach(function (Y) { if (X !== Y) rel[X.course + "-" + Y.course] = pairRel(X, Y, sLast); }); });
+    return rel;
   }
 
-  function idxAtS(b, sv) { for (var i = 0; i < b.S.length; i++) if (T0 + i * DT >= b.st && b.S[i] >= sv) return i; return null; }
+  // ---- 走らせた結果から、各艇が実際にどう回ったかを決める(吹き出しと、決着パターンとの一致の確認に使う)
+  //      1マークの手前で前にいた内の艇を、どちら側から抜いたか。内から抜けば差し、外から抜けば捲り。
+  //      内から抜く前に、別の内の艇の前を横切っていれば(捲っていれば)まくり差し。
+  //      内の艇より前に出たまま、その外を回って先に出ていれば捲り。
+  function labels(boats, rel, iEnd) {
+    var out = {}, gL = gIdx(rel.sLast);
+    var order = boats.slice().sort(function (a, b) { var ta = a.Tg[gL], tb = b.Tg[gL]; if (isNaN(ta)) ta = 99; if (isNaN(tb)) tb = 99; return (ta - tb) || (b.CS[iEnd] - a.CS[iEnd]); });
+    boats.forEach(function (X) {
+      var c = X.course, L = { kind: null, inOf: [], outOf: [], over: [], behind: [], pos: order.indexOf(X) + 1 };
+      var inner = boats.filter(function (Y) { return Y.course < c; }), aheadAll = inner.length > 0, inOut = [];
+      inner.forEach(function (Y) {
+        var r = rel[c + "-" + Y.course];
+        if (!r.gateAhead) aheadAll = false;
+        if (r.pass && r.endAhead && !r.gateAhead) (r.pass.inside ? L.inOf : L.outOf).push(Y);
+        else if (r.endAhead && (r.crossFront || r.overAt)) L.over.push(Y);          // 前に出たまま、外を回るか前を横切った(捲った)
+        if (r.crossBehind) L.behind.push(Y);
+      });
+      // 外から捲ってきた艇の内を差した(内から抜いた)
+      boats.forEach(function (Y) {
+        if (Y.course <= c) return;
+        var r = rel[c + "-" + Y.course];
+        if (r.pass && r.pass.inside && r.endAhead && !r.gateAhead && (Y.role === "makuri" || Y.role === "nidan")) inOut.push(Y);
+      });
+      var overAll = L.outOf.concat(L.over.filter(function (y) { return L.outOf.indexOf(y) < 0; }));
+      if (c === 1) L.kind = L.pos === 1 ? "nige" : null;
+      else if (L.inOf.length) {
+        // 内から抜いた艇より外(自分との間)の艇を、前を横切るか外から抜いていれば、まくり差し(3〜6コースだけ)
+        var yin = Math.min.apply(null, L.inOf.map(function (y) { return y.course; }));
+        L.kind = c >= 3 && overAll.some(function (y) { return y.course > yin && y.course < c; }) ? "makurizashi" : "sashi";
+      }
+      else if (L.outOf.length || (aheadAll && L.over.length)) L.kind = "makuri";
+      else if (inOut.length) L.kind = "sashi";
+      else if (L.behind.length) L.kind = "sashiTry";
+      L.inOf = L.inOf.concat(inOut);
+      L.overAll = overAll;
+      out[c] = L;
+    });
+    return { byCourse: out, order: order };
+  }
+  var KIND_NAME = { nige: "逃げ", sashi: "差し", makuri: "捲り", makurizashi: "捲り差し" };
 
-  // ---- 展開の重要ポイント(吹き出し)。多くても3つ、時間が重ならないように選ぶ
-  function events(boats) {
-    var ev = [];
+  function finishTracks(boats) {
+    boats.forEach(function (b) {
+      smoothTrack(b);
+      var CS = new Float32Array(NF), CL = new Float32Array(NF);
+      for (var i = 0; i < NF; i++) { var c = cframe(b.X[i], b.Y[i]); CS[i] = c[0]; CL[i] = c[1]; }
+      for (i = 1; i < NF; i++) if (CS[i] < CS[i - 1]) CS[i] = CS[i - 1];   // 前にしか進まない
+      b.CS = CS; b.CL = CL;
+      var md = 1e9;
+      for (i = Math.round((b.st - T0) / DT); i < NF; i += 2) md = Math.min(md, Math.hypot(b.X[i] - BUOY.x, b.Y[i] - BUOY.y));
+      b.minBuoy = md;
+    });
+    return Math.min(T_MAX - 0.1, Math.max.apply(null, boats.map(function (b) { return b.done; })) + 2.0);
+  }
+
+  // ======================================================================
+  // 全体: 戦法を決め、ラインと時間を作り、決着パターンどおりの先頭・決まり手になるまで調整する
+  // ======================================================================
+  var WANT = { "逃げ": "nige", "差し": "sashi", "捲り": "makuri", "捲り差し": "makurizashi" };
+  function plan(entries, sc, vkim, opt) {
+    opt = opt || {};
+    var boats = prepare(entries), byC = {};
+    boats.forEach(function (b) { byC[b.course] = b; });
+    var dec = decide(boats, sc, vkim, opt);
+    boats.forEach(function (b) { b.adj = { dz: 0, yo: 0 }; b.extra = []; });
+    var winner = boats.filter(function (b) { return b.win; })[0] || boats[0];
+    var want = WANT[dec.kim] || "nige", swaps = [], tEnd = 0, iEnd = 0, rel = null, lab = null, outer = 0, guard = 0, lastOuter = -1;
+    function drift(b, k) { if (b && !b.win) { b.adj.dz = Math.min(3.2, b.adj.dz + 0.8 * k); b.adj.yo = Math.max(-4.8, b.adj.yo - 1.2 * k); } }
+    function hold(b, f) {
+      if (!b || b.win || !b.P) return;
+      var z = b.extra.filter(function (x) { return x.kind === "adj"; })[0];
+      if (z) z.f = Math.max(0.86, z.f * (1 - (1 - f) * 0.5));
+      else b.extra.push({ s0: b.P.sStart - 34, s1: b.P.sStart + 6, f: f, kind: "adj" });
+    }
+    for (outer = 0; outer < 7 && guard < 40; outer++, guard++) {
+      boats.forEach(function (b) { b.vmax = b.vmax0 + b.bias.vmax; b.alat = b.alat0 * b.bias.alat; runTable(b); });
+      arrivals(boats);
+      geometry(boats, byC);
+      boats.forEach(function (b) { b.wakeSlow = []; b.baseSlow = roleSlows(b, boats).concat(b.extra); });
+      if (outer !== lastOuter) { swaps = []; lastOuter = outer; }          // 入れ替えは、ラインを作り直すたびに決め直す
+      var order = priorityOrder(boats, byC, swaps), full = swaps.length >= 8;
+      var sw = timing(order, full);
+      if (sw) { swaps.push(sw); outer--; continue; }
+      wakeDips(boats);
+      boats.forEach(function (b) { b.baseSlow = b.baseSlow.concat(b.wakeSlow); });
+      sw = timing(order, full);
+      if (sw) { swaps.push(sw); outer--; continue; }
+      tEnd = finishTracks(boats);
+      iEnd = Math.round((tEnd - T0) / DT);
+      rel = relations(boats, iEnd);
+      lab = labels(boats, rel, iEnd);
+      var lead = lab.order[0], kind = lab.byCourse[winner.course].kind;
+      if (lead === winner && (kind === want || outer >= 5)) break;
+      if (outer >= 6) break;
+      // 調整: 勝つ艇を少し強く、戦法の相手をそれらしく(差しなら相手がもう少し流れる、まくり差しなら横切られる艇が待つ、捲りなら捲られる艇が待つ)
+      if (lead !== winner || kind !== want) {
+        winner.bias.vmax = Math.min(1.4, winner.bias.vmax + 0.15);
+        winner.bias.alat = Math.min(1.2, winner.bias.alat * 1.025);
+        var tgt = want === "sashi" ? (winner.ref || byC[1]) : want === "makurizashi" ? winner.under : null;
+        if (tgt && lead === tgt && !tgt.win) tgt.flowExtra = Math.min(0.14, (tgt.flowExtra || 0) + 0.035);   // 差される艇がもっと流れる
+        if (want === "sashi") { drift(winner.ref || byC[1], 1); if (kind === "makuri") winner.adj.dz -= 0.5; }
+        else if (want === "makurizashi") {
+          drift(winner.under, 0.8);
+          if (kind !== "makurizashi") winner.over.forEach(function (o) { hold(o, 0.92); });
+          if (kind === "makuri") winner.adj.dz -= 0.5;
+        } else if (want === "makuri") boats.forEach(function (o) { if (o.course < winner.course) hold(o, 0.95); });
+        else if (want === "nige" && lead !== winner) hold(lead, 0.95);
+        if (lead !== winner && lead !== winner.ref && lead !== winner.under && winner.over.indexOf(lead) < 0 && want !== "nige") {
+          if (lead.role === "makuri" || lead.role === "nidan" || lead.role === "mark" || lead.role === "zen" || lead.role === "soto") drift(lead, 1);
+          else hold(lead, 0.95);
+        }
+      }
+    }
+    // 引き波の強さ(映像のしぶきと「沈む」に使う)
+    boats.forEach(function (b) {
+      wakeExposure(b, boats);
+      var pk = 0, ip = null;
+      b.wakeSlow.forEach(function (z) { if (z.pk > pk) { pk = z.pk; ip = z.s0; } });
+      b.sinkI = null;
+      var loss = Math.max(b.sunk || 0, pk >= 0.5 ? 0.2 * pk : 0);
+      if (loss >= 0.12) {
+        var s0 = ip != null && pk * 0.2 >= (b.sunk || 0) ? ip : b.P.sStart + (b.P.sEnd - b.P.sStart) * 0.45;
+        for (var i = 0; i < NF; i++) if (b.S[i] >= s0 && T0 + i * DT > b.st) { b.sinkI = i; break; }
+      }
+      b.loss = loss;
+    });
+    var P = { boats: boats, winner: winner, sc: sc, kim: dec.kim, want: want, tEnd: tEnd, total: tEnd - T0, N: NF, labels: lab, rel: rel, iters: outer, swaps: swaps.length };
+    P.cam = camera(boats, P);
+    P.events = events(boats, rel, lab, P);
+    return P;
+  }
+
+  function idxAtS(b, sv) { for (var i = 0; i < NF; i++) if (T0 + i * DT >= b.st && b.S[i] >= sv) return i; return null; }
+  function idxAtG(b, g) { var t = b.Tg[g]; return isNaN(t) ? null : clamp(Math.round((t - T0) / DT), 0, NF - 1); }
+
+  // ---- 展開の重要ポイント(吹き出し)。走らせた結果の位置関係から作る。多くても4つ、時間が重ならないように選ぶ
+  function events(boats, rel, lab, P) {
+    var ev = [], L = lab.byCourse, gTurn = gIdx(BUOY.x + R0 * Math.PI * 0.35), gIn = gIdx(128);
     function add(b, i, text, pr) { if (i != null) ev.push({ i: i, b: b, text: text, pr: pr }); }
     boats.forEach(function (b) {
-      var c = b.course, turn = b.P.sEnd - b.P.sStart;
-      if (b.squeeze >= 2) add(b, idxAtS(b, 30), c + "コース 絞る", b.win || b.role === "makuri" ? 2 : 3.5);
-      if (b.role === "makuri" && !b.win) add(b, idxAtS(b, b.P.sStart - 34), c + "コース 捲りに行く", 2.2);
-      if (b.win) {
-        var txt = { nige: "逃げる", sashi: "差す", makuri: "捲る", makurizashi: "まくり差し" }[b.role];
-        add(b, idxAtS(b, b.P.sStart + turn * (b.role === "makuri" ? 0.25 : 0.55)), c + "コース " + txt, 1);
+      var c = b.course, l = L[c];
+      // 絞る: 内の艇の前へ3m以上寄せた
+      var moved = b.lane - b.sp.yi;
+      if (b.sp.sq && moved >= 3) {
+        var xm = 14 + (Math.min(95, b.sp.xin - 12) - 14) * 0.45;
+        add(b, idxAtS(b, xm), c + "コース 絞る", b.win ? 2.2 : 2.6);
       }
-      if (c === 1 && b.note === "張る") add(b, idxAtS(b, b.P.sStart - 10), "1コース 張る", b.win ? 3.2 : 2.4);
-      if (c === 1 && b.note === "残す") add(b, idxAtS(b, b.P.sStart + turn * 0.35), "1コース 残しに行く", 2.4);
-      if (c === 1 && b.note === "流れる") add(b, idxAtS(b, b.P.sStart + turn * 0.8), "1コース 流れる", 3.4);
-      if (!b.win && b.sinkI != null) add(b, b.sinkI, c + "コース 沈む", c === 1 ? 2.8 : 3.6);
-      if (b.role === "mark") add(b, idxAtS(b, b.P.sStart + turn * 0.3), c + "コース 捲りについて行く", 3.0);
-      var inA = boats.filter(function (o) { return o.course === c - 1 && o.role === "makuri"; })[0];
-      if (inA && !b.win && b.role === "makurizashi") add(b, idxAtS(b, b.P.sStart + turn * 0.5), c + "コース まくり差し", 2.6);   // 捲った艇の隙を狙う
-      if (inA && !b.win && b.role === "sashi") add(b, idxAtS(b, b.P.sStart + turn * 0.5), c + "コース 差し", 2.8);
+      if (c === 1) {
+        if ((b.role === "hari" || b.role === "nigeHari") && b.sp.yi - b.lane >= 0.5) add(b, idxAtS(b, b.sp.xin - 22), "1コース 張る", 2.4);
+        if (l.kind === "nige") add(b, idxAtG(b, gTurn), "1コース 逃げる", 1);
+        else if (b.role === "nokoshi" && l.pos <= 3) add(b, idxAtG(b, gTurn), "1コース 小回りで残す", 3.0);
+        return;
+      }
+      var txt = null, pr = 3.2, gi = gTurn;
+      if (l.kind === "makurizashi") { txt = "まくり差し"; pr = 2.6; }
+      else if (l.kind === "makuri") {
+        var twoStep = l.overAll.concat(l.outOf).some(function (o) { return (o.role === "makuri" || o.role === "nidan") && o !== b; }) || b.role === "nidan";
+        txt = twoStep ? "二段まくり" : "捲る"; pr = 2.4; gi = gIn;
+      } else if (l.kind === "sashi") { txt = "差す"; pr = 2.8; }
+      else if ((b.role === "makuri" || b.role === "nidan") && b.fail) { txt = "捲りに行く"; pr = 2.7; gi = gIn; }
+      else if (b.role === "mark" && b.ref && L[b.ref.course].kind === "makuri") { txt = "捲りについて行く"; pr = 3.4; }
+      // 勝つ艇でない差し・捲りは、実際に内の艇を抜いて順位を2つ以上上げたときだけ出す
+      if (txt && !b.win && (l.kind === "sashi" || l.kind === "makuri") && (l.pos > b.course - 2 || !(l.inOf.length || l.outOf.length))) txt = null;
+      if (b.win) {
+        // 決着パターンの決まり手と、実際の動きが同じときだけ、その言葉を使う
+        if (l.kind === P.want) { txt = { sashi: "差す", makuri: "捲る", makurizashi: "まくり差し" }[P.want] || txt; pr = 1; }
+        else txt = null;                                         // 動きが決まり手と食い違うときは、言葉を出さない
+      }
+      if (txt) add(b, idxAtG(b, gi), c + "コース " + txt, pr);
     });
+    // 沈む: 引き波を受けて順位を落とした艇のうち、展開に関わった艇(1コース、または1マークの手前で3番手以内にいた艇)を1つだけ
+    var gg = gIdx(S_GATE), gate = boats.slice().sort(function (a, b) { var ta = a.Tg[gg], tb = b.Tg[gg]; return (isNaN(ta) ? 99 : ta) - (isNaN(tb) ? 99 : tb); });
+    var sinker = boats.filter(function (b) {
+      var gp = gate.indexOf(b) + 1;
+      return b.sinkI != null && !b.win && (b.course === 1 ? L[1].pos >= 4 : gp <= 3 && L[b.course].pos >= gp + 2);   // 1コースは4番手以下に下がったとき
+    }).sort(function (a, b) { return b.loss - a.loss; })[0];
+    if (sinker) add(sinker, sinker.sinkI, sinker.course + "コース 沈む", sinker.course === 1 ? 2.9 : 3.6);
     ev.sort(function (a, b) { return a.pr - b.pr; });
     var out = [];
     ev.forEach(function (e) {
       if (out.length >= 4) return;
+      if (out.some(function (o) { return o.b === e.b && o.text === e.text; })) return;
       if (out.every(function (o) { return Math.abs(o.i - e.i) * DT > 0.55 && o.b !== e.b || Math.abs(o.i - e.i) * DT > 1.8; })) out.push(e);
     });
     out.forEach(function (e) { e.t = T0 + e.i * DT; });
@@ -408,62 +1059,11 @@
     return out;
   }
 
-  // 艇どうしが重なる最初の場面を、組ごとに探す
-  function conflicts(boats, iEnd) {
-    var out = [];
-    for (var a = 0; a < boats.length; a++) for (var c = a + 1; c < boats.length; c++) {
-      var A = boats[a], B = boats[c], i0 = Math.round((Math.max(A.st, B.st) - T0) / DT);
-      for (var i = i0; i <= iEnd; i++) {
-        var dx = A.X[i] - B.X[i], dy = A.Y[i] - B.Y[i];
-        if (dx * dx + dy * dy > 36) continue;
-        var hb = B.H[i], fwd = dx * Math.cos(hb) + dy * Math.sin(hb), lat = -dx * Math.sin(hb) + dy * Math.cos(hb);
-        if (Math.abs(fwd) < HULL_L + 0.5 && Math.abs(lat) < HULL_W + 0.5) { out.push({ A: A, B: B, i: i, fwd: fwd, lat: lat }); break; }
-      }
-    }
-    return out;
-  }
-
-  // ---- 決着パターンどおりの先頭になり、どの艇もブイに近づかず、艇どうしも重ならないよう、調整しながら走らせ直す
-  function plan(entries, sc, vkim) {
-    var boats = prepare(entries);
-    assignRoles(boats, sc, vkim);
-    var winner = boats.filter(function (b) { return b.win; })[0] || boats[0], R;
-    for (var it = 0; it < 26; it++) {
-      R = simulate(boats);
-      var iEnd = Math.round((R.tEnd - T0) / DT), lead = leaderAt(boats, iEnd), again = false;
-      boats.forEach(function (b) {
-        var md = 1e9;
-        for (var i = 0; i <= iEnd; i += 2) md = Math.min(md, Math.hypot(b.X[i] - BUOY.x, b.Y[i] - BUOY.y));
-        if (md < CLEAR - 0.1) { b.delExtra += CLEAR - md + 0.4; again = true; }
-      });
-      if (lead && lead !== winner) { winner.bias.alat *= 1.05; winner.bias.vmax += 0.25; lead.bias.alat *= 0.97; again = true; }
-      if (!again && it < 25) {
-        conflicts(boats, iEnd).forEach(function (cf) {
-          var A = cf.A, B = cf.B, hd = Math.abs(Math.atan2(Math.sin(A.H[cf.i] - B.H[cf.i]), Math.cos(A.H[cf.i] - B.H[cf.i])));
-          if (hd < 0.35 && Math.abs(cf.fwd) < 2.6) {              // 並走: 外の艇が、直線なら絞りを弱め、旋回ならもう少し外を回る
-            var outer = cf.lat > 0 ? A : B, inner = outer === A ? B : A;
-            if (!outer.win) {
-              if (outer.X[cf.i] < D - 30 && outer.squeeze > 0) outer.squeeze = Math.max(0, outer.squeeze - 1);
-              else outer.delExtra += 1.2;
-            } else inner.slow.push({ s0: inner.S[cf.i] - 45, s1: inner.S[cf.i] + 4, f: 0.88 });   // 外の勝つ艇を先に行かせる
-          } else {                                                // 追いつく・交差する: 後ろの艇が手前から速度を抑える
-            var behind = cf.fwd > 0 ? B : A, ahead = behind === A ? B : A;
-            if (!behind.win) behind.slow.push({ s0: behind.S[cf.i] - 45, s1: behind.S[cf.i] + 4, f: 0.9 });
-            else { ahead.delExtra += 1.0; ahead.slow.push({ s0: ahead.S[cf.i] - 30, s1: ahead.S[cf.i] + 4, f: 0.95 }); }   // 前の艇が外へよけて勝つ艇を通す
-          }
-          again = true;
-        });
-      }
-      if (!again) break;
-    }
-    return { boats: boats, winner: winner, sc: sc, tEnd: R.tEnd, total: R.tEnd - T0, cam: camera(boats, R), N: R.N, events: events(boats) };
-  }
-
   // ---- カメラ: ドローンが全艇を追うように、位置と画角をなめらかに変える
   function camera(boats, R) {
     var n = Math.round((R.tEnd + 1.6 - T0) / DT), CX = [], CY = [], CW = [];
     for (var i = 0; i < n; i++) {
-      var t = T0 + i * DT, j = Math.min(i, R.N - 1);
+      var t = T0 + i * DT, j = Math.min(i, NF - 1);
       var xs = boats.map(function (b) { return b.X[j]; }), ys = boats.map(function (b) { return b.Y[j]; });
       if (t < 1.0) { xs.push(4); ys.push(4, 40); xs.push(4); }
       if (Math.max.apply(null, xs) > D - 45) { xs.push(D + 6); ys.push(0); }
@@ -505,7 +1105,7 @@
     if (i < 0) { i = 0; u = 0; }
     if (i >= n - 1) { i = n - 2; u = 1; }
     var h = b.H[i] + (b.H[i + 1] - b.H[i]) * u;
-    return { x: b.X[i] + (b.X[i + 1] - b.X[i]) * u, y: b.Y[i] + (b.Y[i + 1] - b.Y[i]) * u, h: h, w: (b.H[i + 1] - b.H[i]) / DT, v: b.V[i] };
+    return { x: b.X[i] + (b.X[i + 1] - b.X[i]) * u, y: b.Y[i] + (b.Y[i + 1] - b.Y[i]) * u, h: h, w: (b.H[i + 1] - b.H[i]) / DT, v: b.V[i], wk: b.WK[i] };
   }
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -586,7 +1186,7 @@
       ctx.lineWidth = 0.35; ctx.strokeStyle = "#ffffff"; ctx.stroke();
       ctx.beginPath(); ctx.arc(m.x, m.y, 0.55, 0, Math.PI * 2); ctx.fillStyle = "#ffffff"; ctx.fill();
     });
-    // 引き波(水面に残る)
+    // 引き波(水面に残る。旋回の外側を太く白く)
     ctx.lineCap = "butt";
     P.boats.forEach(function (b) {
       var pts = [];
@@ -598,22 +1198,25 @@
       for (var i = 1; i < pts.length; i++) {
         var a = pts[i - 1], c = pts[i], f = Math.pow(1 - i / 32, 1.6), d0 = 0.6 + (i - 1) * 0.13, d1 = 0.6 + i * 0.13;
         var ax = -Math.sin(a.h), ay = Math.cos(a.h), cxn = -Math.sin(c.h), cyn = Math.cos(c.h);
+        var turn = clamp(Math.abs(c.w) / 0.8, 0, 1);
         ctx.strokeStyle = "rgba(255,255,255," + (0.26 * f).toFixed(3) + ")";
         ctx.lineWidth = 0.9 + i * 0.045;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
-        ctx.strokeStyle = "rgba(255,255,255," + (0.45 * f).toFixed(3) + ")";
-        ctx.lineWidth = 0.28;
+        ctx.strokeStyle = "rgba(255,255,255," + ((0.4 + 0.25 * turn) * f).toFixed(3) + ")";      // 外側(左回りなら右)の波
+        ctx.lineWidth = 0.28 + 0.3 * turn;
         ctx.beginPath(); ctx.moveTo(a.x + ax * d0, a.y + ay * d0); ctx.lineTo(c.x + cxn * d1, c.y + cyn * d1); ctx.stroke();
+        ctx.strokeStyle = "rgba(255,255,255," + ((0.4 - 0.2 * turn) * f).toFixed(3) + ")";      // 内側の波
+        ctx.lineWidth = 0.28;
         ctx.beginPath(); ctx.moveTo(a.x - ax * d0, a.y - ay * d0); ctx.lineTo(c.x - cxn * d1, c.y - cyn * d1); ctx.stroke();
       }
     });
-    // ボートと、旋回中の水しぶき
+    // ボートと、旋回中・波を受けたときの水しぶき
     var now = P.boats.map(function (b) { return sample(b, tt); });
     P.boats.forEach(function (b, k) {
       var p = now[k], col = COLORS[b.waku] || COLORS[1];
-      if (Math.abs(p.w) > 0.3 && t < P.tEnd + 1) {
+      var amt = t < P.tEnd + 1 ? Math.max(clamp((Math.abs(p.w) - 0.3) * 1.2, 0, 1), clamp((p.wk || 0) * 1.4, 0, 1)) : 0;
+      if (amt > 0) {
         var ox = -Math.sin(p.h), oy = Math.cos(p.h), bx = p.x - Math.cos(p.h) * HULL_L * 0.45, by = p.y - Math.sin(p.h) * HULL_L * 0.45;
-        var amt = clamp((Math.abs(p.w) - 0.3) * 1.2, 0, 1);
         for (var j = 0; j < 4; j++) {
           ctx.beginPath(); ctx.arc(bx + ox * (0.9 + j * 0.55), by + oy * (0.9 + j * 0.55), 0.55 + j * 0.35, 0, Math.PI * 2);
           ctx.fillStyle = "rgba(255,255,255," + (0.36 * amt * (1 - j / 4)).toFixed(3) + ")"; ctx.fill();
@@ -656,10 +1259,11 @@
     }
     var fs = Math.max(11, u * 2.5);
     pill(opt.title || "1周1マーク", u * 2, u * 2, "left", "rgba(8,26,34,0.72)", "#ffffff", fs);
-    pill(P.sc.course + "コース " + P.sc.kim + (P.sc.p != null ? " " + Math.round(P.sc.p) + "%" : ""), cw - u * 2, u * 2, "right", "#f2cf1d", "#14212b", fs);
+    var tag = P.sc.label ? P.sc.label + " " + P.sc.course + "コース " + P.sc.kim : P.sc.course + "コース " + P.sc.kim + (P.sc.p != null ? " " + Math.round(P.sc.p) + "%" : "");
+    pill(tag, cw - u * 2, u * 2, "right", "#f2cf1d", "#14212b", fs);
     if (t < 0) pill("スタートまで " + (-t).toFixed(1), u * 2, u * 3.2 + fs * 1.7, "left", "rgba(8,26,34,0.72)", "#ffffff", fs * 0.9);
     ctx.font = Math.max(9, u * 1.6) + "px " + FONT; ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-    ctx.fillText((opt.brand ? opt.brand + " ・ " : "") + "データに基づくシミュレーション", cw - u * 2, ch - u * 1.5);
+    ctx.fillText((opt.brand ? opt.brand + " ・ " : "") + (P.sc.label ? "実際のSTでの再現" : "データに基づくシミュレーション"), cw - u * 2, ch - u * 1.5);
     if (t > P.tEnd - 0.6) {                                       // 最後に先頭を出す
       ctx.globalAlpha = sstep(P.tEnd - 0.6, P.tEnd, t);
       var w = P.winner;
@@ -670,7 +1274,7 @@
 
   function mount(canvas, opt) {
     var ctx = canvas.getContext("2d");
-    var P = plan(opt.entries, opt.scen, opt.kimarite);
+    var P = plan(opt.entries, opt.scen, opt.kimarite, { fixedST: !!opt.fixedST });
     var t = T0, playing = false, last = null, speed = 1, raf = null, fixed = null;
     function end() { return P.tEnd + 1.6; }
     function size() {
@@ -696,11 +1300,13 @@
       isPlaying: function () { return playing; },
       seek: function (s) { t = clamp(T0 + s, T0, end()); render(); },
       setSpeed: function (s) { speed = s; },
-      setScenario: function (sc, entries, title) {
+      setScenario: function (sc, entries, title, fixedST) {
         if (entries) opt.entries = entries;
         if (title) opt.title = title;
-        opt.scen = sc; P = plan(opt.entries, sc, opt.kimarite); api.replay();
+        opt.fixedST = !!fixedST;
+        opt.scen = sc; P = plan(opt.entries, sc, opt.kimarite, { fixedST: opt.fixedST }); api.replay();
       },
+      plan: function () { return P; },
       render: render,
       // 動画として書き出す(MediaRecorder対応ブラウザのみ)。1280x800で描き直して録画する
       record: function () {
@@ -731,5 +1337,5 @@
     return api;
   }
 
-  root.Turn1 = { mount: mount, plan: plan };
+  root.Turn1 = { mount: mount, plan: plan, KIND_NAME: KIND_NAME };
 })(typeof window !== "undefined" ? window : globalThis);

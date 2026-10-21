@@ -300,7 +300,9 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, pred=None, d
             '<button id="t1Save" type="button">動画を保存</button></div>'
             '<div class="ctrl" id="t1Out" hidden></div><p class="note" id="t1Msg" aria-live="polite"></p>'
             '<div class="pats" id="t1Pats" role="group" aria-label="決着パターン"></div>'
-            '<p class="note">展開の見立てで上位の決着パターンを、選手の平均ST・モーター・コースごとの勝ち方から動かしています。'
+            '<p class="note">展開の見立てで上位の決着パターンを、そのパターンになりやすいスタートの並び(スタートの見立てから計算)と、'
+            'モーター・選手のコースごとの勝ち方から動かしています。差しは内の艇の後ろから内へ、捲りは内の艇の外を全速で、'
+            'まくり差しは隣の艇の前を横切ってさらに内の艇の内へ。吹き出しの戦法名は、走らせた結果の位置関係(どちら側を通って前に出たか)から決めています。'
             '下の「直前情報で見直す」に展示タイムや進入を入れると、映像も作り直します。</p></section>')
     kotae = ('<section id="kotae" aria-labelledby="h-kotae"><h2 id="h-kotae">見立ての答え合わせ</h2>'
              '<p class="sub" id="kotaeLead"></p><div class="scroll"><table class="stt"><thead><tr><th>コース</th><th>選手</th>'
