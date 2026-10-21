@@ -446,31 +446,38 @@ def live_est() -> dict:
 
 
 def fit_est(sm, sts) -> None:
-    """展示STの効き方: 本番のST − 予想ST = est ×(展示ST − 予想ST) + 残り。展示STがあるとき、残りのばらつきが何倍になるか(est_scale)。
-    データが少ないうちは初期値(0.35)に寄せる。"""
+    """展示STの効き方。展示は本番より全体に早く出るので、6艇の中での差(レースの平均からのずれ)どうしで比べる:
+    本番のSTの、予想STからのずれ(レースの平均を引いたもの) = est ×(展示STの、予想STからのずれ(同じく平均を引いたもの)) + 残り。
+    展示STがあるとき、残りのばらつきが何倍になるか(est_scale)も求める。データが少ないうちは初期値(0.35)に寄せる。model.js と同じ式。"""
     ex = live_est()
-    rows = []
+    by = {}
+    K, m_pop = sm["K"], sm["m_pop"]
     for s in sts:
         k = (s["d"], s["v"], s["no"], s.get("waku"))
         if k in ex:
-            rows.append((s, ex[k]))
-    if not rows:
-        sm["est_n"] = 0
-        return
-    K, m_pop = sm["K"], sm["m_pop"]
+            row = start_row(s, K, m_pop, [None])
+            mu = sum(sm["coef"][n] * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(s["v"], 0.0)
+            by.setdefault((s["d"], s["v"], s["no"]), []).append((max(-0.02, min(0.35, ex[k])), s["st"], mu))
     xs, ys = [], []
-    for s, e in rows:
-        row = start_row(s, K, m_pop, [None])
-        mu = sum(sm["coef"][n] * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(s["v"], 0.0)
-        xs.append(e - mu)
-        ys.append(s["st"] - mu)
-    xs, ys = np.array(xs), np.array(ys)
+    for rows in by.values():
+        if len(rows) < 4:
+            continue
+        mE = sum(r[0] for r in rows) / len(rows)
+        mY = sum(r[1] - r[2] for r in rows) / len(rows)
+        mM = sum(r[2] for r in rows) / len(rows)
+        for e, st, mu in rows:
+            xs.append((e - mE) - (mu - mM))
+            ys.append((st - mu) - mY)
     n = len(xs)
-    coef = (float((xs * ys).sum()) + EST_PRIOR * EST_PRIOR_N * float((xs * xs).mean())) / (float((xs * xs).sum()) + EST_PRIOR_N * float((xs * xs).mean()))
+    sm["est_n"] = n
+    if not n:
+        return
+    xs, ys = np.array(xs), np.array(ys)
+    sxx = float((xs * xs).mean())
+    coef = (float((xs * ys).sum()) + EST_PRIOR * EST_PRIOR_N * sxx) / (float((xs * xs).sum()) + EST_PRIOR_N * sxx)
     res0, res1 = float(np.var(ys)), float(np.var(ys - coef * xs))
     sm["coef"]["est"] = round(coef, 4)
-    sm["est_scale"] = round(math.sqrt(max(0.5, min(1.0, res1 / res0))) if res0 > 0 and n >= 50 else 0.9, 3)
-    sm["est_n"] = n
+    sm["est_scale"] = round(math.sqrt(max(0.5, min(1.0, res1 / res0))) if res0 > 0 and n >= 200 else 0.95, 3)
 
 
 def racer_scale(sm, b):

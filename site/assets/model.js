@@ -84,7 +84,7 @@
   function startParts(sm, byC, wind, venue) {
     var co = sm.coef, K = sm.K, RK = sm.REC_K || 4;
     function mrOf(stx) { return (stx[1] + K * sm.m_pop) / (stx[0] + K); }
-    return byC.map(function (b, i) {
+    var parts = byC.map(function (b, i) {
       var stx = b.stx || [0, 0, 0], mr = mrOf(stx), r8 = b.r8 || [], rec = 0, nb = 0, nn = 0, r8m = null;
       if (r8.length) { r8m = r8.reduce(function (a, x) { return a + x; }, 0) / r8.length; rec = (r8m * r8.length + RK * mr) / (r8.length + RK) - mr; }
       [i - 1, i + 1].forEach(function (j) { if (j >= 0 && j < 6) { nb += mrOf(byC[j].stx || [0, 0, 0]); nn++; } });
@@ -93,11 +93,19 @@
                               f: b.fp > 0 ? co.f : 0, f2: b.fp >= 2 ? (co.f2 || 0) : 0, wind: co.wind * Math.max(0, (wind || 0) - 3),
                               rec: (co.rec || 0) * rec, nb: (co.nb || 0) * nb, ven: (sm.ven || {})[venue] || 0 };
       p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven;
-      // 展示ST: 本番のSTは展示のSTに寄りやすい(寄る割合は学習した値。まだ学習できていないうちは0.35)
       p.est = 0;
-      if (b.est != null && isFinite(b.est)) { p.est = (co.est != null ? co.est : 0.35) * (b.est - p.mu); p.mu += p.est; }
       return p;
     });
+    // 展示ST: 展示は本番より全体に早く出る(フライングしても罰がないため)ので、6艇の中で早いか遅いか(差)だけを使う。
+    // 展示で他の艇より早かった艇ほど、本番も他の艇より早く出やすい(効き方は学習した値。まだ学習できていないうちは0.35)
+    var ok = byC.map(function (b) { return b.est != null && isFinite(b.est); }), n = ok.filter(Boolean).length;
+    if (n >= 4) {
+      var es = byC.map(function (b) { return Math.max(-0.02, Math.min(0.35, b.est)); }), mE = 0, mM = 0;
+      parts.forEach(function (p, i) { if (ok[i]) { mE += es[i] / n; mM += p.mu / n; } });
+      var k = co.est != null ? co.est : 0.35;
+      parts.forEach(function (p, i) { if (ok[i]) { p.est = k * ((es[i] - mE) - (p.mu - mM)); p.mu += p.est; } });
+    }
+    return parts;
   }
   function startMeans(sm, byC, wind, venue) { return startParts(sm, byC, wind, venue).map(function (p) { return p.mu; }); }
 
