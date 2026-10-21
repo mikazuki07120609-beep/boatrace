@@ -9,6 +9,7 @@
 """
 import argparse
 import datetime as dt
+import pathlib
 import shutil
 import sys
 import time
@@ -159,6 +160,15 @@ def main() -> int:
     except ImportError as ex:
         print("学習をとばしました:", ex)
     build_site.main()
+    # 前の日の見立て・映像と結果を比べて記録する(学習の記録。サイトには出さない)
+    try:
+        import learn
+        learn.main()
+    except Exception as ex:  # noqa: BLE001  記録に失敗しても、サイトの更新は続ける
+        print("見立てと結果の比較をとばしました:", ex)
+    if shutil.which("node"):
+        import subprocess
+        subprocess.run(["node", str(pathlib.Path(__file__).with_name("learn_anim.js"))], check=False)
     return 0
 
 

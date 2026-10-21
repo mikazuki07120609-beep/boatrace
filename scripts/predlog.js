@@ -43,7 +43,8 @@ function main() {
         vt: D.vt, nt: D.nt, wind, date: today, venue: D.venue.code,
         boats: D.entries.map((b) => ({ waku: b.waku, course: order.indexOf(b.waku) >= 0 ? order.indexOf(b.waku) + 1 : b.waku,
                                        pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], cs: b.cs || {}, motor2: b.motor2,
-                                       ex: BI.ex ? BI.ex[String(b.waku)] ?? null : null, est: BI.est ? BI.est[String(b.waku)] ?? null : null })),
+                                       ex: BI.ex ? BI.ex[String(b.waku)] ?? null : null, est: BI.est ? BI.est[String(b.waku)] ?? null : null,
+                                       cb: b.cb || [0, 0] })),
       };
       const R = M.predict(race, params, { samples: 400 });
       if (!R) continue;
@@ -52,6 +53,9 @@ function main() {
         at: jst.toISOString().slice(0, 16).replace("T", " "),
         course: order,
         p: R.p.map((x) => Math.round(x * 1e4) / 1e4),
+        // 起こりやすい決着パターン(上位6つ)ごとの、2着〜6着の並び(コース)
+        ord: Object.fromEntries(R.p.map((x, i) => [i, x]).sort((a, b) => b[1] - a[1]).slice(0, 6)
+          .map(([i]) => [i, (R.order(i) || {}).order || null]).filter((x) => x[1])),
         st: R.st.slice().sort((a, b) => a.waku - b.waku).map((s) => [r3(s.mean), r3(s.pOut), r3(s.pDent)]),   // 枠番の順
       };
       n++;

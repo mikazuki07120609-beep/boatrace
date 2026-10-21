@@ -9,6 +9,7 @@ import shutil
 from common import DATA, OUT, PROGRAM, RESULTS, SITE, VENUES, KIMARITE, load_json, parse_ymd, today_jst
 from alerts import badges, race_alerts
 from motor import raw_scores, venue_grades
+import pace as pacemod
 from stats import collect, venue_table
 
 SITE_NAME = "水面ノート"
@@ -341,7 +342,7 @@ def result_banner(res_live, result) -> str:
 
 
 RACE_NOTES = [
-    "出走表:「このコース」は、枠番と同じコースに入ったとき(展示で進入が変わったら、そのコース)の直近1年の成績です。1着・2着・3連対の率、平均STと走数。",
+    "出走表:「このコース」は、枠番と同じコースに入ったとき(展示で進入が変わったら、そのコース)の直近1年の成績です。1着・2着・3着の率、平均STと走数。赤い枠は、その項目で一番良い艇です。",
     "勝ち方は、そのコースで1着になったときの決まり手の回数。2着の時は、2着になったレースでどう動いたかの推定です(公式の記録は1着の決まり手だけなので、1着の艇のコース・決まり手と、スタートの並びから推定)。"
     "1コースは差され・捲られなど負け方、2〜6コースは差し(勝った艇の内の筋)・捲り(内より先に出て外から)・捲差(間の艇の前を横切って内へ)・残し(外に先に回られたが残した)・道中(道中の抜き合い)。",
     "逃げ・逃がしは、1コースのときに逃げた割合と、2コースのときに1コースが逃げた割合(逃がし率。低いほど1コースを崩している)。",
@@ -349,6 +350,9 @@ RACE_NOTES = [
     "モーター評価(S〜E)は、直近60日の成績から乗った選手の勝率とコースの有利不利を差し引いた分、展示タイムの速さ、公式のモーター2連率を合わせて、その場のモーターの中で比べたものです。"
     "展示のあとは、そのレースの展示タイムも加えて評価し直します。",
     "直前情報(展示タイム・スタート展示・チルト・部品交換・水面気象)は、締切の10〜15分前ごろに BOAT RACE オフィシャルウェブサイトから自動で取り込みます。",
+    "直線スピード(推定)は展示タイム(直線150m)から出した速さです。一周タイム(推定)は、その場の標準の一周に、モーター(直近60日)と選手(直近1年)のレースのペース"
+    "(同じレースの同じ着順の平均と比べた速さ)と、展示タイムの差を足したもの。まわり足(推定)は、そのペースのうち展示タイム(直線の速さ)では説明できない分で、マイナスほど旋回が速い目安です。"
+    "どちらも公式の計測ではなく、レースタイムから計算した推定です。展示タイム1位の1着率は、直近半年の全レースで、展示タイムが一番速かった艇が1着になった割合です。",
     "1周1マークの映像・スタートの見立て・展開の見立ては、スタート展示の進入とSTが出てから計算します。スタートの見立ては、選手の平均ST・ばらつき・フライング持ち・コース・風・展示STから、"
     "過去のレースで実際に起きたスタートのずれ方を当てはめた400通りのスタートで計算し、展開の見立てはそれぞれのスタートでどのコースがどの決まり手で1着になりやすいかを平均したものです。式の重みは毎晩学習し直しています。",
     "映像の差しは内の艇の後ろから内へ、捲りは内の艇の外を全速で、まくり差しは隣の艇の前を横切ってさらに内の艇の内へ。吹き出しの戦法名は、走らせた結果の位置関係から決めています。",
@@ -359,7 +363,7 @@ RACE_NOTES = [
 ]
 
 
-def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None, alerts=None):
+def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None, alerts=None, pace=None):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     path = f"{ymd}/{code}/{race['no']:02d}.html"
@@ -369,15 +373,26 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     before = (vlive.get("before") or {}).get(no)
     res_live = (vlive.get("result") or {}).get(no)
     ents = [racer_view(x, racers) for x in race["entries"]]
+    ps = period_start(d)
     for x in ents:
         x["mg"] = (motors or {}).get(str(x["motor"]))
         fl = (vlive.get("fl") or {}).get(x["toban"])
         if fl:
             x["fl"] = fl
+        # 出走表(race.js が縦の表にする)に使う: F・Lの回数、平均ST、今節の着順(今日の分も)、節間順位
+        x["fp"] = fl[0] if fl else sum(1 for f in x.get("f", []) if ps <= f < d.isoformat())
+        x["lp"] = fl[1] if fl else None
+        x["ast"] = fl[2] if fl and fl[2] is not None else x.get("st_all")
+        x["series_days"] = list(x.get("series_codes") or []) + ([(today_m or {}).get(x["toban"])] if (today_m or {}).get(x["toban"]) else [])
+        rk = (ranks or {}).get(x["toban"])
+        x["srank"] = [rk[0], rk[1]] if rk else None
     rel = "../" * depth
-    card = '<section><h2>出走表</h2>' + card_html(ents, d, ranks or {}, today_m or {}) + "</section>"
+    names = "".join(f'<li><span class="waku w{x["waku"]}">{x["waku"]}</span> {e(x["name"])} <span class="small">{e(x["cls"])} {e(x["branch"])}</span></li>' for x in ents)
+    card = ('<section><h2>出走表</h2><div id="cardBox"><ul class="plain">' + names + "</ul></div>"
+            '<p class="note">赤い枠は、その項目で一番良い艇です。</p></section>')
     before_html = ('<section aria-labelledby="h-before"><div class="row-head"><h2 id="h-before">直前情報</h2><span class="sub" id="beforeAt"></span></div>'
-                   '<div id="beforeBox"><p class="wait">展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。</p></div></section>')
+                   '<div id="beforeBox"><p class="wait">展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。</p></div>'
+                   '<div id="ex1Box"></div><p class="note">赤い枠は、その項目で一番良い艇です。推定の数字は、過去のレースのタイムと展示タイムから計算した目安です。</p></section>')
     view = ('<section class="t1" aria-labelledby="h-t1"><div class="row-head"><h2 id="h-t1">1周1マーク展開シミュレーション</h2></div>'
             '<p class="wait" id="t1Wait">スタート展示の進入とSTが出たら、それをもとに作ります。</p>'
             '<div id="t1Body" hidden><canvas id="t1view" role="img" aria-label="スタートから全艇が1周1マークを回り切るまでを上空から見たシミュレーション"></canvas>'
@@ -453,7 +468,16 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         data["before"] = before          # 直前情報(scripts/live.py)
     if res_live:
         data["live"] = res_live          # レース直後の結果(scripts/live.py)
-    body = head + result_banner(res_live, result) + card + before_html + view + analysis + venue_html + res_html
+    if pace:
+        data["pace"] = pace              # 推定タイム(一周・まわり足)と展示タイム1位の1着率(scripts/pace.py)
+    tabs = ('<nav class="tabs" role="tablist" aria-label="このレースの情報">'
+            '<button type="button" role="tab" data-tab="card">出走表</button><button type="button" role="tab" data-tab="before">直前情報</button>'
+            '<button type="button" role="tab" data-tab="t1">1S1M展開</button><button type="button" role="tab" data-tab="data">データ</button></nav>')
+    body = (head + result_banner(res_live, result) + tabs
+            + '<div class="pane" id="pane-card">' + card + "</div>"
+            + '<div class="pane" id="pane-before">' + before_html + "</div>"
+            + '<div class="pane" id="pane-t1">' + view + analysis + "</div>"
+            + '<div class="pane" id="pane-data">' + venue_html + res_html + "</div>")
     first = ents[0]
     c1 = first["cs"].get("1")
     c1txt = f"1コース1着率{pct(c1['w1'], c1['n'])}%({c1['n']}走)" if c1 and c1["n"] else f"全国勝率{f1(first['rate'], 2)}"
@@ -599,6 +623,7 @@ def main():
         res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
         live_day = load_live(d)
         mraw = raw_scores(d, racers)
+        P_pace = pacemod.build(d)
         sm = (model or {}).get("start")
         al_day = {}
         for code, vprog in progs[d]["venues"].items():
@@ -621,7 +646,8 @@ def main():
             motors = venue_grades(code, vprog, mraw)
             for race in vprog["races"]:
                 urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
-                                       ranks=ranks, vlive=vlive, motors=motors, today_m=tm, alerts=al_day[code][race["no"]]))
+                                       ranks=ranks, vlive=vlive, motors=motors, today_m=tm, alerts=al_day[code][race["no"]],
+                                       pace=pacemod.for_race(P_pace, code, race["entries"])))
     build_index(today, progs, dates, alerts_by_day)
     build_about()
     sm = "".join(f"<url><loc>{BASE_URL}{u}</loc></url>" for u in urls)

@@ -72,43 +72,7 @@
   }
   function windState() { var w = windSpeed(); return { wind: "none", wspd: w, strong: w >= 4 }; }
 
-  // 直前情報の表
-  function renderBefore() {
-    var box = $("#beforeBox"), at = $("#beforeAt");
-    if (!box) return;
-    var has = BI && BI.ex && Object.keys(BI.ex).some(function (k) { return BI.ex[k] != null; });
-    var fromRes = !has && D.result;
-    if (!has && !fromRes) {
-      var left = minsLeft();
-      box.innerHTML = '<p class="wait">' + (left < -5 || finished() ? "このレースの直前情報は取り込めませんでした。" : "展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。") + "</p>";
-      if (at) at.textContent = "";
-      return;
-    }
-    var exs = D.entries.map(function (e) { return exOf(e.waku); }).filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
-    var rows = D.entries.map(function (e) {
-      var w = String(e.waku), ex = exOf(e.waku), rk = ex == null ? null : exs.indexOf(ex) + 1, c = courseOf(e.waku);
-      var est = has && BI.est ? BI.est[w] : null, parts = has ? (BI.parts && BI.parts[w] || []).slice() : [];
-      if (has && BI.prop && BI.prop[w]) parts.push("プロペラ" + BI.prop[w]);
-      var tilt = has && BI.tilt ? BI.tilt[w] : null, wt = has && BI.weight ? BI.weight[w] : null, adj = has && BI.adj ? BI.adj[w] : null;
-      return '<tr><td class="w w' + e.waku + '">' + e.waku + '</td><td class="who"><b>' + esc(e.name) + "</b></td>" +
-        '<td class="' + (rk === 1 ? "best" : "") + '"><b>' + fmt(ex, 2) + "</b>" + (rk ? '<span class="dim">' + rk + "位</span>" : "") + "</td>" +
-        '<td><b>' + (c !== e.waku ? '<span class="moved">' + c + "</span>" : c) + "</b></td>" +
-        '<td class="' + (est != null && est < 0 ? "fon" : "") + '">' + st2(est) + "</td>" +
-        "<td>" + (tilt == null ? "—" : fmt(tilt, 1)) + "</td>" +
-        '<td class="txt">' + (parts.length ? esc(parts.join("・")) : "—") + "</td>" +
-        "<td>" + (wt == null ? "—" : fmt(wt, 1)) + (adj ? '<span class="dim">調整' + fmt(adj, 1) + "</span>" : "") + "</td></tr>";
-    }).join("");
-    var W = has ? BI.weather || {} : {};
-    var wl = has ? [W.at ? W.at + "時点" : "", W.weather || "", W.temp != null ? "気温" + fmt(W.temp, 0) + "℃" : "", W.wind != null ? "風速" + fmt(W.wind, 0) + "m" : "",
-                    W.wave != null ? "波高" + fmt(W.wave, 0) + "cm" : "", W.water != null ? "水温" + fmt(W.water, 0) + "℃" : ""].filter(Boolean).join("・")
-                 : (D.result ? "風 " + (D.result.wind_dir || "") + (D.result.wind != null ? D.result.wind + "m" : "") + "(競走成績から)" : "");
-    box.innerHTML = '<div class="scroll"><table class="rc bt"><thead><tr><th class="w">枠</th><th class="who">選手</th><th>展示<br>タイム</th><th>進入</th><th>展示<br>ST</th>' +
-      "<th>チルト</th><th>部品交換</th><th>体重</th></tr></thead><tbody>" + rows + "</tbody></table></div>" +
-      (wl ? '<p class="sub">' + esc(wl) + "</p>" : "");
-    if (at) at.textContent = has ? (BI.fetched ? BI.fetched + " 取り込み" : "") : "";
-  }
-
-  // 出走表の「このコース」を、展示の進入に合わせて書き換える。モーター評価に、このレースの展示タイムを加える
+  // ---- 表(縦: 列が1〜6号艇、行が項目)。ランキングにできる項目は、一番良い艇の枠を赤で塗る
   var KS = { "逃げ": "逃げ", "捲り": "捲り", "差し": "差し", "捲り差し": "捲差", "抜き": "抜き", "恵まれ": "恵まれ" };
   var SECOND_ORDER = ["差し", "捲り", "捲り差し", "残し", "道中", "差され", "捲られ", "捲り差され", "抜かれ", "その他"];
   function winText(cs, course) {
@@ -124,53 +88,152 @@
       return s2[b] - s2[a] || SECOND_ORDER.indexOf(a) - SECOND_ORDER.indexOf(b); }).slice(0, 2);
     return items.map(function (k) { return (KS[k] || k) + s2[k]; }).join(" ") || "—";
   }
-  function courseCells(cs, course) {
-    var a;
-    if (cs && cs.n) {
-      a = '<td class="c1"><b>' + pct(cs.w1, cs.n) + '%</b></td><td class="c2">' + pct(cs.w2, cs.n) + '%</td><td class="c3">' + pct(cs.w1 + cs.w2 + cs.w3, cs.n) + "%</td>" +
-        '<td class="c4"><span>' + st2(cs.st) + '</span><span class="dim">' + cs.n + "走</span></td>";
-    } else a = '<td class="c1">—</td><td class="c2">—</td><td class="c3">—</td><td class="c4"><span>—</span><span class="dim">0走</span></td>';
-    var lab = "", val = "—";
-    if (cs && cs.n && course === 1) { lab = "逃げ"; val = pct((cs.km || {})["逃げ"] || 0, cs.n) + "%"; }
-    if (cs && cs.n && course === 2) { lab = "逃がし"; val = pct(cs.ng || 0, cs.n) + "%"; }
-    return a + '<td class="txt c5"><span>' + esc(winText(cs, course)) + '</span><span class="dim">' + esc(secondText(cs)) + "</span></td>" +
-      '<td class="c6"><span class="dim">' + (lab ? esc(lab) : "&nbsp;") + "</span><span>" + esc(val) + "</span></td>";
+  function tops(vals, dir) {
+    var ok = vals.filter(function (v) { return v != null && isFinite(v); });
+    if (ok.length < 2) return vals.map(function () { return false; });
+    var best = dir === "min" ? Math.min.apply(null, ok) : Math.max.apply(null, ok);
+    if (ok.every(function (v) { return Math.abs(v - best) < 1e-9; })) return vals.map(function () { return false; });
+    return vals.map(function (v) { return v != null && isFinite(v) && Math.abs(v - best) < 1e-9; });
   }
-  var cardCourseSig = "";
-  function updateCard() {
-    var sig = D.entries.map(function (e) { return courseOf(e.waku); }).join("");
-    if (sig !== cardCourseSig) {
-      cardCourseSig = sig;
-      var moved = false;
-      D.entries.forEach(function (e) {
-        var c = courseOf(e.waku), tr = document.querySelector('#card tr[data-waku="' + e.waku + '"]');
-        if (!tr) return;
-        if (c !== e.waku) moved = true;
-        var cells = tr.querySelectorAll(".c1,.c2,.c3,.c4,.c5,.c6");
-        if (cells.length !== 6) return;
-        var tmp = document.createElement("tbody");
-        tmp.innerHTML = "<tr>" + courseCells((e.cs || {})[String(c)], c) + "</tr>";
-        var fresh = tmp.firstChild.children;
-        for (var i = cells.length - 1; i >= 0; i--) cells[i].parentNode.replaceChild(fresh[i], cells[i]);
-      });
-      var h = $("#cardCourse");
-      if (h) h.textContent = moved ? "このコース(展示の進入)" : "このコース(枠と同じ)";
-    }
+  function vrow(label, cells, vals, dir, cls) {
+    var t = vals ? tops(vals, dir) : null;
+    return '<tr class="' + (cls || "") + '"><th scope="row">' + label + "</th>" +
+      cells.map(function (c, i) { return '<td class="' + (t && t[i] ? "top" : "") + '">' + c + "</td>"; }).join("") + "</tr>";
+  }
+  function vhead() {
+    return "<thead><tr><th></th>" + D.entries.map(function (e) { return '<th class="bw w' + e.waku + '">' + e.waku + "</th>"; }).join("") + "</tr></thead>";
+  }
+  function p0(a, b) { return b ? Math.round(a / b * 100) : null; }
+  function cell(v, suf, d) { return v == null || !isFinite(v) ? "—" : (d != null ? Number(v).toFixed(d) : v) + (suf || ""); }
+  var SM = { "S": "失", "F": "F", "L": "L", "K": "欠" };
+
+  // 出走表
+  function renderCard() {
+    var box = $("#cardBox");
+    if (!box) return;
+    var E = D.entries, C = E.map(function (e) { return courseOf(e.waku); }), moved = E.some(function (e, i) { return C[i] !== e.waku; });
+    var CS = E.map(function (e, i) { return (e.cs || {})[String(C[i])] || null; });
     // モーター評価: 展示タイムが4艇以上そろったら、レースの平均との差を加える(重みは scripts/motor.py と同じ)
-    var exs = D.entries.map(function (e) { return exOf(e.waku); }).filter(function (x) { return x != null && x > 6 && x < 7.6; });
-    var mean = exs.length >= 4 ? avg(exs) : null;
-    D.entries.forEach(function (e) {
-      var mg = e.mg, b = document.querySelector('#card tr[data-waku="' + e.waku + '"] td.mo b');
-      if (!mg || !b) return;
-      var z = mg.z, ex = exOf(e.waku);
-      if (mean != null && ex != null) {
-        var zt = Math.max(-3, Math.min(3, (mean - ex) / 0.047));
-        z = (0.55 * mg.z + 0.45 * zt) / Math.sqrt(0.55 * 0.55 + 0.45 * 0.45);
-      }
-      var g = z >= 1.4 ? "S" : z >= 0.65 ? "A" : z >= 0 ? "B" : z >= -0.65 ? "C" : z >= -1.4 ? "D" : "E";
-      b.textContent = g; b.className = "g g" + g;
-      b.title = mean != null ? "モーター評価(このレースの展示タイムを加えたもの)" : "モーター評価";
+    var exs = E.map(function (e) { return exOf(e.waku); }), okx = exs.filter(function (x) { return x != null && x > 6 && x < 7.6; });
+    var exMean = okx.length >= 4 ? avg(okx) : null;
+    var mz = E.map(function (e, i) {
+      if (!e.mg) return null;
+      var z = e.mg.z;
+      if (exMean != null && exs[i] != null) { var zt = Math.max(-3, Math.min(3, (exMean - exs[i]) / 0.047)); z = (0.55 * z + 0.45 * zt) / Math.sqrt(0.55 * 0.55 + 0.45 * 0.45); }
+      return z;
     });
+    function grade(z) { return z == null ? "—" : z >= 1.4 ? "S" : z >= 0.65 ? "A" : z >= 0 ? "B" : z >= -0.65 ? "C" : z >= -1.4 ? "D" : "E"; }
+    var rows = [];
+    rows.push(vrow("選手", E.map(function (e) { return '<b class="nm">' + esc(e.name) + '</b><span class="dim">' + esc(e.toban) + " " + esc(e.cls) + "</span>"; }), null, null, "who"));
+    rows.push(vrow("支部・年齢", E.map(function (e) { return '<span class="dim">' + esc(e.branch || "") + "<br>" + esc(e.age) + "歳 " + (e.weight ? e.weight + "kg" : "") + "</span>"; })));
+    rows.push(vrow("F・L", E.map(function (e) { return '<span class="' + (e.fp ? "fon" : "") + '">F' + (e.fp || 0) + "</span>" + (e.lp != null ? ' <span class="dim">L' + e.lp + "</span>" : ""); })));
+    rows.push(vrow("平均ST", E.map(function (e) { return st2(e.ast); }), E.map(function (e) { return e.ast; }), "min"));
+    rows.push(vrow("全国勝率", E.map(function (e) { return cell(e.rate, "", 2); }), E.map(function (e) { return e.rate; }), "max"));
+    rows.push(vrow("全国2連率", E.map(function (e) { return cell(e.rate2, "%", 1); }), E.map(function (e) { return e.rate2; }), "max"));
+    rows.push(vrow("当地勝率", E.map(function (e) { return cell(e.local, "", 2); }), E.map(function (e) { return e.local; }), "max"));
+    rows.push(vrow("当地2連率", E.map(function (e) { return cell(e.local2, "%", 1); }), E.map(function (e) { return e.local2; }), "max"));
+    rows.push('<tr class="grp"><th colspan="7">このコース(' + (moved ? "展示の進入" : "枠と同じ") + ")の直近1年</th></tr>");
+    rows.push(vrow("コース", C.map(function (c) { return c; })));
+    var r1 = CS.map(function (cs) { return cs && cs.n ? p0(cs.w1, cs.n) : null; }), r2 = CS.map(function (cs) { return cs && cs.n ? p0(cs.w2, cs.n) : null; }),
+        r3 = CS.map(function (cs) { return cs && cs.n ? p0(cs.w3, cs.n) : null; });
+    rows.push(vrow("1着率", r1.map(function (v) { return cell(v, "%"); }), r1, "max"));
+    rows.push(vrow("2着率", r2.map(function (v) { return cell(v, "%"); }), r2, "max"));
+    rows.push(vrow("3着率", r3.map(function (v) { return cell(v, "%"); }), r3, "max"));
+    rows.push(vrow("ST", CS.map(function (cs) { return cs ? st2(cs.st) : "—"; }), CS.map(function (cs) { return cs && cs.n >= 3 ? cs.st : null; }), "min"));
+    rows.push(vrow("走数", CS.map(function (cs) { return cs ? cs.n : 0; })));
+    rows.push(vrow("勝ち方", CS.map(function (cs, i) { return '<span class="tx">' + esc(winText(cs, C[i])) + "</span>"; })));
+    rows.push(vrow("2着の時", CS.map(function (cs) { return '<span class="tx">' + esc(secondText(cs)) + "</span>"; })));
+    rows.push(vrow("逃げ・逃がし", CS.map(function (cs, i) {
+      if (!cs || !cs.n || C[i] > 2) return "—";
+      return '<span class="dim">' + (C[i] === 1 ? "逃げ" : "逃がし") + "</span>" + p0(C[i] === 1 ? (cs.km || {})["逃げ"] || 0 : cs.ng || 0, cs.n) + "%";
+    })));
+    rows.push('<tr class="grp"><th colspan="7">モーター・ボート</th></tr>');
+    rows.push(vrow("モーター評価", mz.map(function (z) { var g = grade(z); return '<b class="g g' + g + '">' + g + "</b>"; }), mz, "max", "mo"));
+    rows.push(vrow("モーター", E.map(function (e) { return '<span class="dim">' + esc(e.motor) + "号機</span>" + cell(e.motor2, "%", 1); }), E.map(function (e) { return e.motor2; }), "max"));
+    rows.push(vrow("ボート", E.map(function (e) { return '<span class="dim">' + esc(e.boat) + "号艇</span>" + cell(e.boat2, "%", 1); }), E.map(function (e) { return e.boat2; }), "max"));
+    rows.push('<tr class="grp"><th colspan="7">今節</th></tr>');
+    rows.push(vrow("着順", E.map(function (e) {
+      var days = (e.series_days || []).filter(Boolean);
+      return days.length ? '<span class="days">' + days.map(function (d) {
+        return "<em>" + d.split("").map(function (ch) { return SM[ch] ? '<i class="ng">' + SM[ch] + "</i>" : ch === "1" ? '<i class="top1">1</i>' : "<i>" + ch + "</i>"; }).join("") + "</em>";
+      }).join("") + "</span>" : "—";
+    }), null, null, "series"));
+    rows.push(vrow("節間順位", E.map(function (e) { return e.srank ? e.srank[0] + '<span class="dim">/' + e.srank[1] + "</span>" : "—"; }),
+      E.map(function (e) { return e.srank ? e.srank[0] : null; }), "min"));
+    box.innerHTML = '<div class="vt-wrap"><table class="vt">' + vhead() + "<tbody>" + rows.join("") + "</tbody></table></div>";
+  }
+
+  // 直前情報(展示タイム・推定タイム・スタート展示など)
+  function renderBefore() {
+    var box = $("#beforeBox"), at = $("#beforeAt"), exb = $("#ex1Box");
+    if (!box) return;
+    var has = BI && BI.ex && Object.keys(BI.ex).some(function (k) { return BI.ex[k] != null; });
+    var fromRes = !has && D.result;
+    if (!has && !fromRes) {
+      var left = minsLeft();
+      box.innerHTML = '<p class="wait">' + (left < -5 || finished() ? "このレースの直前情報は取り込めませんでした。" : "展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。") + "</p>";
+      if (at) at.textContent = "";
+      if (exb) exb.innerHTML = ex1Text(null);
+      return;
+    }
+    var E = D.entries, exs = E.map(function (e) { return exOf(e.waku); });
+    var okx = exs.filter(function (x) { return x != null && x > 6 && x < 7.6; }), exMean = okx.length >= 4 ? avg(okx) : null;
+    var sorted = okx.slice().sort(function (a, b) { return a - b; });
+    var PC = D.pace || null;
+    var spd = exs.map(function (x) { return x ? 150 / x * 3.6 : null; });
+    var lap = exs.map(function (x, i) {
+      if (!PC || x == null || exMean == null) return null;
+      var b = PC.boats[String(E[i].waku)] || { res: 0 };
+      return PC.lap + b.res / 3 + PC.beta * (x - exMean) / 3;
+    });
+    var turn0 = E.map(function (e) { var b = PC && PC.boats[String(e.waku)]; return b ? b.turn / 3 : null; });
+    var tm = avg(turn0), turn = turn0.map(function (v) { return v == null || tm == null ? null : v - tm; });   // 6艇の平均との差
+    var est = E.map(function (e) { return has && BI.est ? BI.est[String(e.waku)] : null; });
+    var rows = [];
+    rows.push(vrow("選手", E.map(function (e) { return '<b class="nm">' + esc(e.name) + "</b>"; }), null, null, "who"));
+    rows.push(vrow("展示タイム", exs.map(function (x) { return x == null ? "—" : "<b>" + x.toFixed(2) + '</b><span class="dim">' + (sorted.indexOf(x) + 1) + "位</span>"; }), exs, "min"));
+    rows.push(vrow("直線速度<small>推定</small>", spd.map(function (v) { return v == null ? "—" : v.toFixed(1) + '<span class="dim">km/h</span>'; }), spd, "max"));
+    rows.push(vrow("一周タイム<small>推定</small>", lap.map(function (v) { return v == null ? "—" : v.toFixed(2); }), lap, "min"));
+    rows.push(vrow("まわり足<small>推定</small>", turn.map(function (v) { return v == null ? "—" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2); }), turn, "min"));
+    rows.push(vrow("進入", E.map(function (e) { var c = courseOf(e.waku); return c !== e.waku ? '<b class="moved">' + c + "</b>" : String(c); })));
+    rows.push(vrow("展示ST", est.map(function (x) { return x == null ? "—" : x < 0 ? '<span class="fon">F' + st2(-x).replace("F", "") + "</span>" : st2(x); }),
+      est.map(function (x) { return x != null && x >= 0 ? x : null; }), "min"));
+    if (has) {
+      rows.push(vrow("チルト", E.map(function (e) { var v = BI.tilt ? BI.tilt[String(e.waku)] : null; return v == null ? "—" : fmt(v, 1); })));
+      rows.push(vrow("部品交換", E.map(function (e) {
+        var w = String(e.waku), parts = (BI.parts && BI.parts[w] || []).slice();
+        if (BI.prop && BI.prop[w]) parts.push("プロペラ" + BI.prop[w]);
+        return parts.length ? '<span class="tx">' + esc(parts.join(" ")) + "</span>" : "—";
+      })));
+      rows.push(vrow("体重", E.map(function (e) {
+        var w = String(e.waku), v = BI.weight ? BI.weight[w] : null, a = BI.adj ? BI.adj[w] : null;
+        return (v == null ? "—" : fmt(v, 1)) + (a ? '<span class="dim">調整' + fmt(a, 1) + "</span>" : "");
+      })));
+    }
+    var W = has ? BI.weather || {} : {};
+    var wl = has ? [W.at ? W.at + "時点" : "", W.weather || "", W.temp != null ? "気温" + fmt(W.temp, 0) + "℃" : "", W.wind != null ? "風速" + fmt(W.wind, 0) + "m" : "",
+                    W.wave != null ? "波高" + fmt(W.wave, 0) + "cm" : "", W.water != null ? "水温" + fmt(W.water, 0) + "℃" : ""].filter(Boolean).join("・")
+                 : (D.result ? "風 " + (D.result.wind_dir || "") + (D.result.wind != null ? D.result.wind + "m" : "") + "(競走成績から)" : "");
+    box.innerHTML = '<div class="vt-wrap"><table class="vt">' + vhead() + "<tbody>" + rows.join("") + "</tbody></table></div>" +
+      (wl ? '<p class="sub">' + esc(wl) + "</p>" : "");
+    if (at) at.textContent = has ? (BI.fetched ? BI.fetched + " 取り込み" : "") : "";
+    // 展示タイム1位の艇の1着率
+    var best = exMean != null ? Math.min.apply(null, okx) : null, bi = best != null ? exs.indexOf(best) : -1;
+    if (exb) exb.innerHTML = ex1Text(bi >= 0 ? { e: E[bi], c: courseOf(E[bi].waku) } : null);
+  }
+  function ex1Text(b) {
+    var X = D.pace && D.pace.ex1;
+    if (!X || !X.nat || !X.nat[0]) return "";
+    function r(a) { return a && a[0] >= 20 ? Math.round(a[1] / a[0] * 100) + "%" : "—"; }
+    var lines = ['<div class="ex1"><b>展示タイム1位の艇の1着率</b><span>全国 ' + r(X.nat) + "</span><span>" + esc(V.name) + " " + r(X.ven) + "</span></div>"];
+    var cells = [1, 2, 3, 4, 5, 6].map(function (c) {
+      var hit = b && b.c === c;
+      return '<td class="' + (hit ? "top" : "") + '">' + r((X.course || {})[String(c)]) + '<span class="dim">' + r((X.vcourse || {})[String(c)]) + "</span></td>";
+    }).join("");
+    lines.push('<div class="vt-wrap"><table class="vt ex1t"><thead><tr><th>コース</th>' + [1, 2, 3, 4, 5, 6].map(function (c) { return "<th>" + c + "</th>"; }).join("") +
+      '</tr></thead><tbody><tr><th scope="row">展示1位の<br>1着率<small>全国/当地</small></th>' + cells + "</tr></tbody></table></div>");
+    if (b) lines.push('<p class="sub">このレースの展示タイム1位は ' + b.e.waku + "号艇 " + esc(b.e.name) + "(" + b.c + "コース)。赤い枠が、そのコースの数字です。</p>");
+    return lines.join("");
   }
 
   // 結果(3連単の組と払戻金)
@@ -332,7 +395,8 @@
     if (!R.M) { rows.innerHTML = '<tr><td colspan="6" class="why">学習済みの見立てがまだありません。</td></tr>'; return; }
     var B = R.B.slice().sort(function (a, b) { return a.course - b.course; }), M = R.M;
     R.nbMean = avg(B.map(function (b) { return (b.stf.parts || {}).nb || 0; }));
-    rows.innerHTML = B.map(function (b) {
+    var stTop = tops(B.map(function (b) { return b.stf.mean; }), "min"), outTop = tops(B.map(function (b) { return b.stf.pOut; }), "max");
+    rows.innerHTML = B.map(function (b, bi) {
       var s = b.stf, wb = M.whenBoat(b.course - 1, "out"), top = "—";
       if (wb) {
         var bi = 0;
@@ -340,8 +404,8 @@
         top = M.classes[bi][0] + "コース" + M.classes[bi][1] + " " + Math.round(wb.p[bi] * 100) + "%";
       }
       return '<tr><td><span class="waku w' + b.waku + '">' + b.waku + "</span> " + b.course + "</td><td>" + esc(b.name) + "</td>" +
-        '<td class="num">' + st2(s.mean) + '<span class="small">' + st2(s.lo) + "〜" + st2(s.hi) + "</span></td>" +
-        '<td class="num">' + Math.round(s.pOut * 100) + '%<span class="meter"><i style="width:' + Math.min(100, s.pOut * 250).toFixed(0) + '%"></i></span></td>' +
+        '<td class="num' + (stTop[bi] ? " top" : "") + '">' + st2(s.mean) + '<span class="small">' + st2(s.lo) + "〜" + st2(s.hi) + "</span></td>" +
+        '<td class="num' + (outTop[bi] ? " top" : "") + '">' + Math.round(s.pOut * 100) + '%<span class="meter"><i style="width:' + Math.min(100, s.pOut * 250).toFixed(0) + '%"></i></span></td>' +
         '<td class="num">' + Math.round(s.pDent * 100) + '%<span class="meter"><i style="width:' + Math.min(100, s.pDent * 250).toFixed(0) + '%"></i></span></td>' +
         "<td>" + esc(top) + "</td></tr>";
     }).join("");
@@ -381,8 +445,8 @@
   function render() {
     renderDeadline();
     renderResult();
+    renderCard();
     renderBefore();
-    updateCard();
     var on = ready();
     setGated(on);
     if (!on) return;
@@ -669,6 +733,21 @@
       else sel();
     });
   }
+  // タブ(出走表・直前情報・1S1M展開・データ)。選んだタブはアドレスの # に残し、ほかのレースへ移っても同じタブを開く
+  function setupTabs() {
+    var tabs = $$(".tabs [data-tab]"), names = tabs.map(function (b) { return b.getAttribute("data-tab"); });
+    function show(name, keep) {
+      tabs.forEach(function (b) { var on = b.getAttribute("data-tab") === name; b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false"); });
+      $$(".pane").forEach(function (pn) { pn.hidden = pn.id !== "pane-" + name; });
+      if (keep && history.replaceState) history.replaceState(null, "", "#" + name);
+      $$(".chips a.chip").forEach(function (a) { a.href = a.getAttribute("href").split("#")[0] + "#" + name; });
+      if (name === "t1") window.dispatchEvent(new Event("resize"));
+    }
+    tabs.forEach(function (b) { b.addEventListener("click", function () { show(b.getAttribute("data-tab"), true); }); });
+    var h = (location.hash || "").slice(1);
+    show(names.indexOf(h) >= 0 ? h : names[0], false);
+  }
+  setupTabs();
   copyBtn("#btnCopy", "#post", "#copyMsg");
   copyBtn("#btnCopyR", "#review", "#copyMsgR");
   setupViewControls();

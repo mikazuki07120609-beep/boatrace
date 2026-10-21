@@ -162,7 +162,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
         if valid_st(e):
             r = six[c - 1]
             nbs = [list(six[j - 1].get("stx", [0, 0.0, 0.0])) for j in (c - 1, c + 1) if 1 <= j <= 6]
-            sts.append({"d": d, "v": vcode, "no": race["no"], "c": c, "st": e["st"], "stx": list(r.get("stx", [0, 0.0, 0.0])),
+            sts.append({"d": d, "v": vcode, "no": race["no"], "c": c, "waku": e.get("waku"), "st": e["st"], "stx": list(r.get("stx", [0, 0.0, 0.0])),
                         "toban": e["toban"], "rname": race.get("name"), "r8": list(r.get("rs", []))[-RECENT_N:], "nb": nbs,
                         "fp": sum(1 for x in r.get("f", []) if x >= period_start(d).isoformat()),
                         "wind": race.get("wind"), "n6": len(vals)})
@@ -423,6 +423,54 @@ def fit_start(sts):
 
 
 POOL = 1200
+EST_PRIOR, EST_PRIOR_N = 0.35, 200      # 展示STの効き方の初期値と、その重み(走数)
+
+
+def live_est() -> dict:
+    """取り込んだ直前情報の展示ST {(日付, 場, レース, 枠): 展示ST}。フライングだった展示は除く。"""
+    out = {}
+    for folder in sorted((DATA / "live").glob("[0-9]" * 8)):
+        try:
+            d = parse_ymd(folder.name)
+        except ValueError:
+            continue
+        for f in folder.glob("[0-9][0-9].json"):
+            v = load_json(f, {}) or {}
+            for no, b in (v.get("before") or {}).items():
+                if not b.get("ready"):
+                    continue
+                for w, x in (b.get("est") or {}).items():
+                    if isinstance(x, (int, float)) and 0 <= x < 0.5:
+                        out[(d, f.stem, int(no), int(w))] = x
+    return out
+
+
+def fit_est(sm, sts) -> None:
+    """展示STの効き方: 本番のST − 予想ST = est ×(展示ST − 予想ST) + 残り。展示STがあるとき、残りのばらつきが何倍になるか(est_scale)。
+    データが少ないうちは初期値(0.35)に寄せる。"""
+    ex = live_est()
+    rows = []
+    for s in sts:
+        k = (s["d"], s["v"], s["no"], s.get("waku"))
+        if k in ex:
+            rows.append((s, ex[k]))
+    if not rows:
+        sm["est_n"] = 0
+        return
+    K, m_pop = sm["K"], sm["m_pop"]
+    xs, ys = [], []
+    for s, e in rows:
+        row = start_row(s, K, m_pop, [None])
+        mu = sum(sm["coef"][n] * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(s["v"], 0.0)
+        xs.append(e - mu)
+        ys.append(s["st"] - mu)
+    xs, ys = np.array(xs), np.array(ys)
+    n = len(xs)
+    coef = (float((xs * ys).sum()) + EST_PRIOR * EST_PRIOR_N * float((xs * xs).mean())) / (float((xs * xs).sum()) + EST_PRIOR_N * float((xs * xs).mean()))
+    res0, res1 = float(np.var(ys)), float(np.var(ys - coef * xs))
+    sm["coef"]["est"] = round(coef, 4)
+    sm["est_scale"] = round(math.sqrt(max(0.5, min(1.0, res1 / res0))) if res0 > 0 and n >= 50 else 0.9, 3)
+    sm["est_n"] = n
 
 
 def racer_scale(sm, b):
@@ -735,6 +783,8 @@ def main() -> int:
     th_ord, _ = fit_order(recs, base2)
     # 全期間で学習し直す(翌日からの見立てに使う)
     sm = fit_start(sts)
+    if sm:
+        fit_est(sm, sts)
     th, D = fit_dev(recs)
     if th is None or sm is None:
         print("学習できませんでした")

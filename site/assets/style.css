@@ -185,3 +185,52 @@ footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:colu
 .p2row .lbl{color:var(--muted);min-width:5em}
 .cand{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono)}
 .cand .waku{width:22px;height:22px;font-size:12px}
+/* タブ(出走表・直前情報・1S1M展開・データ) */
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);position:sticky;top:0;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.tabs button{border:0;border-right:1px solid var(--line);border-radius:0;background:var(--surface);padding:12px 2px;font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap}
+.tabs button:last-child{border-right:0}
+.tabs button.on{background:var(--accent);color:#fff}
+.pane{display:flex;flex-direction:column;gap:18px}
+ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+/* 縦の表(列が1〜6号艇、行が項目)。一番良い艇の枠は赤 */
+.vt-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line2);border-radius:8px}
+table.vt{border-collapse:separate;border-spacing:0;width:100%;min-width:330px;table-layout:fixed;font-size:12px;line-height:1.3}
+table.vt th,table.vt td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:5px 2px;text-align:center;vertical-align:middle;white-space:normal;word-break:break-word}
+table.vt tr:last-child th,table.vt tr:last-child td{border-bottom:0}
+table.vt th:last-child,table.vt td:last-child{border-right:0}
+table.vt thead th{background:var(--head)}
+table.vt thead th:first-child{width:76px}
+table.vt thead th.bw{font-family:var(--mono);font-size:17px;font-weight:700;padding:7px 0;border-bottom:1px solid var(--line2)}
+table.vt tbody th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);background:var(--head);padding:5px 5px;letter-spacing:0;line-height:1.25}
+table.vt tbody th small{display:block;font-size:9.5px;font-weight:500}
+table.vt td{font-family:var(--mono);font-variant-numeric:tabular-nums}
+table.vt td.top{background:#e53935;color:#fff;font-weight:700}
+table.vt td.top .dim,table.vt td.top .tx{color:rgba(255,255,255,.9)}
+table.vt td.top .fon{background:#fff;color:#e53935}
+table.vt tr.grp th{background:var(--accent-soft);color:var(--accent);text-align:left;font-size:11px;padding:4px 6px}
+table.vt .nm{font-family:var(--body);font-size:12.5px;display:block;line-height:1.25;font-weight:700}
+table.vt .tx{font-family:var(--body);font-size:11px;line-height:1.3;display:block}
+table.vt .dim{display:block;color:var(--muted);font-size:10.5px;font-family:var(--body)}
+table.vt .fon{display:inline-block;color:#fff;background:var(--red);border-radius:3px;padding:0 3px;font-weight:700}
+table.vt .moved{color:var(--red)}
+table.vt td .g{width:24px;height:24px;font-size:14px}
+table.vt .days{display:flex;flex-direction:column;gap:2px;align-items:center}
+table.vt .days em{font-style:normal;display:inline-flex;gap:1px;padding:0 3px;border:1px solid var(--line);border-radius:3px;font-size:11.5px}
+table.vt .days i{font-style:normal}
+table.vt .days i.top1{font-weight:700;color:var(--accent)}
+table.vt .days i.ng{color:var(--red);font-weight:700}
+table.vt td.top .days em{border-color:rgba(255,255,255,.6)}
+.ex1{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:13px;margin:10px 0 6px}
+.ex1 span{font-family:var(--mono)}
+table.ex1t thead th{font-family:var(--mono);font-size:13px}
+@media (max-width:480px){
+  section{padding:12px 10px}
+  .tabs button{font-size:13px;padding:11px 1px}
+}
+table.vt thead th.w1{background:var(--b1);color:var(--b1t)}table.vt thead th.w2{background:var(--b2);color:var(--b2t)}
+table.vt thead th.w3{background:var(--b3);color:var(--b3t)}table.vt thead th.w4{background:var(--b4);color:var(--b4t)}
+table.vt thead th.w5{background:var(--b5);color:var(--b5t)}table.vt thead th.w6{background:var(--b6);color:var(--b6t)}
+.stt td.top{background:#e53935;color:#fff;font-weight:700}
+.stt td.top .small{color:rgba(255,255,255,.9)}
+.stt td.top .meter{background:rgba(255,255,255,.35)}
+.stt td.top .meter>i{background:#fff}
