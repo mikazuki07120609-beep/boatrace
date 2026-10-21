@@ -1033,6 +1033,13 @@
       if (lead === winner && (kind === want || outer >= 5)) break;
       if (outer >= 6) break;
       // 調整: 勝つ艇を少し強く、戦法の相手をそれらしく(差しなら相手がもう少し流れる、まくり差しなら横切られる艇が待つ、捲りなら捲られる艇が待つ)
+      if (lead === winner && want === "makurizashi" && kind === "makuri" && winner.under && !winner.under.win) {
+        // まくり差しのはずが、早く着きすぎて全部の外を回った: 勝つ艇は差し場を待ち、差される艇(捲りに行った艇)が先に1マークへ
+        winner.wait = Math.min(1.2, (winner.wait || 0) + 0.4);
+        winner.under.bias.vmax = Math.min(1.4, winner.under.bias.vmax + 0.3);
+        winner.over.forEach(function (o) { hold(o, 0.94); });
+        continue;
+      }
       if (lead !== winner || kind !== want) {
         winner.bias.vmax = Math.min(1.4, winner.bias.vmax + 0.15);
         winner.bias.alat = Math.min(1.2, winner.bias.alat * 1.025);
@@ -1119,6 +1126,9 @@
             dn.sinkZ = true;
             dn.extra.push({ s0: dn.P.sStart + (dn.P.sEnd - dn.P.sStart) * 0.25, s1: dn.P.sEnd + 12, f: 0.86, kind: "wake" });
           }
+        }
+        if (tries[key] === 2 && ahead && (ahead.win || ahead.course < up.course) && ["sashi", "makurizashi", "soto", "zen"].indexOf(up.role) >= 0) {
+          up.role = "mark"; up.ref = ahead; up.wait = 0;                    // 2回目も抜けないときは、すぐ前の着の艇について回る(差し続く・外を続く)
         }
         var soft = !!noBoost[key];                                          // 前の艇を抜いて先頭が崩れた組は、後ろの艇を下げるだけにする
         if (tries[key] >= 2 && !dn.sinkZ && dn.P) {                        // 抜けないときは、前の艇が引き波に沈む形にする(出口で失速)
