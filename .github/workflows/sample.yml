@@ -1,0 +1,31 @@
+name: 見本を取る(開発用・一時的)
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "URLをスペース区切り"
+        required: true
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 見本を取る
+        run: |
+          mkdir -p out
+          i=0
+          for u in ${{ github.event.inputs.urls }}; do
+            i=$((i+1))
+            curl -sS -L --max-time 40 -A "suimen-note/1.0 (+https://mikazuki07120609-beep.github.io/boatrace/)" -o "out/page_${i}.html" -w "${i} %{http_code} %{content_type} %{size_download} %{url_effective} ${u}\n" "$u" >> out/index.txt || echo "${i} ERR ${u}" >> out/index.txt
+            sleep 3
+          done
+          cat out/index.txt
+      - name: 見本を開発用の枝に置く
+        run: |
+          cd out
+          git init -q -b dev-samples
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add . && git commit -q -m "見本"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dev-samples
