@@ -14,6 +14,21 @@
   function avg(a) { var v = a.filter(function (x) { return x != null && !isNaN(x); }); return v.length ? v.reduce(function (s, x) { return s + x; }, 0) / v.length : null; }
   function pct(a, b) { return b ? Math.round(a / b * 100) : null; }
 
+  // このコースでの決まり手の割合: 選手が勝ったときの決まり手を、場の傾向(4勝分の重み)で補う
+  function kimDist(b) {
+    var vk = V.kimarite[b.course - 1] || [0, 0, 0, 0, 0, 0], vt = vk.reduce(function (s, x) { return s + x; }, 0) || 1;
+    var km = (b.csNow && b.csNow.km) || {}, tot = 0;
+    KIM.forEach(function (k) { tot += km[k] || 0; });
+    return KIM.map(function (k, j) { return ((km[k] || 0) + 4 * vk[j] / vt) / (tot + 4); });
+  }
+  // 選手のタイプ(捲り型・差し型など)。このコースで2勝以上し、6割以上が同じ決まり手なら
+  function tacType(cs) {
+    var km = (cs && cs.km) || {}, items = ["捲り", "捲り差し", "差し"].map(function (k) { return [k, km[k] || 0]; }).filter(function (x) { return x[1]; });
+    items.sort(function (a, b) { return b[1] - a[1]; });
+    var tot = items.reduce(function (s, x) { return s + x[1]; }, 0);
+    return { text: items.map(function (x) { return x[0] + x[1]; }).join("・"), type: tot >= 2 && items[0][1] / tot >= 0.6 ? items[0][0] + "型" : "" };
+  }
+
   function readState() {
     return D.entries.map(function (e) {
       var exEl = document.getElementById("ex" + e.waku), cEl = document.getElementById("c" + e.waku);
@@ -57,13 +72,18 @@
     if (strong && wind === "head") { kw[1] *= 1.15; kw[3] *= 1.1; inWind = 0.9; }
     if (strong && wind === "tail") { kw[2] *= 1.1; kw[1] *= 0.9; }
     if (strong && wind === "side") { inWind = 0.95; }
+    // 1コースの選手の負け方(差され・捲られ・捲り差され)の傾向。決まりやすい攻め方を少し重くする
+    var b1 = B.filter(function (b) { return b.course === 1; })[0], lsW = { "差し": 1, "捲り": 1, "捲り差し": 1 };
+    if (b1 && b1.csNow && b1.csNow.ls) {
+      var ls = b1.csNow.ls, lt = (ls["差し"] || 0) + (ls["捲り"] || 0) + (ls["捲り差し"] || 0);
+      ["差し", "捲り", "捲り差し"].forEach(function (k) { lsW[k] = 0.7 + 0.9 * (((ls[k] || 0) + 4 / 3) / (lt + 4)); });
+    }
     var scen = [];
     B.forEach(function (b) {
-      var k = V.kimarite[b.course - 1] || [0, 0, 0, 0, 0, 0];
-      var kt = k.reduce(function (s, x) { return s + x; }, 0) || 1;
-      k.forEach(function (p, j) {
+      var d = kimDist(b);
+      d.forEach(function (p, j) {
         if (p <= 0) return;
-        var w = b.base * 100 * b.factor * (p / kt) * kw[j];
+        var w = b.base * 100 * b.factor * p * kw[j] * (b.course === 1 ? 1 : (lsW[KIM[j]] || 1));
         if (b.course === 1) w *= inWind;
         scen.push({ b: b, kim: KIM[j], w: w });
       });
@@ -134,6 +154,13 @@
       li.push(V.name + "の" + b.course + "コース1着率は" + fmt(V.place[c][0]) + "%。勝つときは「" + (best ? best[1] : "—") + "」が最多。");
       var rec = courseRecord(b);
       li.push(rec ? rec + "。" : b.course + "コースの直近の成績はまだありません。");
+      var tt = tacType(b.csNow);
+      if (b.course >= 2 && tt.text) li.push(b.course + "コースで勝ったときの決まり手は " + tt.text + (tt.type ? "(" + tt.type + ")" : "") + "。");
+      if (b.course === 1 && b.csNow && b.csNow.ls) {
+        var LN = { "差し": "差され", "捲り": "捲られ", "捲り差し": "捲り差され" };
+        var lsTxt = ["差し", "捲り", "捲り差し"].filter(function (k) { return b.csNow.ls[k]; }).map(function (k) { return LN[k] + b.csNow.ls[k]; }).join("・");
+        if (lsTxt) li.push("1コースで負けたときは " + lsTxt + "。");
+      }
       if (b.power != null && R.aPow != null) { var d = b.power - R.aPow; li.push(d >= 0.8 ? "このメンバーでは勝率が上位。" : d <= -0.8 ? "このメンバーでは勝率が下位。展開の助けが必要。" : "勝率はメンバーの中で平均的。"); }
       if (b.stUse != null && R.aSt != null) { var ds = R.aSt - b.stUse; if (ds >= 0.02) li.push("STが速い(" + fmt(b.stUse, 2) + ")。先手を取れる。"); else if (ds <= -0.02) li.push("STが遅め(" + fmt(b.stUse, 2) + ")。スタートで後手に回りやすい。"); }
       if (b.local && b.rate) { var dl = b.local - b.rate; if (dl >= 0.4) li.push("当地勝率が全国より高い。この水面は得意。"); else if (dl <= -0.4) li.push("当地勝率が全国より低い。この水面は苦手寄り。"); }

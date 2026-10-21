@@ -17,7 +17,8 @@ import fetch
 import parse
 from common import DATA, PROGRAM, RAW, RESULTS, load_json, save_json, today_jst
 
-HISTORY_DAYS = 180       # 選手のコース別成績に使う期間
+HISTORY_DAYS = 365       # 選手のコース別成績・戦法の傾向に使う期間
+COMPACT_AFTER = 10       # この日数より前の成績は、集計に使う項目だけに縮めて保存する
 BACKFILL_FIRST = 30      # 成績データがほとんどないときに、1回で取り込む過去の日数
 BACKFILL_PER_RUN = 10    # ふだんの1回で取り込む過去の日数
 STATE = DATA / "fetch_state.json"
@@ -46,6 +47,17 @@ def ingest(kind: str, day: dt.date, log: list, offline: bool) -> str:
     n = sum(len(v["races"]) for v in data["venues"].values())
     log.append(f"{kind} {day}: {len(data['venues'])}場 {n}レースを保存")
     return "ok"
+
+
+def compact(day: dict) -> dict:
+    out = {"date": day.get("date"), "compact": True, "venues": {}}
+    for code, v in day.get("venues", {}).items():
+        out["venues"][code] = {"races": [
+            {"no": r["no"], "k": r.get("kimarite"),
+             "e": [[x.get("rank") or x.get("status"), x["waku"], x["toban"], x.get("name", ""), x.get("course"), x.get("st"),
+                    1 if x.get("flying") else 0] for x in r.get("entries", [])]}
+            for r in v.get("races", [])]}
+    return out
 
 
 def main() -> int:
@@ -93,6 +105,16 @@ def main() -> int:
                     p.unlink()
             except ValueError:
                 pass
+    # 古い成績を縮める(着順・枠・登番・名前・進入・ST・フライングと、決まり手だけ残す)
+    for p in RESULTS.glob("*.json"):
+        try:
+            age = (today - dt.datetime.strptime(p.stem, "%Y%m%d").date()).days
+        except ValueError:
+            continue
+        if age > COMPACT_AFTER:
+            day = load_json(p, {})
+            if day and not day.get("compact"):
+                save_json(p, compact(day))
     cutoff = f"{today - dt.timedelta(days=HISTORY_DAYS + 7):%Y%m%d}"
     save_json(STATE, {"missing_K": sorted(k for k in missing_k if k >= cutoff)})
 

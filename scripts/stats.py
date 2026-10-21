@@ -1,12 +1,13 @@
 """競走成績のJSONから、選手のコース別成績とレース場のコース別成績を集計する。
 
 選手: 直近 RACER_DAYS 日、レース場: 直近 VENUE_DAYS 日(どちらも対象日の前日まで)。
+古い成績は集計に使う項目だけに縮めた形式(compact)で保存されているので、両方を読めるようにする。
 """
 import datetime as dt
 
 from common import RESULTS, KIMARITE, load_json, parse_ymd
 
-RACER_DAYS = 180
+RACER_DAYS = 365
 VENUE_DAYS = 90
 
 
@@ -16,6 +17,17 @@ def _result_files(until: dt.date, days: int):
         d = parse_ymd(p.stem)
         if start <= d < until:
             yield d, p
+
+
+def races_of(v: dict):
+    """場ごとのレースを、縮めた形式でも元の形式でも同じ形で返す。"""
+    for race in v.get("races", []):
+        if "e" in race:
+            ents = [{"rank": a[0] if isinstance(a[0], int) else None, "status": None if isinstance(a[0], int) else a[0],
+                     "waku": a[1], "toban": a[2], "name": a[3], "course": a[4], "st": a[5], "flying": bool(a[6])} for a in race["e"]]
+            yield {"no": race["no"], "kimarite": race.get("k"), "entries": ents}
+        else:
+            yield race
 
 
 def collect(until: dt.date, cache: dict | None = None):
@@ -32,7 +44,7 @@ def collect(until: dt.date, cache: dict | None = None):
         for vcode, v in day.get("venues", {}).items():
             use_venue = d >= vstart
             vs = venues.setdefault(vcode, {"races": 0, "c": {}}) if use_venue else None
-            for race in v.get("races", []):
+            for race in races_of(v):
                 ents = [e for e in race.get("entries", []) if e.get("course")]
                 if len(ents) < 5:
                     continue  # 進入が分からないレースは使わない
@@ -47,8 +59,12 @@ def collect(until: dt.date, cache: dict | None = None):
                     cs["n"] += 1
                     if rank in (1, 2, 3):
                         cs[f"w{rank}"] += 1
-                    if rank == 1 and race.get("kimarite") in KIMARITE:
-                        cs["km"][race["kimarite"]] = cs["km"].get(race["kimarite"], 0) + 1
+                    kim = race.get("kimarite")
+                    if rank == 1 and kim in KIMARITE:
+                        cs["km"][kim] = cs["km"].get(kim, 0) + 1          # このコースで勝ったときの決まり手
+                    elif c == "1" and kim in KIMARITE:
+                        ls = cs.setdefault("ls", {})                      # 1コースで負けたときの決まり手(差され・捲られなど)
+                        ls[kim] = ls.get(kim, 0) + 1
                     st = e.get("st")
                     if isinstance(st, (int, float)) and 0 <= st < 1 and not e.get("flying"):
                         cs["st_sum"] += st

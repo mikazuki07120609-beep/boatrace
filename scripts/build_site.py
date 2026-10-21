@@ -87,7 +87,9 @@ def racer_view(entry, racers):
     cs = {}
     st_sum = st_n = n_all = 0
     for c, s in r.get("c", {}).items():
-        cs[c] = {"n": s["n"], "w1": s["w1"], "w2": s["w2"], "w3": s["w3"], "st": s["st"]}
+        cs[c] = {"n": s["n"], "w1": s["w1"], "w2": s["w2"], "w3": s["w3"], "st": s["st"], "km": s.get("km", {})}
+        if s.get("ls"):
+            cs[c]["ls"] = s["ls"]
         n_all += s["n"]
         if s["st"] is not None:
             st_sum += s["st"] * s["n"]
@@ -144,6 +146,23 @@ def review_text(vname, rno, res, url):
     return "\n".join(lines)
 
 
+LOSS = {"差し": "差され", "捲り": "捲られ", "捲り差し": "捲り差され"}
+
+
+def tactic_cell(cs, course):
+    """そのコースでの勝ち方(と1コースなら負け方)。2勝以上で6割以上が同じ決まり手なら「〇〇型」。"""
+    if not cs or not cs.get("n"):
+        return '<td>—</td>'
+    km = cs.get("km") or {}
+    if course == 1:
+        lost = "・".join(f"{LOSS[k]}{cs['ls'][k]}" for k in ("差し", "捲り", "捲り差し") if cs.get("ls", {}).get(k))
+        return f'<td>逃げ{km.get("逃げ", 0)}<span class="small">{e(lost) or "—"}</span></td>'
+    items = sorted(((k, km.get(k, 0)) for k in ("捲り", "捲り差し", "差し") if km.get(k)), key=lambda kv: -kv[1])
+    tot = sum(v for _, v in items)
+    typ = f"{items[0][0]}型" if tot >= 2 and items[0][1] / tot >= 0.6 else ""
+    return f'<td>{e("・".join(f"{k}{v}" for k, v in items) or "—")}<span class="small">{e(typ)}</span></td>'
+
+
 def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
@@ -165,13 +184,14 @@ def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
             f'<td>{e(x["name"])}<span class="small">{e(x["toban"])} {e(x["cls"])} {e(x["branch"])} {e(x["age"])}歳</span></td>'
             f'<td class="num">{f1(x["rate"], 2)}<span class="small">{f1(x["rate2"])}%</span></td>'
             f'<td class="num">{f1(x["local"], 2)}<span class="small">{f1(x["local2"])}%</span></td>'
-            f'{crec}'
+            f'{crec}{tactic_cell(cs, x["waku"])}'
             f'<td class="num">{e(x["motor"])}<span class="small">{f1(x["motor2"])}%</span></td>'
             f'<td class="num">{e(x["boat"])}<span class="small">{f1(x["boat2"])}%</span></td>'
             f'<td class="num">{e(x["series"] or "—")}</td></tr>')
-    card = ("<section><h2>出走表</h2><p class=\"sub\">「同じコース」は枠番と同じコースに入ったときの直近180日の成績です(1着率・3連対率・平均ST)。</p>"
+    card = ("<section><h2>出走表</h2><p class=\"sub\">「同じコース」は枠番と同じコースに入ったときの直近1年の成績です(1着率・3連対率・平均ST)。"
+            "「勝ち方」はそのコースで勝ったときの決まり手の回数で、1号艇は1コースで負けたときの決まり手(差され・捲られ)も出しています。</p>"
             '<div class="scroll"><table><thead><tr><th>枠</th><th>選手</th><th class="num">全国勝率</th><th class="num">当地勝率</th>'
-            '<th class="num">同じコース<br>1着率</th><th class="num">3連対率</th><th class="num">平均ST</th>'
+            '<th class="num">同じコース<br>1着率</th><th class="num">3連対率</th><th class="num">平均ST</th><th>勝ち方</th>'
             '<th class="num">モーター</th><th class="num">ボート</th><th class="num">今節</th></tr></thead><tbody>'
             + "".join(rows) + "</tbody></table></div></section>")
     # 直前情報の入力
@@ -278,7 +298,7 @@ def build_venue(d, code, vprog, vinfo, racers, results_v):
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
             '<section><h2>レース一覧</h2><div class="scroll"><table class="race-list"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
             '<th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th><th>結果</th></tr></thead><tbody>' + "".join(rows)
-            + "</tbody></table></div><p class=\"note\">1号艇の1コース1着率は、直近180日に1コースに入ったときの成績です。</p></section>")
+            + "</tbody></table></div><p class=\"note\">1号艇の1コース1着率は、直近1年に1コースに入ったときの成績です。</p></section>")
     title = f"{vname} {jdate(d)} 出走表・レース一覧 | {SITE_NAME}"
     desc = f"{vname}の{jdate(d)}の全レースの出走表、選手のコース別成績、展開の見立て。{vprog.get('title', '')}"
     write(f"{ymd}/{code}/index.html", page(title, desc, body, 2, f"{ymd}/{code}/"))
