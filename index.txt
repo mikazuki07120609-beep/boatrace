@@ -1,0 +1,15 @@
+1 200 text/html; charset=UTF-8 1028 https://www.boatrace-edogawa.com/modules/yosou/cyokuzen.php?day=20261021&race=12 https://www.boatrace-edogawa.com/modules/yosou/cyokuzen.php?day=20261021&race=12
+2 404 text/html; charset=iso-8859-1 196 https://www.boatrace-edogawa.com/modules/yosou/tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-edogawa.com/modules/yosou/tenji.php?day=20261021&race=12&kind=2
+3 404 text/html; charset=iso-8859-1 196 https://www.boatrace-edogawa.com/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-edogawa.com/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2
+4 404 text/html; charset=UTF-8 20239 https://www.boatrace-suminoe.jp/modules/yosou/cyokuzen.php?day=20261021&race=12 https://www.boatrace-suminoe.jp/modules/yosou/cyokuzen.php?day=20261021&race=12
+5 404 text/html; charset=UTF-8 20239 https://www.boatrace-suminoe.jp/modules/yosou/tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-suminoe.jp/modules/yosou/tenji.php?day=20261021&race=12&kind=2
+6 404 text/html; charset=UTF-8 20239 https://www.boatrace-suminoe.jp/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-suminoe.jp/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2
+7 404 text/html 1410 https://www.boatrace-miyajima.com/modules/yosou/cyokuzen.php?day=20261021&race=12 https://www.boatrace-miyajima.com/modules/yosou/cyokuzen.php?day=20261021&race=12
+8 404 text/html 1410 https://www.boatrace-miyajima.com/modules/yosou/tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-miyajima.com/modules/yosou/tenji.php?day=20261021&race=12&kind=2
+9 404 text/html 1410 https://www.boatrace-miyajima.com/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-miyajima.com/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2
+10 200 text/html; charset=UTF-8 11272 https://www.boatrace-tsu.com/modules/yosou/cyokuzen.php?day=20261021&race=12 https://www.boatrace-tsu.com/modules/yosou/cyokuzen.php?day=20261021&race=12
+11 404 text/html; charset=UTF-8 19722 https://www.boatrace-tsu.com/modules/yosou/tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-tsu.com/modules/yosou/tenji.php?day=20261021&race=12&kind=2
+12 200 text/html; charset=UTF-8 7905 https://www.boatrace-tsu.com/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2 https://www.boatrace-tsu.com/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2
+13 404 text/html; charset=UTF-8 26130 https://www.kojimaboat.jp/modules/yosou/cyokuzen.php?day=20261021&race=12 https://www.kojimaboat.jp/modules/yosou/cyokuzen.php?day=20261021&race=12
+14 404 text/html; charset=UTF-8 26130 https://www.kojimaboat.jp/modules/yosou/tenji.php?day=20261021&race=12&kind=2 https://www.kojimaboat.jp/modules/yosou/tenji.php?day=20261021&race=12&kind=2
+15 404 text/html; charset=UTF-8 26130 https://www.kojimaboat.jp/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2 https://www.kojimaboat.jp/modules/yosou/group-tenji.php?day=20261021&race=12&kind=2

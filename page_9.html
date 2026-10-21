@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>404エラー｜レンタルサーバーのカゴヤ・ジャパン</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- [link stylesheet] -->
+<link href="https://fonts.googleapis.com/css?family=Noto+Serif+JP:400,500,600,700,900" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css?family=Open+Sans:700" rel="stylesheet">
+
+<link href="https://use.fontawesome.com/releases/v5.1.0/css/all.css" rel="stylesheet">
+<BASE href="https://err.kagoya.net/">
+<link href="./assets/css/style.css" rel="stylesheet" media="all" type="text/css">
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+<script type="text/javascript">
+$(document).ready(function () {
+  var windowHeight = $(window).height();
+  $("#container").height(windowHeight);
+});
+$(window).resize(function () {
+  var windowHeight = $(window).height();
+  $("#container").height(windowHeight);
+});
+</script>
+</head>
+<body>
+  <section id="container">
+    <div class="container_inner">
+      <div class="error">
+        <h1><span>404</span>エラー</h1>
+        <p>ご希望のページが見つかりません。<br>アクセス先に間違いがないか、ご確認ください。</p>
+        <img src="./assets/img/logo.png" alt="カゴヤ・ジャパン">
+      </div>
+    </div>
+  </section>
+</body>
+</html>
