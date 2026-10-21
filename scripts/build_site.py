@@ -10,7 +10,7 @@ from common import DATA, OUT, PROGRAM, RESULTS, SITE, VENUES, KIMARITE, load_jso
 from alerts import badges, race_alerts
 from motor import motor_rates, raw_scores, venue_grades
 import pace as pacemod
-from stats import collect, venue_table
+from stats import VENUE_DAYS, collect, venue_table
 
 SITE_NAME = "水面ノート"
 BASE_URL = "https://mikazuki07120609-beep.github.io/boatrace/"
@@ -72,7 +72,8 @@ def venue_info(code, vstats, stadiums):
     st = stadiums.get(code, {})
     tbl = venue_table(vstats.get(code))
     if tbl:
-        src = f"当サイト集計(直近90日・{tbl['races']}レース)"
+        span = "直近1年" if VENUE_DAYS >= 365 else f"直近{VENUE_DAYS}日"
+        src = f"当サイト集計({span}・{tbl['races']}レース)"
         place, kim = tbl["place"], tbl["kimarite"]
     else:
         src = f"BOAT RACE オフィシャルウェブサイト「ボートレース場データ」({st.get('period', '')})"

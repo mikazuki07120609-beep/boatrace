@@ -11,7 +11,7 @@ import datetime as dt
 from common import RESULTS, KIMARITE, load_json, parse_ymd
 
 RACER_DAYS = 365
-VENUE_DAYS = 90
+VENUE_DAYS = 365      # 1年分そろってから、場の傾向も1年で見る方が当たる(直近30日の答え合わせで確かめた)
 POINTS = {1: 10, 2: 8, 3: 6, 4: 4, 5: 2, 6: 1}   # 勝率の計算と同じ着順点
 RECENT_N = 8          # スタートの見立てで「最近の調子」に使う直近の走数
 RECENT_KEEP = 12
