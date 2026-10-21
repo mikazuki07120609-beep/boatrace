@@ -607,6 +607,7 @@
   }
 
   // 1艇を時間に沿って走らせる。先に決めた艇(planned)が前にいれば、間合いを取る
+  var V_MIN = 6.5;                                           // どんなときもこれより遅くはならない(m/s)
   function integrate(b, planned) {
     var X = b.X, Y = b.Y, H = b.H, V = b.V, S = b.S, P = b.P, s = 0, v = b.vline, started = false;
     b.done = null;
@@ -628,7 +629,7 @@
           if (fw > 0 && Math.abs(lt) < HULL_W + 1.0) { var g = fw - HULL_L - 0.4; if (g < gap) { gap = g; lv = o.V[i - 1]; } }
         }
         if (gap < 1e8) { var dv = v - lv, ss = 1.0 + v * 0.2 + v * dv / (2 * Math.sqrt(18)); a -= 3 * Math.pow(Math.max(0, ss) / Math.max(0.25, gap), 2); }
-        v = Math.max(4, v + clamp(a, -12, 4.5) * DT);
+        v = Math.max(V_MIN, v + clamp(a, -12, 4.5) * DT);
         s += v * DT;
       }
       started = true;
@@ -659,6 +660,7 @@
       var o = planned[q], i0 = Math.max(i0b, Math.round((o.st - T0) / DT));
       for (var i = i0; i < NF; i++) {
         if (best && i >= best.i) break;
+        if (b.S[i] > b.P.sEnd + 12) break;                     // 1マークを出てからの直線では譲らない(速い艇が横を抜いていく)
         var dx = o.X[i] - b.X[i], dy = o.Y[i] - b.Y[i];
         if (dx * dx + dy * dy > 30) continue;
         if (sat(b.X[i], b.Y[i], b.H[i], o.X[i], o.Y[i], o.H[i], (HULL_L + ML) / 2, (HULL_W + MW) / 2)) { best = { i: i, o: o }; break; }
@@ -678,18 +680,19 @@
     var fw = dx * Math.cos(b.H[i]) + dy * Math.sin(b.H[i]);
     return fw < -1.2 && Math.abs(angd(o.H[i], b.H[i])) < 0.7 && o.V[i] > b.V[i];
   }
+  var YIELD_MIN = 0.62;                                       // 譲るときに落とす速さの下限(これより遅くはしない)
   // sv の手前で need 秒ぶん遅らせる(近くに譲る区間があれば、まとめて強める)
   function addYield(b, sv, need) {
-    var vb = Math.max(9, vlimAt(b, Math.max(0, sv - 15))), Lz = clamp(need * 80, 26, 80), add = need * vb / Lz;
+    var vb = Math.max(9, vlimAt(b, Math.max(0, sv - 15))), Lz = clamp(need * 80, 26, 60), add = need * vb / Lz;
     for (var j = 0; j < b.slow.length; j++) {
       var z = b.slow[j];
       if (z.kind === "yield" && sv - Lz < z.s1 + 6 && sv + 2 > z.s0 - 6) {
         z.s0 = Math.min(z.s0, sv - Lz); z.s1 = Math.max(z.s1, sv + 2);
-        z.f = Math.max(0.45, 1 / (1 / z.f + add));
+        z.f = Math.max(YIELD_MIN, 1 / (1 / z.f + add));
         return;
       }
     }
-    b.slow.push({ s0: sv - Lz, s1: sv + 2, f: Math.max(0.45, 1 / (1 + add)), kind: "yield" });
+    b.slow.push({ s0: sv - Lz, s1: sv + 2, f: Math.max(YIELD_MIN, 1 / (1 + add)), kind: "yield" });
   }
   // 1マークの手前(x=128)を通る時刻と、そのときの道のり
   var X_GATE = 128;
