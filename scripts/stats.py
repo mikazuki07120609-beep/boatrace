@@ -56,23 +56,30 @@ CLOSE_SEC = 0.6       # ゴールでこの差以内なら、道中で競り合�
 
 
 def second_kind(c: int, ctx: dict, kim) -> str:
-    """2着になったときの展開(公式の記録は1着の決まり手だけなので、1着の艇のコース・決まり手と、自分のコース・スタートから推定)。"""
+    """2着になったレースで、その艇がどう動いて2着になったか(推定)。
+    公式の記録は1着の決まり手だけなので、1着の艇のコース・決まり手と、自分と間の艇のスタートから推定する。
+      1コース: 差され・捲られ・捲り差され・抜かれ(どう負けて2着になったか)
+      2〜6コース: 差し(勝った艇の内の筋を回った)、捲り(スタートで内より先に出て外から攻めた)、
+                  捲り差し(間の艇の前を横切って内へ切り込んだ)、残し(外の艇に先に回られたが残した)、道中(道中の抜き合いで決まった)"""
     w = ctx.get("w")
     if not w:
         return "その他"
     if c == 1:
         return {"差し": "差され", "捲り": "捲られ", "捲り差し": "捲り差され", "抜き": "抜かれ"}.get(kim, "その他")
-    if kim == "抜き":
-        return "抜かれ"
-    if w > c:                                                   # 外の艇に抜かれたが、2着に残した
-        return {"捲り": "捲られ残し", "差し": "差され残し", "捲り差し": "捲り差され残し"}.get(kim, "その他")
+    if kim in ("抜き", "恵まれ"):
+        return "道中"
+    if w > c:
+        return "残し"
     st = ctx.get("st", {})
     mine, inner = st.get(c), [st[k] for k in st if k < c]
     if mine is not None and inner and mine <= min(inner) - 0.03:
-        return "攻めて"                                          # 内の艇より先にスタートで出て、攻めた
-    if c == 2 or c == w + 1:
-        return "差し続く"                                        # 勝った艇のすぐ後ろ(内)を回った
-    return "外から"
+        return "捲り"
+    if c == w + 1:
+        return "差し"
+    between = [st[k] for k in st if w < k < c]
+    if mine is not None and between and min(between) <= mine - 0.02:
+        return "差し"                                            # 間の艇が先に出て外へ攻め、空いた内を回った
+    return "捲り差し"
 
 
 def valid_st(e) -> bool:

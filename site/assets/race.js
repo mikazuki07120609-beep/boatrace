@@ -1,6 +1,6 @@
-/* レースページの見立て。出走表と選手の成績(ページに埋め込んだJSON)から、
-   スタートの見立て(model.js)→ 展開の見立て → 1周1マークの映像(turn1.js)を作る。
-   直前情報(展示タイム・進入・風)を入れると計算し直す。結果が出たレースは、見立てと結果を比べる(答え合わせ)。買い目は出さない。 */
+/* レースページ。出走表と選手の成績(ページに埋め込んだJSON)と、締切の前後に取り込む直前情報・結果(data/live)から、
+   スタート展示のあとに、スタートの見立て(model.js)→ 展開の見立て → 1周1マークの映像(turn1.js)を作る。
+   直前情報と結果は、開いている間も1分ごとに読み直す。買い目は出さない。 */
 (function () {
   "use strict";
   var el = document.getElementById("race-data");
@@ -10,12 +10,19 @@
   var PARAMS = window.SUIMEN_PARAMS || null, MODEL = window.SuimenModel || null;
   var KIM = ["逃げ", "捲り", "差し", "捲り差し", "抜き", "恵まれ"];
   var SHRINK = 10; // 走数が少ない選手の成績を、場の平均に寄せる強さ(学習済みの重みがないときの簡易モデル用)
+  var LIVE_URL = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/main/data/live/" + D.race.ymd + "/" + V.code + ".json";
+  var NO = String(D.race.no);
+  var BI = D.before || null, LR = D.live || null;     // 直前情報・レース直後の結果
   function $(s) { return document.querySelector(s); }
+  function $$(s) { return [].slice.call(document.querySelectorAll(s)); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function fmt(n, d) { return n == null || isNaN(n) ? "—" : Number(n).toFixed(d == null ? 1 : d); }
-  function st2(x) { return x == null || isNaN(x) ? "—" : (x < 0 ? "-" : "") + Math.abs(x).toFixed(2).replace(/^0/, ""); }
+  function st2(x) { return x == null || isNaN(x) ? "—" : (x < 0 ? "F" : "") + Math.abs(x).toFixed(2).replace(/^0/, ""); }
   function avg(a) { var v = a.filter(function (x) { return x != null && !isNaN(x); }); return v.length ? v.reduce(function (s, x) { return s + x; }, 0) / v.length : null; }
   function pct(a, b) { return b ? Math.round(a / b * 100) : null; }
+  function nowJst() { var t = new Date(Date.now() + 9 * 3600e3); return { iso: t.toISOString().slice(0, 10), min: t.getUTCHours() * 60 + t.getUTCMinutes() + t.getUTCSeconds() / 60 }; }
+  function dlMin() { var a = (D.race.deadline || "0:0").split(":"); return +a[0] * 60 + +a[1]; }
+  function minsLeft() { var n = nowJst(); return n.iso === D.race.date ? dlMin() - n.min : (n.iso < D.race.date ? 1e4 : -1e4); }
 
   // このコースでの決まり手の割合: 選手が勝ったときの決まり手を、場の傾向(4勝分の重み)で補う
   function kimDist(b) {
@@ -32,37 +39,171 @@
     return { text: items.map(function (x) { return x[0] + x[1]; }).join("・"), type: tot >= 2 && items[0][1] / tot >= 0.6 ? items[0][0] + "型" : "" };
   }
 
-  // 直前情報(自動で取り込んだもの)
-  var BI = D.before || null;
-  function estOf(waku) { var v = BI && BI.est ? BI.est[String(waku)] : null; return v == null ? null : v; }
-  function applyBefore() {
-    if (!BI) return;
-    D.entries.forEach(function (e) {
-      var w = String(e.waku), ex = BI.ex && BI.ex[w], el = document.getElementById("ex" + e.waku);
-      if (el && ex != null && !el.value) el.value = ex.toFixed(2);
-      var ci = (BI.course || []).indexOf(e.waku), cEl = document.getElementById("c" + e.waku);
-      if (cEl && ci >= 0 && (BI.course || []).length === D.entries.length) cEl.value = String(ci + 1);
-    });
-    var ws = BI.weather && BI.weather.wind, wEl = document.getElementById("windspd");
-    if (wEl && ws != null) wEl.value = String(Math.round(ws));
+  // ---- 直前情報・結果
+  function resEntry(waku) { return D.result ? D.result.entries.filter(function (x) { return x.waku === waku; })[0] || null : null; }
+  function finished() { return !!(D.result || LR); }
+  function beforeReady() { return !!(BI && BI.ready); }
+  function ready() { return beforeReady() || finished(); }
+  function courseOf(waku) {
+    if (beforeReady() && BI.course && BI.course.length) { var i = BI.course.indexOf(waku); if (i >= 0) return i + 1; }
+    var r = resEntry(waku);
+    if (r && r.course) return r.course;
+    if (LR && LR.course && LR.course.length) { var j = LR.course.indexOf(waku); if (j >= 0) return j + 1; }
+    return waku;
   }
-
+  function exOf(waku) {
+    var v = BI && BI.ex ? BI.ex[String(waku)] : null;
+    if (v == null) { var r = resEntry(waku); v = r ? r.ex : null; }
+    return v == null || !isFinite(v) ? null : v;
+  }
+  function estOf(waku) { var v = beforeReady() && BI.est ? BI.est[String(waku)] : null; return v == null ? null : v; }
+  function windSpeed() {
+    if (BI && BI.weather && BI.weather.wind != null) return Math.round(BI.weather.wind);
+    if (D.result && D.result.wind != null) return D.result.wind;
+    return 2;
+  }
   function readState() {
     return D.entries.map(function (e) {
-      var exEl = document.getElementById("ex" + e.waku), cEl = document.getElementById("c" + e.waku);
-      var ex = exEl && exEl.value.trim() ? parseFloat(exEl.value) : null;
-      var course = cEl ? parseInt(cEl.value, 10) : e.waku;
       var b = Object.assign({}, e);
-      b.ex = isFinite(ex) ? ex : null;
-      b.course = course || e.waku;
+      b.ex = exOf(e.waku);
+      b.course = courseOf(e.waku);
       return b;
     });
   }
-  function windState() {
-    var wind = $("#wind") ? $("#wind").value : "none";
-    var wspd = parseFloat($("#windspd") ? $("#windspd").value : "0") || 0;
-    return { wind: wind, wspd: wspd, strong: wspd >= 4 };
+  function windState() { var w = windSpeed(); return { wind: "none", wspd: w, strong: w >= 4 }; }
+
+  // 直前情報の表
+  function renderBefore() {
+    var box = $("#beforeBox"), at = $("#beforeAt");
+    if (!box) return;
+    var has = BI && BI.ex && Object.keys(BI.ex).some(function (k) { return BI.ex[k] != null; });
+    var fromRes = !has && D.result;
+    if (!has && !fromRes) {
+      var left = minsLeft();
+      box.innerHTML = '<p class="wait">' + (left < -5 || finished() ? "このレースの直前情報は取り込めませんでした。" : "展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。") + "</p>";
+      if (at) at.textContent = "";
+      return;
+    }
+    var exs = D.entries.map(function (e) { return exOf(e.waku); }).filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
+    var rows = D.entries.map(function (e) {
+      var w = String(e.waku), ex = exOf(e.waku), rk = ex == null ? null : exs.indexOf(ex) + 1, c = courseOf(e.waku);
+      var est = has && BI.est ? BI.est[w] : null, parts = has ? (BI.parts && BI.parts[w] || []).slice() : [];
+      if (has && BI.prop && BI.prop[w]) parts.push("プロペラ" + BI.prop[w]);
+      var tilt = has && BI.tilt ? BI.tilt[w] : null, wt = has && BI.weight ? BI.weight[w] : null, adj = has && BI.adj ? BI.adj[w] : null;
+      return '<tr><td class="w w' + e.waku + '">' + e.waku + '</td><td class="who"><b>' + esc(e.name) + "</b></td>" +
+        '<td class="' + (rk === 1 ? "best" : "") + '"><b>' + fmt(ex, 2) + "</b>" + (rk ? '<span class="dim">' + rk + "位</span>" : "") + "</td>" +
+        '<td><b>' + (c !== e.waku ? '<span class="moved">' + c + "</span>" : c) + "</b></td>" +
+        '<td class="' + (est != null && est < 0 ? "fon" : "") + '">' + st2(est) + "</td>" +
+        "<td>" + (tilt == null ? "—" : fmt(tilt, 1)) + "</td>" +
+        '<td class="txt">' + (parts.length ? esc(parts.join("・")) : "—") + "</td>" +
+        "<td>" + (wt == null ? "—" : fmt(wt, 1)) + (adj ? '<span class="dim">調整' + fmt(adj, 1) + "</span>" : "") + "</td></tr>";
+    }).join("");
+    var W = has ? BI.weather || {} : {};
+    var wl = has ? [W.at ? W.at + "時点" : "", W.weather || "", W.temp != null ? "気温" + fmt(W.temp, 0) + "℃" : "", W.wind != null ? "風速" + fmt(W.wind, 0) + "m" : "",
+                    W.wave != null ? "波高" + fmt(W.wave, 0) + "cm" : "", W.water != null ? "水温" + fmt(W.water, 0) + "℃" : ""].filter(Boolean).join("・")
+                 : (D.result ? "風 " + (D.result.wind_dir || "") + (D.result.wind != null ? D.result.wind + "m" : "") + "(競走成績から)" : "");
+    box.innerHTML = '<div class="scroll"><table class="rc bt"><thead><tr><th class="w">枠</th><th class="who">選手</th><th>展示<br>タイム</th><th>進入</th><th>展示<br>ST</th>' +
+      "<th>チルト</th><th>部品交換</th><th>体重</th></tr></thead><tbody>" + rows + "</tbody></table></div>" +
+      (wl ? '<p class="sub">' + esc(wl) + "</p>" : "");
+    if (at) at.textContent = has ? (BI.fetched ? BI.fetched + " 取り込み" : "") : "";
   }
+
+  // 出走表の「このコース」を、展示の進入に合わせて書き換える。モーター評価に、このレースの展示タイムを加える
+  var KS = { "逃げ": "逃げ", "捲り": "捲り", "差し": "差し", "捲り差し": "捲差", "抜き": "抜き", "恵まれ": "恵まれ" };
+  var SECOND_ORDER = ["差し", "捲り", "捲り差し", "残し", "道中", "差され", "捲られ", "捲り差され", "抜かれ", "その他"];
+  function winText(cs, course) {
+    if (!cs || !cs.n) return "—";
+    var km = cs.km || {};
+    if (course === 1) return "逃げ" + (km["逃げ"] || 0) + (km["抜き"] ? " 抜き" + km["抜き"] : "");
+    var items = Object.keys(km).filter(function (k) { return km[k] > 0 && k !== "恵まれ"; }).sort(function (a, b) { return km[b] - km[a]; }).slice(0, 2);
+    return items.map(function (k) { return (KS[k] || k) + km[k]; }).join(" ") || "—";
+  }
+  function secondText(cs) {
+    var s2 = (cs && cs.s2) || {};
+    var items = Object.keys(s2).filter(function (k) { return s2[k] > 0 && k !== "その他"; }).sort(function (a, b) {
+      return s2[b] - s2[a] || SECOND_ORDER.indexOf(a) - SECOND_ORDER.indexOf(b); }).slice(0, 2);
+    return items.map(function (k) { return (KS[k] || k) + s2[k]; }).join(" ") || "—";
+  }
+  function courseCells(cs, course) {
+    var a;
+    if (cs && cs.n) {
+      a = '<td class="c1"><b>' + pct(cs.w1, cs.n) + '%</b></td><td class="c2">' + pct(cs.w2, cs.n) + '%</td><td class="c3">' + pct(cs.w1 + cs.w2 + cs.w3, cs.n) + "%</td>" +
+        '<td class="c4"><span>' + st2(cs.st) + '</span><span class="dim">' + cs.n + "走</span></td>";
+    } else a = '<td class="c1">—</td><td class="c2">—</td><td class="c3">—</td><td class="c4"><span>—</span><span class="dim">0走</span></td>';
+    var lab = "", val = "—";
+    if (cs && cs.n && course === 1) { lab = "逃げ"; val = pct((cs.km || {})["逃げ"] || 0, cs.n) + "%"; }
+    if (cs && cs.n && course === 2) { lab = "逃がし"; val = pct(cs.ng || 0, cs.n) + "%"; }
+    return a + '<td class="txt c5"><span>' + esc(winText(cs, course)) + '</span><span class="dim">' + esc(secondText(cs)) + "</span></td>" +
+      '<td class="c6"><span class="dim">' + (lab ? esc(lab) : "&nbsp;") + "</span><span>" + esc(val) + "</span></td>";
+  }
+  var cardCourseSig = "";
+  function updateCard() {
+    var sig = D.entries.map(function (e) { return courseOf(e.waku); }).join("");
+    if (sig !== cardCourseSig) {
+      cardCourseSig = sig;
+      var moved = false;
+      D.entries.forEach(function (e) {
+        var c = courseOf(e.waku), tr = document.querySelector('#card tr[data-waku="' + e.waku + '"]');
+        if (!tr) return;
+        if (c !== e.waku) moved = true;
+        var cells = tr.querySelectorAll(".c1,.c2,.c3,.c4,.c5,.c6");
+        if (cells.length !== 6) return;
+        var tmp = document.createElement("tbody");
+        tmp.innerHTML = "<tr>" + courseCells((e.cs || {})[String(c)], c) + "</tr>";
+        var fresh = tmp.firstChild.children;
+        for (var i = cells.length - 1; i >= 0; i--) cells[i].parentNode.replaceChild(fresh[i], cells[i]);
+      });
+      var h = $("#cardCourse");
+      if (h) h.textContent = moved ? "このコース(展示の進入)" : "このコース(枠と同じ)";
+    }
+    // モーター評価: 展示タイムが4艇以上そろったら、レースの平均との差を加える(重みは scripts/motor.py と同じ)
+    var exs = D.entries.map(function (e) { return exOf(e.waku); }).filter(function (x) { return x != null && x > 6 && x < 7.6; });
+    var mean = exs.length >= 4 ? avg(exs) : null;
+    D.entries.forEach(function (e) {
+      var mg = e.mg, b = document.querySelector('#card tr[data-waku="' + e.waku + '"] td.mo b');
+      if (!mg || !b) return;
+      var z = mg.z, ex = exOf(e.waku);
+      if (mean != null && ex != null) {
+        var zt = Math.max(-3, Math.min(3, (mean - ex) / 0.047));
+        z = (0.55 * mg.z + 0.45 * zt) / Math.sqrt(0.55 * 0.55 + 0.45 * 0.45);
+      }
+      var g = z >= 1.4 ? "S" : z >= 0.65 ? "A" : z >= 0 ? "B" : z >= -0.65 ? "C" : z >= -1.4 ? "D" : "E";
+      b.textContent = g; b.className = "g g" + g;
+      b.title = mean != null ? "モーター評価(このレースの展示タイムを加えたもの)" : "モーター評価";
+    });
+  }
+
+  // 結果(3連単の組と払戻金)
+  function renderResult() {
+    var bar = $("#resbar");
+    if (!bar || !LR || !LR.tri) return;
+    var t = LR.tri.map(function (w) { return '<span class="waku w' + w + '">' + w + "</span>"; }).join('<span class="sep">-</span>');
+    bar.innerHTML = '<span class="lbl">結果</span><span class="tri">' + t + "</span>" +
+      (LR.pay ? '<b class="odds">' + (LR.pay / 100).toFixed(1) + "倍</b>" + (LR.pop ? '<span class="dim">' + LR.pop + "番人気</span>" : "") : "") +
+      (LR.kimarite ? '<span class="tag">' + esc(LR.kimarite) + "</span>" : "") + (LR.note ? '<span class="sub">' + esc(LR.note) + "</span>" : "");
+    bar.hidden = false;
+  }
+  function renderDeadline() {
+    var t = $("#dlTag");
+    if (!t) return;
+    var left = minsLeft(), s = "締切 " + D.race.deadline;
+    if (finished()) s += "(終了)";
+    else if (left > 0 && left < 600) s += "(あと" + Math.floor(left) + "分)";
+    else if (left <= 0 && left > -600) s += "(締切済み)";
+    t.textContent = s;
+    t.classList.toggle("soon", !finished() && left > 0 && left <= 10);
+  }
+  function setGated(on) {
+    $$(".gated").forEach(function (sec) {
+      var w = sec.querySelector(".wait"), b = sec.querySelector(".gbody");
+      if (w) w.hidden = on;
+      if (b) b.hidden = !on;
+    });
+    var tw = $("#t1Wait"), tb = $("#t1Body");
+    if (tw) tw.hidden = on;
+    if (tb) tb.hidden = !on;
+  }
+
   // 風向き(追い風・向かい風)の影響は、場ごとの向きのデータがまだないので、目安として掛ける
   function windKw(W) {
     var kw = { "逃げ": 1, "捲り": 1, "差し": 1, "捲り差し": 1, "抜き": 1 };
@@ -205,6 +346,13 @@
   }
 
   function render() {
+    renderDeadline();
+    renderResult();
+    renderBefore();
+    updateCard();
+    var on = ready();
+    setGated(on);
+    if (!on) return;
     var R = analyze(), B = R.B, scen = R.scen;
     function byCourse(c) { return B.filter(function (b) { return b.course === c; })[0]; }
     var p1 = V.place[0][0], t = tier(p1);
@@ -297,106 +445,7 @@
     pts.slice(1, 3).forEach(function (p) { lines.push(p); });
     lines.push("", "※データから見た展開の目安です。舟券の推奨ではありません。", "#ボートレース #" + V.name, location.href.split("#")[0]);
     $("#post").value = lines.join("\n");
-    renderKotae(R);
     updateView(R);
-  }
-
-  // ---- 答え合わせ(結果が出たレース): 締切前の見立てと実際の結果を比べ、何が違ったかを数字で出す。
-  //      締切前の見立て(記録)→ 実際の進入・展示タイム・風を入れた見立て → 実際のSTも入れた見立て、の順に計算し直して、
-  //      どこで見立てとずれたか(進入・展示か、スタートか、ターンや道中か)を分ける
-  var kotaeScen = null;
-  function validSt(x) { return x && x.st != null && !x.flying && !String(x.status || "").match(/^[LK]/) ? x.st : null; }
-  function renderKotae(R) {
-    var box = $("#kotae");
-    if (!box || !D.result) return;
-    if (!R.M) { $("#kotaeLead").textContent = "学習済みの見立てがないため、答え合わせはできません。"; return; }
-    var res = D.result, byW = {}, M = R.M;
-    res.entries.forEach(function (x) { byW[x.waku] = x; });
-    var win = res.entries.filter(function (x) { return x.rank === 1; })[0];
-    var kim = res.kimarite === "恵まれ" ? "抜き" : res.kimarite;
-    var idx = win && win.course ? MODEL.CI[win.course + kim] : null;
-    var logged = !!(D.pred && D.pred.p), pre = logged ? D.pred.p : M.p;
-    function preST(waku) {
-      if (logged) { var a = D.pred.st[waku - 1]; return a ? { mean: a[0], pOut: a[1], pDent: a[2] } : null; }
-      var b = R.B.filter(function (x) { return x.waku === waku; })[0];
-      return b && b.stf ? b.stf : null;
-    }
-    // 実際の進入・展示タイム・風速で見立て直す
-    var ok6 = res.entries.length === 6 && res.entries.every(function (x) { return x.course >= 1 && x.course <= 6; });
-    var M2 = null, tA = null, allSt = false;
-    if (ok6) {
-      var raceA = { vt: D.vt, nt: D.nt, wind: res.wind != null ? res.wind : 2, date: D.race.date, venue: V.code,
-                    boats: D.entries.map(function (e) {
-                      var x = byW[e.waku] || {};
-                      return { waku: e.waku, course: x.course, pts: e.pts || [0, 0], stx: e.stx || [0, 0, 0], r8: e.r8 || [], f: e.f || [],
-                               cs: e.cs || {}, motor2: e.motor2, ex: x.ex != null ? x.ex : null };
-                    }) };
-      M2 = MODEL.predict(raceA, PARAMS, { samples: 300 });
-      var byC = {};
-      res.entries.forEach(function (x) { byC[x.course] = x; });
-      tA = [1, 2, 3, 4, 5, 6].map(function (c) { return validSt(byC[c]); });
-      allSt = tA.every(function (x) { return x != null; });
-    }
-    // STのずれ(実際の進入の順に並べる)
-    var order = res.entries.filter(function (x) { return x.course; }).sort(function (a, b) { return a.course - b.course; });
-    var devs = [];
-    $("#kotaeRows").innerHTML = order.map(function (x, ci) {
-      var e = D.entries.filter(function (y) { return y.waku === x.waku; })[0] || {}, s = preST(x.waku), a = validSt(x);
-      var d = a != null && s ? a - s.mean : null, tag = "";
-      if (d != null) devs.push([d, x, e, s, a]);
-      if (allSt && s) {
-        var nb = [ci - 1, ci + 1].filter(function (j) { return j >= 0 && j < 6; });
-        var lo = Math.min.apply(null, nb.map(function (j) { return tA[j]; })), hi = Math.max.apply(null, nb.map(function (j) { return tA[j]; }));
-        if (a <= lo - 0.05) tag = '<span class="up">出た</span>(見立て' + Math.round(s.pOut * 100) + "%)";
-        else if (a >= hi + 0.05) tag = '<span class="down">凹んだ</span>(見立て' + Math.round(s.pDent * 100) + "%)";
-        else tag = "並び";
-      }
-      if (x.flying) tag = '<span class="down">フライング</span>';
-      else if (String(x.status || "").match(/^L/)) tag = '<span class="down">出遅れ</span>';
-      return '<tr><td><span class="waku w' + x.waku + '">' + x.waku + "</span> " + x.course + "</td><td>" + esc(e.name || "") + "</td>" +
-        '<td class="num">' + (s ? st2(s.mean) : "—") + '</td><td class="num">' + (x.flying ? "F" : "") + st2(x.st) + "</td>" +
-        '<td class="num ' + (d == null ? "" : d <= -0.03 ? "up" : d >= 0.03 ? "down" : "") + '">' + (d == null ? "—" : (d >= 0 ? "+" : "") + d.toFixed(2)) + "</td><td>" + tag + "</td></tr>";
-    }).join("");
-    var notes = [], lead = "";
-    var moved = res.entries.filter(function (x) { return x.course && x.course !== x.waku; }).sort(function (a, b) { return a.course - b.course; });
-    if (moved.length) notes.push("進入は枠なりではありませんでした(" + moved.map(function (x) { return x.waku + "号艇が" + x.course + "コース"; }).join("、") +
-      ")。締切前の見立ては枠なりの進入で作っています。");
-    if (idx == null) {
-      lead = "決まり手「" + (res.kimarite || "—") + "」は、見立ての対象外の決着でした。";
-    } else {
-      var rk = pre.map(function (p, i) { return [p, i]; }).sort(function (a, b) { return b[0] - a[0]; });
-      var rank = rk.findIndex(function (x) { return x[1] === idx; }) + 1, p1 = pre[idx] * 100;
-      lead = "結果は「" + win.course + "コース" + res.kimarite + "」。" + (logged ? "締切前の見立て" : "見立て(今の式で計算し直したもの)") + "では " +
-        p1.toFixed(1) + "%(" + rank + "番目)でした。";
-      if (M2) {
-        var p2 = M2.p[idx] * 100;
-        notes.push("実際の進入・展示タイム・風速" + (res.wind != null ? "(" + res.wind + "m)" : "") + "を入れて見立て直すと " + p2.toFixed(1) + "%。" +
-          (Math.abs(p2 - p1) >= 3 ? (p2 > p1 ? "直前の情報で、この展開の可能性は上がっていました。" : "直前の情報では、この展開の可能性はむしろ下がっていました。") : ""));
-        if (allSt) {
-          var p3 = M2.withST(tA)[idx] * 100;
-          notes.push("さらに実際のSTを入れると " + p3.toFixed(1) + "%。" +
-            (p3 >= Math.max(p2 * 1.8, p2 + 5) ? "スタートの差がこの展開を作ったレースです。" :
-             p3 <= p2 * 0.7 ? "スタートからは起きにくい展開で、1マークのターンや道中で決まったレースです。" :
-             "スタートは見立てに近く、決め手はターンの出来でした。"));
-        } else notes.push("フライング・出遅れなどがあったため、実際のSTでの計算はしていません。");
-      }
-      devs.filter(function (x) { return Math.abs(x[0]) >= 0.05; }).sort(function (a, b) { return Math.abs(b[0]) - Math.abs(a[0]); }).slice(0, 2).forEach(function (x) {
-        notes.push(x[1].course + "コース" + (x[2].name || "") + "のSTは予想より" + Math.abs(x[0]).toFixed(2) + "秒" + (x[0] < 0 ? "早かった" : "遅かった") +
-          "(予想" + st2(x[3].mean) + " → 実際" + st2(x[4]) + ")。");
-      });
-      if (devs.length) notes.push("STのずれは平均" + avg(devs.map(function (x) { return Math.abs(x[0]); })).toFixed(3) + "秒(" + devs.length + "艇)。この差は毎晩の学習に入り、次の見立てに使われます。");
-      if (rk[0][1] !== idx) notes.push("見立ての本線は「" + MODEL.CLASSES[rk[0][1]][0] + "コース" + MODEL.CLASSES[rk[0][1]][1] + "」(" + (rk[0][0] * 100).toFixed(0) + "%)でした。");
-      if (["逃げ", "捲り", "差し", "捲り差し"].indexOf(kim) >= 0 && ok6) {
-        var cw = {};
-        res.entries.forEach(function (x) { cw[x.waku] = x.course; });
-        kotaeScen = { course: win.course, kim: kim, courseByWaku: cw,
-                      st: tA.map(function (x, ci) { if (x != null) return x; var w = order[ci], s = w ? preST(w.waku) : null; return s ? s.mean : null; }) };
-      }
-    }
-    $("#kotaeLead").textContent = lead;
-    $("#kotaeNotes").innerHTML = notes.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
-    var btn = $("#kotaeView");
-    if (btn) btn.hidden = !kotaeScen;
   }
 
   // ---- 1周1マーク展開ビュー(turn1.js)。展開の見立てと同じ決着パターンで、そのパターンになりやすいSTの組み合わせで動かす
@@ -415,6 +464,25 @@
     var s = pats[i];
     return { course: s.b.course, kim: s.kim, p: s.p };
   }
+  // 終わったレースの再現: 実際の進入・ST・決まり手(翌日の競走成績か、レース直後に取り込んだ結果から)
+  function actualScen() {
+    var res = null, byW = {};
+    if (D.result) { res = D.result; res.entries.forEach(function (x) { byW[x.waku] = x; }); }
+    var kim = res ? res.kimarite : LR && LR.kimarite, win = null, courseByWaku = {}, stByCourse = [null, null, null, null, null, null];
+    if (res) {
+      win = res.entries.filter(function (x) { return x.rank === 1; })[0];
+      res.entries.forEach(function (x) { if (x.course) { courseByWaku[x.waku] = x.course; if (x.st != null && !x.flying) stByCourse[x.course - 1] = x.st; } });
+      win = win ? win.course : null;
+    } else if (LR && LR.course && LR.course.length === 6) {
+      LR.course.forEach(function (w, i) { courseByWaku[w] = i + 1; var t = LR.st ? LR.st[String(w)] : null; if (t != null && t >= 0) stByCourse[i] = t; });
+      var first = (LR.order || []).filter(function (o) { return o.rank === 1; })[0];
+      win = first ? courseByWaku[first.waku] : null;
+    } else return null;
+    if (!win || ["逃げ", "捲り", "差し", "捲り差し"].indexOf(kim) < 0 || Object.keys(courseByWaku).length !== 6) return null;
+    if (stByCourse.some(function (x) { return x == null; })) return null;
+    return { course: win, kim: kim, courseByWaku: courseByWaku, st: stByCourse };
+  }
+  var kotaeScen = null;
   function current() {
     if (showActual && kotaeScen) return { sc: { course: kotaeScen.course, kim: kotaeScen.kim, p: null, label: "結果" },
                                           ents: entriesFor(lastR, kotaeScen.st, kotaeScen.courseByWaku), fixed: true };   // 実際のSTはそのまま使う
@@ -428,12 +496,15 @@
       var on = !showActual && i === patIdx;
       return '<button type="button" class="pat' + (on ? " on" : "") + '" data-i="' + i + '" aria-pressed="' + on + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + "</span>" +
         s.b.course + "コース " + s.kim + '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
-    }).join("") + (kotaeScen ? '<button type="button" class="pat' + (showActual ? " on" : "") + '" data-i="actual" aria-pressed="' + showActual + '">結果(実際のST)</button>' : "");
+    }).join("") + (kotaeScen ? '<button type="button" class="pat' + (showActual ? " on" : "") + '" data-i="actual" aria-pressed="' + showActual + '">実際のレース</button>' : "");
   }
+  var actualFirst = true;
   function updateView(R) {
     lastR = R;
     var canvas = $("#t1view");
     if (!canvas || !window.Turn1) return;
+    kotaeScen = actualScen();
+    if (kotaeScen && actualFirst) { showActual = true; actualFirst = false; }      // 終わったレースは、まず実際のレースを再現する
     pats = R.scen.filter(function (s) { return s.kim !== "抜き" && s.kim !== "恵まれ"; }).slice(0, 4);
     if (!pats.length) return;
     var pk = pats.map(function (s) { return s.b.waku + s.kim; }).join(",");
@@ -485,12 +556,6 @@
       if (k === "actual") showActual = true; else { showActual = false; patIdx = +k; }
       showNow();
     });
-    var kb = $("#kotaeView");
-    if (kb) kb.addEventListener("click", function () {
-      if (!view || !kotaeScen) return;
-      showActual = true; showNow();
-      var t = $("#t1view"); if (t && t.scrollIntoView) t.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
-    });
     $("#t1Replay").addEventListener("click", function () { if (view) { view.replay(); started = true; pause.textContent = "一時停止"; } });
     pause.addEventListener("click", function () {
       if (!view) return;
@@ -524,23 +589,42 @@
     });
   }
 
-  document.addEventListener("input", render);
-  document.addEventListener("change", render);
-  var btn = $("#btnCopy");
-  if (btn) btn.addEventListener("click", function () {
-    var t = $("#post"), msg = $("#copyMsg");
-    function sel() { t.focus(); t.select(); msg.textContent = "選択しました。長押しでコピーしてください"; }
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(function () { msg.textContent = "コピーしました"; }, sel);
-    else sel();
-  });
-  var btnR = $("#btnCopyR");
-  if (btnR) btnR.addEventListener("click", function () {
-    var t = $("#review"), msg = $("#copyMsgR");
-    function sel() { t.focus(); t.select(); msg.textContent = "選択しました。長押しでコピーしてください"; }
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(function () { msg.textContent = "コピーしました"; }, sel);
-    else sel();
-  });
+  // 直前情報と結果を読み直す(raw.githubusercontent.com。開いている間は1分ごと、締切の1時間前から結果が出るまで)
+  var pollTimer = null;
+  function poll() {
+    var left = minsLeft();
+    if (left > 90 || left < -150) return;
+    fetch(LIVE_URL + "?t=" + Math.floor(Date.now() / 30000), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j) return;
+      var nb = (j.before || {})[NO], nr = (j.result || {})[NO], ch = false;
+      if (nb && JSON.stringify(nb) !== JSON.stringify(BI)) { BI = nb; ch = true; }
+      if (nr && JSON.stringify(nr) !== JSON.stringify(LR)) { LR = nr; ch = true; }
+      if (ch) render();
+    }).catch(function () {});
+  }
+  function schedule() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(function () {
+      if (document.hidden) return;
+      renderDeadline();
+      if (!(finished() && LR)) poll();
+    }, 60000);
+  }
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) { renderDeadline(); if (!(finished() && LR)) poll(); } });
+  function copyBtn(id, ta, m) {
+    var b = $(id);
+    if (b) b.addEventListener("click", function () {
+      var t = $(ta), msg = $(m);
+      if (!t) return;
+      function sel() { t.focus(); t.select(); msg.textContent = "選択しました。長押しでコピーしてください"; }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(function () { msg.textContent = "コピーしました"; }, sel);
+      else sel();
+    });
+  }
+  copyBtn("#btnCopy", "#post", "#copyMsg");
+  copyBtn("#btnCopyR", "#review", "#copyMsgR");
   setupViewControls();
-  applyBefore();
   render();
+  if (!(finished() && LR)) poll();
+  schedule();
 })();

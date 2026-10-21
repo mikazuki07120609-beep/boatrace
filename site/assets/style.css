@@ -13,6 +13,7 @@
   --bg:#0e161c; --surface:#16222b; --ink:#e4ecf1; --muted:#93a4b0; --line:#2a3a46;
   --accent:#5cc0de; --accent-soft:#183847; --warn:#f0a06a; --good:#6fd39b; --b1:#f4f6f8; --b2:#000000; color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.65;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
@@ -100,11 +101,67 @@ a.btn{font-size:13px;border:1px solid var(--accent);border-radius:6px;padding:7p
 .kpis b{font-family:var(--mono);font-size:24px;font-weight:600}
 .kpis span{font-size:12px;color:var(--muted);line-height:1.4}
 
-/* 出走表: 選手の列を固定、F持ち、今節の失格 */
-table.card td.who, table.card th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; }
-table.card td.who .waku { margin-right: 6px; }
-.fbadge { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; background: #c62828; color: #fff; font-size: 11px; line-height: 16px; vertical-align: 1px; }
-td.series { white-space: nowrap; letter-spacing: .04em; }
-td.series b.ng { color: #c62828; font-weight: 700; }
-details.howto{margin-top:8px}
-details.howto summary{cursor:pointer;color:var(--muted);font-size:13px}
+/* 出走表(1艇1行、1つのセルに縦に2〜3つの数字。線で区切った表) */
+:root{--head:#e9f1f5;--line2:#b9c8d1;--red:#d32f2f;--gS:#c62828;--gA:#ef6c00;--gB:#f2b705;--gC:#8d9aa3;--gD:#5f7482;--gE:#37474f}
+@media (prefers-color-scheme: dark){:root{--head:#1d2c37;--line2:#3b4f5d;--red:#ff6b6b}}
+.rcwrap{border:1px solid var(--line2);border-radius:8px}
+table.rc{border-collapse:separate;border-spacing:0;width:100%;min-width:720px;font-size:12.5px;line-height:1.35}
+table.rc th{background:var(--head);color:var(--ink);font-weight:600;font-size:11px;text-align:center;padding:5px 4px;
+  border-right:1px solid var(--line);border-bottom:1px solid var(--line2);white-space:nowrap;letter-spacing:0}
+table.rc th.grp{border-bottom:1px solid var(--line)}
+table.rc td{text-align:center;padding:5px 5px;border-top:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+  vertical-align:middle;white-space:nowrap;font-family:var(--mono);font-variant-numeric:tabular-nums}
+table.rc tr:last-child td{border-bottom:0}
+table.rc td:last-child,table.rc th:last-child{border-right:0}
+table.rc td>span,table.rc td>b{display:block}
+table.rc td b{font-weight:600}
+table.rc .dim{color:var(--muted);font-size:11px}
+table.rc td.w{width:30px;min-width:30px;font-size:17px;font-weight:700;padding:0;border-right:1px solid var(--line2)}
+table.rc td.who{text-align:left;font-family:var(--body);min-width:118px;max-width:150px;white-space:normal}
+table.rc td.who b{font-size:14px;font-family:var(--body);font-weight:700}
+table.rc th.w,table.rc td.w{position:sticky;left:0;z-index:2}
+table.rc th.who,table.rc td.who{position:sticky;left:30px;z-index:2;background:var(--surface);box-shadow:1px 0 0 var(--line2)}
+table.rc th.w,table.rc th.who{background:var(--head);z-index:3}
+table.rc td.txt{font-family:var(--body);font-size:12px;min-width:84px}
+table.rc td.c1 b{font-size:14px}
+table.rc .fon{color:#fff;background:var(--red);border-radius:3px;padding:0 4px;display:inline-block;font-weight:700}
+table.rc td.fl i{font-style:normal}
+table.rc td.fl i.fon{display:inline-block}
+#beforeBox .sub{margin-top:8px}
+table.rc td.series{min-width:120px}
+table.rc td.series .days{display:flex;gap:5px;justify-content:center;flex-wrap:nowrap}
+table.rc td.series em{font-style:normal;display:inline-flex;gap:1px;padding:0 3px;border:1px solid var(--line);border-radius:3px}
+table.rc td.series i{font-style:normal}
+table.rc td.series i.top{font-weight:700;color:var(--accent)}
+table.rc td.series i.ng{color:var(--red);font-weight:700}
+.g{display:inline-grid!important;place-items:center;width:26px;height:26px;border-radius:6px;font-family:var(--display);font-size:15px;font-weight:400;color:#fff;background:var(--gC)}
+.gS{background:var(--gS)}.gA{background:var(--gA)}.gB{background:var(--gB);color:#14212b}.gC{background:var(--gC)}.gD{background:var(--gD)}.gE{background:var(--gE)}
+table.bt{min-width:560px}
+table.bt td.best b{color:var(--accent)}
+table.bt .moved{color:var(--red)}
+/* 結果 */
+.resbar{flex-direction:row;align-items:center;gap:10px;flex-wrap:wrap;border-color:var(--accent);background:var(--accent-soft)}
+.resbar .lbl{font-family:var(--display);font-size:16px}
+.resbar .tri{display:inline-flex;align-items:center;gap:3px}
+.resbar .tri .waku{width:30px;height:30px;font-size:16px}
+.resbar .sep{color:var(--muted)}
+.resbar .odds{font-family:var(--mono);font-size:22px}
+.resbar .dim{color:var(--muted);font-size:12px}
+.small-tri .waku{width:20px;height:20px;font-size:12px}
+.small-tri{display:inline-flex;gap:2px;align-items:center}
+/* 待ち・見出し */
+.wait{margin:0;padding:12px;border:1px dashed var(--line2);border-radius:8px;color:var(--muted);font-size:13.5px;text-align:center}
+.row-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.tag.soon{background:var(--red);color:#fff}
+/* 一覧: 次のレースが近い順 */
+.vcard .next{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--accent)}
+.vcard.soon{border-color:var(--red);box-shadow:inset 4px 0 0 var(--red)}
+.vcard.soon .next{color:var(--red)}
+.vcard.done{opacity:.6}
+.race-list tr.next td{background:var(--accent-soft)}
+.race-list tr.soon td{background:color-mix(in srgb,var(--red) 14%,var(--surface))}
+.race-list tr.soon .cd{color:var(--red);font-weight:700}
+.race-list .cd{color:var(--accent)}
+/* 注意書き(ページの一番下にまとめる) */
+footer h2{font-size:14px;color:var(--muted)}
+footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.6}

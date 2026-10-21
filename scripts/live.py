@@ -35,7 +35,9 @@ BEFORE_FROM = 20          # 締切の何分前から直前情報を読みに行�
 BEFORE_UNTIL = -3         # 締切の何分後まで直前情報を待つか
 RESULT_AFTER = 3          # 締切の何分後から結果を読みに行くか
 RESULT_GIVEUP = 120       # 締切の何分後まで結果を待つか
-MAX_TRIES = {"b": 14, "r": 30}
+MAX_TRIES = {"b": 14, "r": 30, "l": 2}
+LIST_AHEAD = 240          # 締切の何分前から出走表(F・Lの回数)を読みに行くか
+LIST_PER_CYCLE = 3        # 出走表は急がないので、1回りに読む数を絞る
 KIM = {"逃げ": "逃げ", "まくり": "捲り", "差し": "差し", "まくり差し": "捲り差し", "抜き": "抜き", "恵まれ": "恵まれ"}
 
 
@@ -155,6 +157,21 @@ def parse_result(page: str) -> dict | None:
     return out
 
 
+def parse_racelist(page: str) -> dict:
+    """出走表のページから、選手ごとの今期のフライング・出遅れの回数と平均ST {登番: [F, L, 平均ST]}。"""
+    out = {}
+    for tb in re.findall(r'<tbody class="\s*is-fs12">(.*?)</tbody>', page, re.S):
+        t = re.search(r"profile\?toban=(\d+)", tb)
+        m = re.search(r'<td class="is-lineH2" rowspan="4">\s*F(\d+)\s*<br\s*/?>\s*L(\d+)\s*<br\s*/?>\s*([\d.\-]+)', tb)
+        if t and m:
+            try:
+                st = float(m.group(3))
+            except ValueError:
+                st = None
+            out[t.group(1)] = [int(m.group(1)), int(m.group(2)), st]
+    return out
+
+
 def fetch(page: str, jcd: str, no: int, ymd: str) -> str | None:
     req = urllib.request.Request(URL.format(page=page, no=no, jcd=jcd, ymd=ymd), headers={"User-Agent": UA})
     try:
@@ -209,8 +226,13 @@ def tasks(prog: dict, venues: dict, state: dict, now: dt.datetime) -> list:
             r = (lv.get("result") or {}).get(no)
             if not r and -RESULT_GIVEUP <= mins <= -RESULT_AFTER and tries.get(f"r:{code}-{no}", 0) < MAX_TRIES["r"]:
                 out.append((1, -mins, "r", code, race["no"]))
+            fl = lv.get("fl") or {}
+            if (BEFORE_FROM < mins <= LIST_AHEAD and any(x["toban"] not in fl for x in race.get("entries", []))
+                    and tries.get(f"l:{code}-{no}", 0) < MAX_TRIES["l"]):
+                out.append((2, mins, "l", code, race["no"]))
     out.sort()
-    return out
+    lists = [x for x in out if x[2] == "l"][:LIST_PER_CYCLE]
+    return [x for x in out if x[2] != "l"] + lists
 
 
 def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
@@ -227,13 +249,19 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
         n += 1
         key = f"{kind}:{code}-{no}"
         state["tries"][key] = state["tries"].get(key, 0) + 1
-        page = fetch("beforeinfo" if kind == "b" else "raceresult", code, no, f"{day:%Y%m%d}")
+        page = fetch({"b": "beforeinfo", "r": "raceresult", "l": "racelist"}[kind], code, no, f"{day:%Y%m%d}")
         if not page:
+            continue
+        v = venues.setdefault(code, {"date": day.isoformat(), "code": code})
+        if kind == "l":
+            fl = parse_racelist(page)
+            if fl:
+                v.setdefault("fl", {}).update(fl)
+                changed.add(code)
             continue
         info = parse_before(page) if kind == "b" else parse_result(page)
         if not info:
             continue
-        v = venues.setdefault(code, {"date": day.isoformat(), "code": code})
         info["fetched"] = dt.datetime.now(JST).strftime("%H:%M")
         slot = v.setdefault("before" if kind == "b" else "result", {})
         old = slot.get(str(no))
@@ -274,7 +302,7 @@ def git_push(msg: str) -> None:
         return
     run("git", "commit", "-q", "-m", msg)
     for _ in range(4):
-        if run("git", "pull", "--rebase", "-q", "origin", "main").returncode == 0 and run("git", "push", "-q").returncode == 0:
+        if run("git", "pull", "--rebase", "--autostash", "-q", "origin", "main").returncode == 0 and run("git", "push", "-q").returncode == 0:
             return
         time.sleep(5)
     print("送れませんでした(次の回にまとめて送ります)", flush=True)
@@ -318,7 +346,8 @@ def main() -> int:
     if a.parse:
         kind, f = a.parse
         page = open(f, encoding="utf-8").read()
-        print(json.dumps(parse_before(page) if kind == "before" else parse_result(page), ensure_ascii=False, indent=1))
+        fn = {"before": parse_before, "result": parse_result, "list": parse_racelist}[kind]
+        print(json.dumps(fn(page), ensure_ascii=False, indent=1))
         return 0
     if a.loop:
         loop(a.loop, a.push)
