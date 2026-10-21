@@ -719,6 +719,7 @@
     });
     return out;
   }
+  var GATE_MAX = 0.3;                                        // 1マークの手前で、先に回らせる艇のために待つ時間の上限(勝つ艇が絡まないとき)
   // 決めた順に時間を決める。後の艇が譲る。後ろから突っ込まれる形になったら、順番の入れ替えを返す
   function timing(order, noSwap) {
     var planned = [], boats = order.slice();
@@ -734,7 +735,14 @@
           continue;
         }
         var gb = gateOf(b), need = 0;
-        if (gb) mf.forEach(function (o) { var go = gateOf(o); if (go) need = Math.max(need, go.t + 0.1 - gb.t); });
+        if (gb) mf.forEach(function (o) {
+          var go = gateOf(o);
+          if (!go) return;
+          // 外について回る艇(マーク)は、相手の外のラインなので並んでいてもよい。勝つ艇が絡まない組は、待つのを最大 GATE_MAX 秒に
+          var nd = go.t + (b.role === "mark" && b.ref === o ? -0.1 : 0.1) - gb.t;
+          if (!b.win && !o.win) nd = Math.min(nd, GATE_MAX);
+          need = Math.max(need, nd);
+        });
         if (need <= 0.005) break;
         addYield(b, gb.s, need + 0.02);
       }
