@@ -552,7 +552,7 @@ def predict(th, sm, rec, S, rng):
 #   2着から順に「残った艇の中で、点数に応じた割合で選ばれる」として学習する(5着まで。段ごとに点数の効き方 λ を変える)
 # ======================================================================
 KG = {"逃げ": 0, "捲り": 1, "差し": 2, "捲り差し": 3, "抜き": 4}
-ORDER_FEATS = ["str", "st", "ex", "mot", "c2", "cb", "top3", "loc"]
+ORDER_FEATS = ["str", "st", "ex", "mot", "c2", "cb", "top3", "loc", "st_mk", "st_sa", "st_ms"]   # 最後の3つ: 決まり手ごとのSTの効き方の上乗せ
 ORD_K2 = 8
 NF_ORD = len(ORDER_FEATS)
 
@@ -562,8 +562,8 @@ def rel_idx(d: int) -> int:
     return d + 5 if d < 0 else d + 4
 
 
-def order_feats(r: dict, base: dict, t=None) -> list:
-    """6艇(コース順)の特徴。t はST(なければ実際のST)。"""
+def order_feats(r: dict, base: dict, t=None, k=None) -> list:
+    """6艇(コース順)の特徴。t はST(なければ実際のST)、k は1着の決まり手。"""
     B = r["b"]
     pts = [(b["pts"][0] + PTS_K * PTS_MEAN) / (b["pts"][1] + PTS_K) for b in B]
     mp = sum(pts) / 6
@@ -585,14 +585,16 @@ def order_feats(r: dict, base: dict, t=None) -> list:
         b3 = base["b2"][i] + base["b3"][i] + 0.1                      # このコースの3連対率の全体の平均(の目安)
         c2 = math.log(((cs.get("w2", 0) + ORD_K2 * bc) / (cs.get("n", 0) + ORD_K2)) / bc)
         cb = b.get("cb") or [0, 0]
+        stx = (sm - sts[i]) / U if sts[i] is not None else 0.0
         out.append([pts[i] - mp,
-                    (sm - sts[i]) / U if sts[i] is not None else 0.0,
+                    stx,
                     (exm - exs[i]) / 0.05 if ex_ok else 0.0,
                     (mots[i] - mmean) / 10 if mmean is not None and mots[i] is not None else 0.0,
                     c2,
                     ((cb[0] + 2.5) / (cb[1] + 5) - 0.5) * 4,
                     math.log(((cs.get("w1", 0) + cs.get("w2", 0) + cs.get("w3", 0) + ORD_K2 * b3) / (cs.get("n", 0) + ORD_K2)) / b3),
-                    locd[i] - mloc])
+                    locd[i] - mloc,
+                    stx if k == "捲り" else 0.0, stx if k == "差し" else 0.0, stx if k == "捲り差し" else 0.0])
     return out
 
 
@@ -605,7 +607,7 @@ def order_data(recs, base):
         if sorted(x for x in ranks if x) != [1, 2, 3, 4, 5, 6]:
             continue
         cw, k = CLASSES[r["y"]]
-        f = order_feats(r, base)
+        f = order_feats(r, base, None, k)
         others = [c for c in range(1, 7) if c != cw]
         G.append(KG[k])
         IDX.append([rel_idx(c - cw) for c in others])

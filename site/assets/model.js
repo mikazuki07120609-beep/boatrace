@@ -274,6 +274,7 @@
         x.top3 = Math.log((((cs.w1 || 0) + (cs.w2 || 0) + (cs.w3 || 0) + O.K2 * b3) / ((cs.n || 0) + O.K2)) / b3);
         x.loc = locd[i] - mloc;
       }
+      x.st_mk = k === "捲り" ? x.st : 0; x.st_sa = k === "差し" ? x.st : 0; x.st_ms = k === "捲り差し" ? x.st : 0;   // 決まり手ごとのSTの効き方の上乗せ
       var d = c - cw, v = alpha[d < 0 ? d + 5 : d + 4];
       Object.keys(beta).forEach(function (n) { v += beta[n] * (x[n] || 0); });
       u[c] = v;
