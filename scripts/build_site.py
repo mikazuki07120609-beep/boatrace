@@ -91,7 +91,7 @@ def tier(p1):
     return "荒れ水面"
 
 
-def racer_view(entry, racers):
+def racer_view(entry, racers, code=None):
     r = racers.get(entry["toban"], {})
     cs = {}
     st_sum = st_n = n_all = 0
@@ -121,6 +121,8 @@ def racer_view(entry, racers):
     v["r8"] = r.get("r8", [])
     v["cb"] = r.get("cb", [0, 0])            # ゴールで僅差だった相手との[勝ち, 回数](道中の競り合い)
     v["nk"] = r.get("nk", [0, 0])            # [抜きで1着, 抜かれて2着]
+    if code:
+        v["lv"] = list(r.get("v", {}).get(code, [0, 0]))   # この場での[着順点, 走数](見立てのモデルの「当地の相性」)
     v["series_codes"] = s if isinstance(s, list) else []
     return v
 
@@ -375,7 +377,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     no = str(race["no"])
     before = (vlive.get("before") or {}).get(no)
     res_live = (vlive.get("result") or {}).get(no)
-    ents = [racer_view(x, racers) for x in race["entries"]]
+    ents = [racer_view(x, racers, code) for x in race["entries"]]
     ps = period_start(d)
     for x in ents:
         x["mg"] = (motors or {}).get(str(x["motor"]))
@@ -635,7 +637,7 @@ def main():
         sm = (model or {}).get("start")
         al_day = {}
         for code, vprog in progs[d]["venues"].items():
-            al_day[code] = {race["no"]: race_alerts([racer_view(x, racers) for x in race["entries"]], sm, code, d.isoformat())
+            al_day[code] = {race["no"]: race_alerts([racer_view(x, racers, code) for x in race["entries"]], sm, code, d.isoformat())
                             for race in vprog["races"]}
         alerts_by_day[d] = al_day
         build_day(d, progs[d], dates, al_day)

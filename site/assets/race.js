@@ -301,7 +301,7 @@
   function analyzeModel(B, W) {
     var race = { vt: D.vt, nt: D.nt, wind: W.wspd, date: D.race.date, venue: V.code,
                  boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], est: estOf(b.waku), cb: b.cb || [0, 0],
-                                                      cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, ex: b.ex }; }) };
+                                                      cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], ex: b.ex }; }) };
     var M = MODEL.predict(race, PARAMS, { samples: 400 });
     if (!M) return null;
     var kw = windKw(W), byC = {};

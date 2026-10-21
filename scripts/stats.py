@@ -118,7 +118,7 @@ class Acc:
                            "st": {e["course"]: e["st"] for e in ents if valid_st(e)},
                            "fin": [(e, race_time(e.get("time"))) for e in ents if e.get("rank") and race_time(e.get("time"))]}
                     for e in ents:
-                        _racer(self.racers, e, kim, rmean, d, sign, ctx)
+                        _racer(self.racers, e, kim, rmean, d, sign, ctx, vcode)
 
     def racer(self, toban: str) -> dict:
         return self.racers.get(toban, {})
@@ -136,7 +136,7 @@ def _course_table(vs: dict, ents, kim, sign):
             vc["km"][kim] = vc["km"].get(kim, 0) + sign
 
 
-def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict | None = None):
+def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict | None = None, vcode: str | None = None):
     c = str(e["course"])
     rank = e.get("rank")
     r = racers.setdefault(e["toban"], {"name": e.get("name", ""), "c": {}, "pts": [0, 0], "stx": [0, 0.0, 0.0],
@@ -176,6 +176,10 @@ def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict |
     if rank in POINTS or e.get("status") in ("F", "L0", "L1", "S0", "S1", "S2", "K1"):
         r["pts"][0] += sign * POINTS.get(rank, 0)
         r["pts"][1] += sign
+        if vcode:                                                # 場ごとの着順点(当地の相性)
+            lv = r.setdefault("v", {}).setdefault(vcode, [0, 0])
+            lv[0] += sign * POINTS.get(rank, 0)
+            lv[1] += sign
     if valid_st(e):
         st = e["st"]
         cs["st_sum"] += sign * st
@@ -220,7 +224,8 @@ def finish(racers: dict) -> dict:
         out[t] = {"name": r["name"], "c": cc, "pts": list(r["pts"]), "stx": [r["stx"][0], round(r["stx"][1], 4), round(r["stx"][2], 5)],
                   "rst": [r["rst"][0], round(r["rst"][1], 4), round(r["rst"][2], 5)], "f": sorted(r["f"]),
                   "r8": [round(x, 2) for x in r.get("rs", [])[-RECENT_N:]],
-                  "cb": list(r.get("cb", [0, 0])), "nk": list(r.get("nk", [0, 0]))}
+                  "cb": list(r.get("cb", [0, 0])), "nk": list(r.get("nk", [0, 0])),
+                  "v": {k: list(a) for k, a in r.get("v", {}).items() if a[1] > 0}}
     return out
 
 

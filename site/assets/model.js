@@ -4,7 +4,7 @@
    2) 展開の見立て: STの組み合わせごとに、どのコースがどの決まり手で1着になりやすいか(条件付きロジット)
    本番前はSTが分からないので、1)の多数の組み合わせで2)を平均する。
    使い方: var R = SuimenModel.predict(race, params, {samples: 400});
-     race = {vt, nt, wind, date, venue, boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, ex, est}]}
+     race = {vt, nt, wind, date, venue, boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, lv, ex, est}]}
    ブラウザでもNode(require)でも使える。 */
 (function (root) {
   "use strict";
@@ -116,6 +116,8 @@
     var mp = pts.reduce(function (s, x) { return s + x; }, 0) / 6;
     var mots = B.map(function (b) { return b.motorR != null ? b.motorR : null; }), mm = mots.filter(function (x) { return x != null; });   // 成績の2連率(学習と同じ)
     var mmean = mm.length ? mm.reduce(function (s, x) { return s + x; }, 0) / mm.length : null;
+    var LK = K.LOC_K || 8, locd = B.map(function (b, i) { var lv = b.lv || [0, 0]; return (lv[0] + LK * pts[i]) / (lv[1] + LK) - pts[i]; });
+    var mloc = locd.reduce(function (s, x) { return s + x; }, 0) / 6;
     var ls1 = ((B[0].cs || {})["1"] || {}).ls || {}, lsh = lossShare(race.nt), lsw = 0;
     Object.keys(lsh).forEach(function (k) { lsw += ls1[k] || 0; });
     var exs = B.map(function (b) { return b.ex; }), exOk = exs.every(function (x) { return x != null && isFinite(x) && x >= 6.0 && x <= 7.6; });
@@ -127,6 +129,7 @@
       var p = { prior: v };
       p.d = th["d_" + c + k] || 0;
       p.str = (th["str_" + k] || 0) * (pts[c - 1] - mp);
+      p.loc = (th.loc || 0) * (locd[c - 1] - mloc);                   // 当地の相性
       p.rec = th.rec * Math.log(((cs.w1 + K.REC_K * base) / (cs.n + K.REC_K)) / base);
       p.mot = mmean != null && mots[c - 1] != null ? th.mot * (mots[c - 1] - mmean) / 10 : 0;
       p.ex = exOk ? ((th.ex || 0) + (k === "捲り" || k === "捲り差し" ? (th.ex_mk || 0) : 0)) * (exMean - exs[c - 1]) / 0.05 : 0;
@@ -137,7 +140,7 @@
         p.tac = th.tac * Math.log((((km[k] || 0) + K.TAC_K * qk) / (W + K.TAC_K)) / qk);
         p.ls = th.ls * Math.log((((ls1[k] || 0) + K.LS_K * lsh[k]) / (lsw + K.LS_K)) / lsh[k]);
       }
-      u[i] = v + p.d + p.str + p.rec + p.mot + p.ex + p.tac + p.ls;
+      u[i] = v + p.d + p.str + p.loc + p.rec + p.mot + p.ex + p.tac + p.ls;
       parts.push(p);
     });
     return { u: u, parts: parts, prior: pr };

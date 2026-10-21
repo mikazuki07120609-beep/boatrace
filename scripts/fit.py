@@ -30,6 +30,7 @@ MOTOR_DAYS = 180
 
 # ---- 見立ての式の定数(model.js と同じ)
 PTS_MEAN, PTS_K = 31 / 6, 10       # 着順点の平均(1レース31点を6艇で分ける)と、走数が少ない選手を平均に寄せる強さ
+LOC_K = 8                          # 当地の着順点を、その選手の全体の平均に寄せる強さ(走数)
 REC_K, TAC_K, LS_K = 10, 3, 2
 VEN_M, VEN_KM = 300, 40            # 場の傾向を全国の傾向で補う強さ(レース数・勝ち数)
 U = 0.05                           # STの差の単位(秒)
@@ -49,7 +50,7 @@ PARAMS = ([f"d_{c}{k}" for c, k in CLASSES] + [f"str_{k}" for k in KIMS] + ["rec
           + [f"mk{j}_{g}" for g in range(4) for j in (1, 2)]
           + [f"sa{j}_{g}" for g in range(4) for j in (1, 2, 3)]
           + [f"ms{j}_{g}" for g in range(4) for j in (1, 2, 3)]
-          + ["w_nige", "w_mk", "w_sa", "w_ms"])
+          + ["w_nige", "w_mk", "w_sa", "w_ms", "loc"])
 PI = {n: i for i, n in enumerate(PARAMS)}
 NP = len(PARAMS)
 REG = np.array([2.0 if n.startswith("d_") else 0.5 for n in PARAMS])
@@ -180,6 +181,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
         e = by[c]
         r = acc.racer(e["toban"])
         b = snapshot_racer(r, d, c)
+        b["lv"] = list(r.get("v", {}).get(vcode, [0, 0]))                  # この場での[着順点, 走数](当地の相性)
         b.update({"c": c, "toban": e["toban"], "st": e["st"] if valid_st(e) else None, "rank": e.get("rank"),
                   "ex": e.get("ex"), "motor": motor_rate(motor, vcode, e.get("motor"), d)})
         rec["b"].append(b)
@@ -237,6 +239,12 @@ def static_terms(rec):
     exs = [b.get("ex") for b in B]
     ex_ok = all(isinstance(x, (int, float)) and 6.0 <= x <= 7.6 for x in exs)
     ex_mean = sum(exs) / 6 if ex_ok else None
+    # 当地の相性: この場での着順点の平均(全体の平均に寄せたもの)が、全体の平均よりどれだけ高いか(6艇の平均との差)
+    locd = []
+    for i, b in enumerate(B):
+        lv = b.get("lv") or [0, 0]
+        locd.append((lv[0] + LOC_K * pts[i]) / (lv[1] + LOC_K) - pts[i])
+    mloc = sum(locd) / 6
     ls1 = B[0]["cs"].get("ls", {})
     lsh = loss_share(rec["nt"])
     lsw = sum(ls1.get(k, 0) for k in lsh)
@@ -245,6 +253,7 @@ def static_terms(rec):
         b = B[c - 1]
         terms.append((PI[f"d_{c}{k}"], i, 1.0))
         terms.append((PI[f"str_{k}"], i, pts[c - 1] - mp))
+        terms.append((PI["loc"], i, locd[c - 1] - mloc))
         base = pc[c - 1]
         rate = (b["cs"]["w1"] + REC_K * base) / (b["cs"]["n"] + REC_K)
         terms.append((PI["rec"], i, math.log(rate / base)))
@@ -798,7 +807,7 @@ def main() -> int:
         return 1
     model = {"version": 1, "fitted": today_jst().isoformat(), "train": {"from": min(r["d"] for r in recs).isoformat(),
                                                                        "to": last.isoformat(), "races": D.n},
-             "const": {"PTS_MEAN": PTS_MEAN, "PTS_K": PTS_K, "REC_K": REC_K, "TAC_K": TAC_K, "LS_K": LS_K,
+             "const": {"PTS_MEAN": PTS_MEAN, "PTS_K": PTS_K, "REC_K": REC_K, "TAC_K": TAC_K, "LS_K": LS_K, "LOC_K": LOC_K,
                        "VEN_M": VEN_M, "VEN_KM": VEN_KM, "U": U},
              "classes": ["%d%s" % ck for ck in CLASSES],
              "dev": {n: round(float(v), 4) for n, v in zip(PARAMS, th)},
