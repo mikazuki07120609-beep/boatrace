@@ -165,3 +165,13 @@ table.bt .moved{color:var(--red)}
 /* 注意書き(ページの一番下にまとめる) */
 footer h2{font-size:14px;color:var(--muted)}
 footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.6}
+/* 警戒アラート: イン飛び(特別警報 赤・警報 黄・注意報 緑)、カドまくり(特別警報 オレンジ・警報 紫・注意報 ピンク) */
+.alerts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.alerts:empty{display:none}
+.al{display:inline-block;font-size:12px;font-weight:700;line-height:1;padding:5px 8px;border-radius:999px;color:#fff;white-space:nowrap;letter-spacing:.02em}
+.al.sm{font-size:10.5px;padding:3px 6px}
+.al-in3{background:#d32f2f}.al-in2{background:#f2c200;color:#14212b}.al-in1{background:#2e9d4f}
+.al-kado3{background:#ef6c00}.al-kado2{background:#7b1fa2}.al-kado1{background:#e8559a}
+.vrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vrow .als{display:inline-flex;gap:4px;flex-wrap:wrap}
+.alrow{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}

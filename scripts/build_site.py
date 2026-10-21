@@ -7,6 +7,7 @@ import math
 import shutil
 
 from common import DATA, OUT, PROGRAM, RESULTS, SITE, VENUES, KIMARITE, load_json, parse_ymd, today_jst
+from alerts import badges, race_alerts
 from motor import raw_scores, venue_grades
 from stats import collect, venue_table
 
@@ -356,7 +357,7 @@ RACE_NOTES = [
 ]
 
 
-def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None):
+def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None, alerts=None):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     path = f"{ymd}/{code}/{race['no']:02d}.html"
@@ -437,8 +438,9 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
             f'<h1>{e(vname)} {race["no"]}R {e(race["name"])}</h1>'
             f'<div class="meta"><span class="tag" id="dlTag">締切 {e(race["deadline"])}</span><span class="tag">{race["distance"]}m</span>'
             + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
-            + f'<span class="sub">{e(vprog.get("title", ""))}</span></div><div class="chips">{chips}</div>')
-    data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")},
+            + f'<span class="sub">{e(vprog.get("title", ""))}</span></div>'
+            f'<div class="alerts" id="alerts">{badges(alerts or {})}</div><div class="chips">{chips}</div>')
+    data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")}, "alerts": alerts or {},
             "race": {"date": d.isoformat(), "ymd": ymd, "no": race["no"], "name": race["name"], "deadline": race.get("deadline")}, "entries": ents,
             "vt": tables[0], "nt": tables[1]}
     if result:
@@ -464,7 +466,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     return path
 
 
-def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None):
+def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=None):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     rows = []
@@ -483,14 +485,15 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None):
         rows.append(f'<tr data-deadline="{e(race["deadline"])}" data-no="{race["no"]}"><td><a class="rno" href="{race["no"]:02d}.html">{race["no"]}R</a></td>'
                     f'<td class="num"><span class="dl">{e(race["deadline"])}</span><span class="small cd"></span></td>'
                     f'<td><a href="{race["no"]:02d}.html">{e(race["name"])}</a>' + (f'<span class="small">{race["distance"]}m</span>' if race["distance"] != 1800 else "")
-                    + f'</td><td><span class="waku w1">1</span> {e(x["name"])} <span class="small">{e(x["cls"])}</span></td>'
-                    f'<td class="num">{c1txt}</td><td>{restxt}</td></tr>')
+                    + (f'<span class="alrow">{badges((al_map or {}).get(race["no"]), True)}</span>' if (al_map or {}).get(race["no"]) and any((al_map or {}).get(race["no"]).values()) else "")
+                    + f'</td><td>{restxt}</td><td><span class="waku w1">1</span> {e(x["name"])} <span class="small">{e(x["cls"])}</span></td>'
+                    f'<td class="num">{c1txt}</td></tr>')
     p1 = vinfo["place"][0][0] if vinfo["place"] else 0
     body = (f'<nav class="crumb"><a href="../../index.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
             f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
-            '<th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th><th>結果</th></tr></thead><tbody>' + "".join(rows)
+            '<th>結果</th><th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
             + "</tbody></table></div></section>")
     title = f"{vname} {jdate(d)} 出走表・レース一覧 | {SITE_NAME}"
     desc = f"{vname}の{jdate(d)}の全レースの出走表、選手のコース別成績、展開の見立て。{vprog.get('title', '')}"
@@ -498,15 +501,17 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None):
     write(f"{ymd}/{code}/index.html", page(title, desc, body, 2, f"{ymd}/{code}/", '<script src="../../assets/day.js"></script>', notes))
 
 
-def day_cards(d, prog, depth_prefix):
+def day_cards(d, prog, depth_prefix, alerts=None):
     """開催場のカード。締切の時刻を持たせておき、ページを開いたときに次のレースが近い順に並べ替える(day.js)。"""
     ymd = d.strftime("%Y%m%d")
     items = []
     for code, v in prog["venues"].items():
         first, last = v["races"][0]["deadline"], v["races"][-1]["deadline"]
         dls = ",".join(f'{r["no"]}-{r["deadline"]}' for r in v["races"] if r.get("deadline"))
-        items.append((first, f'<a class="card vcard" href="{depth_prefix}{ymd}/{code}/index.html" data-dl="{dls}" data-code="{code}">'
-                             f'<span class="v">{e(VENUES.get(code, code))}</span>'
+        am = (alerts or {}).get(code, {})
+        als = ",".join(f"{no}:{k}{lv}" for no, a in sorted(am.items()) for k, lv in a.items() if lv)
+        items.append((first, f'<a class="card vcard" href="{depth_prefix}{ymd}/{code}/index.html" data-dl="{dls}" data-al="{als}" data-code="{code}">'
+                             f'<span class="vrow"><span class="v">{e(VENUES.get(code, code))}</span><span class="als"></span></span>'
                              f'<span class="next" aria-live="polite"></span>'
                              f'<span class="t">{e(v.get("title", ""))}</span><span class="sub">'
                              + (f'第{v["day"]}日 ・ ' if v.get("day") else "") + f'{len(v["races"])}R ・ 締切 {e(first)}〜{e(last)}</span></a>'))
@@ -514,26 +519,29 @@ def day_cards(d, prog, depth_prefix):
     return f'<div class="cards" data-date="{d.isoformat()}">' + "".join(x[1] for x in items) + "</div>"
 
 
-DAY_NOTES = ["開催場は、次のレースの締切が近い順に並べています(この端末の時計で数え、開いている間は1分ごとに並べ直します)。締切まで10分を切ったレースは赤で示します。"]
+DAY_NOTES = ["開催場は、次のレースの締切が近い順に並べています(この端末の時計で数え、開いている間は1分ごとに並べ直します)。締切まで10分を切ったレースは赤で示します。",
+             "場の名前の横の警戒アラートは、次のレースのものです。イン飛び警戒は、1コースの選手の1コース1着率と2コースの選手の逃がし率が、どちらも40%以下で注意報(緑)、33%以下で警報(黄)、25%以下で特別警報(赤)。"
+             "カドまくり警戒は、4コースの選手が4コースでよく捲って勝っていて(捲りの1着が走数の8%以上)、予想STが1〜3コースのどの艇よりも早いとき。差が0.00秒以上で注意報(ピンク)、0.01秒以上で警報(紫)、0.02秒以上で特別警報(オレンジ)。"
+             "展示の前の、枠なりの進入での計算です(レースのページでは、スタート展示のあとに計算し直します)。"]
 
 
-def build_day(d, prog, dates):
+def build_day(d, prog, dates, alerts=None):
     ymd = d.strftime("%Y%m%d")
     nav = " ".join(f'<a class="chip{" on" if x == d else ""}" href="../{x:%Y%m%d}/index.html">{x.month}/{x.day}</a>' for x in dates)
     body = (f'<nav class="crumb"><a href="../index.html">今日のレース</a></nav><h1>{jdate(d)}の開催</h1>'
-            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(d, prog, "../")}</section>')
+            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(d, prog, "../", alerts)}</section>')
     write(f"{ymd}/index.html", page(f"{jdate(d)}のボートレース開催一覧 | {SITE_NAME}",
                                     f"{jdate(d)}に開催のボートレース全場の出走表と展開の見立て。", body, 1, f"{ymd}/",
                                     '<script src="../assets/day.js"></script>', DAY_NOTES))
 
 
-def build_index(today, progs, dates):
+def build_index(today, progs, dates, alerts_by_day=None):
     show = today if today in progs else max(progs)
     nav = " ".join(f'<a class="chip{" on" if x == show else ""}" href="{x:%Y%m%d}/index.html">{x.month}/{x.day}</a>' for x in dates)
     label = "今日" if show == today else ("明日" if show == today + dt.timedelta(days=1) else "")
     body = (f'<h1>{label}{"の" if label else ""}レース {jdate(show)}</h1>'
             '<p class="lead">全国のボートレースの出走表を毎日自動で更新し、直前情報と1周1マークの展開シミュレーションを出しています。買い目は出しません。</p>'
-            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(show, progs[show], "")}</section>')
+            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(show, progs[show], "", (alerts_by_day or {}).get(show))}</section>')
     write("index.html", page(f"{SITE_NAME} | ボートレースの出走表と展開の見立て",
                              "全国のボートレースの出走表を毎日自動更新。直前情報と1周1マークの展開シミュレーション。", body, 0, "",
                              '<script src="assets/day.js"></script>', DAY_NOTES))
@@ -582,13 +590,20 @@ def main():
     (OUT / "assets" / "params.js").write_text(
         "window.SUIMEN_PARAMS = " + (json.dumps(model, ensure_ascii=False, separators=(",", ":")) if model else "null") + ";\n",
         encoding="utf-8")
+    alerts_by_day = {}
     for d in dates:
         racers, vstats, nat = collect(d, cache)
         nt = course_table(nat)
         res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
         live_day = load_live(d)
         mraw = raw_scores(d, racers)
-        build_day(d, progs[d], dates)
+        sm = (model or {}).get("start")
+        al_day = {}
+        for code, vprog in progs[d]["venues"].items():
+            al_day[code] = {race["no"]: race_alerts([racer_view(x, racers) for x in race["entries"]], sm, code, d.isoformat())
+                            for race in vprog["races"]}
+        alerts_by_day[d] = al_day
+        build_day(d, progs[d], dates, al_day)
         urls.append(f"{d:%Y%m%d}/")
         for code, vprog in progs[d]["venues"].items():
             vinfo = venue_info(code, vstats, stadiums)
@@ -596,7 +611,7 @@ def main():
                 continue
             vlive = live_day.get(code, {})
             rv = {r["no"]: r for r in res_day.get("venues", {}).get(code, {}).get("races", [])}
-            build_venue(d, code, vprog, vinfo, racers, rv, vlive)
+            build_venue(d, code, vprog, vinfo, racers, rv, vlive, al_day.get(code))
             urls.append(f"{d:%Y%m%d}/{code}/")
             tables = (course_table(vstats.get(code)), nt)
             tm = today_marks(vlive, vprog)
@@ -604,8 +619,8 @@ def main():
             motors = venue_grades(code, vprog, mraw)
             for race in vprog["races"]:
                 urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
-                                       ranks=ranks, vlive=vlive, motors=motors, today_m=tm))
-    build_index(today, progs, dates)
+                                       ranks=ranks, vlive=vlive, motors=motors, today_m=tm, alerts=al_day[code][race["no"]]))
+    build_index(today, progs, dates, alerts_by_day)
     build_about()
     sm = "".join(f"<url><loc>{BASE_URL}{u}</loc></url>" for u in urls)
     write("sitemap.xml", f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{sm}</urlset>')

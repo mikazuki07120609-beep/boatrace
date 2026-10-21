@@ -12,6 +12,7 @@
     if (left < 60) return Math.floor(left) + "分前";
     return Math.floor(left / 60) + "時間" + (Math.floor(left) % 60) + "分前";
   }
+  var AL_NAME = { "in": "イン飛び", "kado": "カドまくり" }, AL_LV = { 3: "特別警報", 2: "警報", 1: "注意報" };
   function cards() {
     var box = document.querySelector(".cards[data-date]");
     if (!box) return;
@@ -26,6 +27,13 @@
       c.classList.toggle("soon", left != null && left <= 10);
       c.classList.toggle("done", day === now.iso && !nx);
       if (el) el.textContent = day === now.iso ? (nx ? nx.no + "R " + label(left) : "本日の発売は終了") : (nx ? nx.no + "R から" : "");
+      // 次のレースの警戒アラートを、場の名前の横に出す
+      var box = c.querySelector(".als"), als = (c.getAttribute("data-al") || "").split(",").filter(Boolean).map(function (x) {
+        var p = x.split(":"); return { no: +p[0], k: p[1].replace(/\d$/, ""), lv: +p[1].slice(-1) };
+      });
+      if (box) box.innerHTML = nx ? als.filter(function (a) { return a.no === nx.no; }).map(function (a) {
+        return '<span class="al al-' + a.k + a.lv + '">' + AL_NAME[a.k] + " " + AL_LV[a.lv] + "</span>";
+      }).join("") : "";
       c._key = day === now.iso ? (nx ? nx.m : 1e6 + (races.length ? races[races.length - 1].m : 0)) : (races.length ? races[0].m : 1e6);
     });
     list.sort(function (a, b) { return a._key - b._key; }).forEach(function (c) { box.appendChild(c); });

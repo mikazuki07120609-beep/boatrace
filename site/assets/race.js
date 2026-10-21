@@ -345,6 +345,32 @@
       (Math.abs(ven) >= 0.005 ? "<li>" + esc(V.name + "は、全体にSTが" + (ven < 0 ? "早く" : "遅く") + "出やすい場です(" + sgn(ven) + "秒)。") + "</li>" : "");
   }
 
+  // 警戒アラート(イン飛び・カドまくり)。スタート展示のあとは、展示の進入と予想ST(展示STを含む)で計算し直す。式は scripts/alerts.py と同じ
+  var AL_NAME = { "in": "イン飛び", "kado": "カドまくり" }, AL_LV = { 3: "特別警報", 2: "警報", 1: "注意報" };
+  function inAlert(cs1, cs2) {
+    if (!cs1 || !cs2 || (cs1.n || 0) < 3 || (cs2.n || 0) < 3) return 0;
+    var m = Math.max((cs1.w1 || 0) / cs1.n, (cs2.ng || 0) / cs2.n);
+    return m <= 0.25 + 1e-9 ? 3 : m <= 0.33 + 1e-9 ? 2 : m <= 0.40 + 1e-9 ? 1 : 0;
+  }
+  function makuriTendency(cs4) { cs4 = cs4 || {}; var km = cs4.km || {}; return ((km["捲り"] || 0) + 0.5 * (km["捲り差し"] || 0) + 3 * 0.046) / ((cs4.n || 0) + 3); }
+  function renderAlerts(R) {
+    var box = $("#alerts");
+    if (!box || !R || !R.M || !beforeReady()) return;
+    var byC = {};
+    R.B.forEach(function (b) { byC[b.course] = b; });
+    if (!byC[1] || !byC[2] || !byC[4]) return;
+    var al = { "in": inAlert((byC[1].cs || {})["1"], (byC[2].cs || {})["2"]), kado: 0 };
+    if (makuriTendency((byC[4].cs || {})["4"]) >= 0.08) {
+      var mu = {};
+      R.M.st.forEach(function (s) { mu[s.course] = s.mu; });
+      var dk = Math.min(mu[1], mu[2], mu[3]) - mu[4];
+      al.kado = dk >= 0.02 - 1e-9 ? 3 : dk >= 0.01 - 1e-9 ? 2 : dk >= -1e-9 ? 1 : 0;
+    }
+    box.innerHTML = ["in", "kado"].filter(function (k) { return al[k]; }).map(function (k) {
+      return '<span class="al al-' + k + al[k] + '">' + AL_NAME[k] + " " + AL_LV[al[k]] + "</span>";
+    }).join("") + (al["in"] || al.kado ? '<span class="sub">(展示のあとで計算)</span>' : "");
+  }
+
   function render() {
     renderDeadline();
     renderResult();
@@ -354,6 +380,7 @@
     setGated(on);
     if (!on) return;
     var R = analyze(), B = R.B, scen = R.scen;
+    renderAlerts(R);
     function byCourse(c) { return B.filter(function (b) { return b.course === c; })[0]; }
     var p1 = V.place[0][0], t = tier(p1);
     renderStart(R);
