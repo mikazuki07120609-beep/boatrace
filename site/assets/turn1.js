@@ -198,7 +198,7 @@
         if (cw >= 5 && byC[cw - 2] && margin(byC[cw - 2]) > margin(A)) A = byC[cw - 2];
         force(A, inner(A), 0.03);
         set(A, "makuri", b1); set(b1, "hari"); set(W, "sashi", A); A.flowOut = true;      // 張られて2艇とも流れる
-        force(A, [W], 0.02); force(W, [A], -0.03);                                      // 捲る艇が前、差す艇はそのすぐ後ろ
+        force(A, [W], 0.045);                                                           // 捲る艇が前、差す艇はその後ろ(並んでいると内へ入れない)
         midBoats(1, A.course).forEach(function (o) { o.wait = 1; });
         midBoats(A.course, cw).forEach(function (o) { o.wait = 1; });
       }
@@ -216,7 +216,7 @@
         var att = cands[0] && margin(cands[0]) >= -0.03 ? cands[0] : null;
         if (att) {
           A = att; force(A, inner(A), 0.03);
-          set(A, "makuri", b1); set(b1, strong1() >= 0.6 ? "hari" : "nokoshi"); A.flowOut = true;
+          set(A, "makuri", b1); set(b1, "hari"); A.flowOut = true;
           var ov2 = midBoats(A.course, cw);
           force(A, [W], 0.02); force(W, ov2, 0.012); force(W, [A], -0.03);
           set(W, "makurizashi", null, ov2, A);
@@ -882,7 +882,7 @@
   // X から見た Y との関係(同じ地点を通った時刻と、内外)
   function pairRel(X, Y, sLast) {
     var r = { pass: null, crossFront: null, crossBehind: null, gateAhead: false, endAhead: false, dTend: 0, overAt: false };
-    var prevT = null, prevL = null, g, gA = gIdx(98), gB = gIdx(sLast), gGate = gIdx(S_GATE);
+    var prevT = null, prevL = null, g, gA = gIdx(72), gB = gIdx(sLast), gGate = gIdx(S_GATE);
     for (g = gA; g <= gB; g++) {
       var tx = X.Tg[g], ty = Y.Tg[g], lx = X.Lg[g], ly = Y.Lg[g];
       if (isNaN(tx) || isNaN(ty)) { prevT = prevL = null; continue; }
@@ -939,7 +939,14 @@
         if (r.pass && r.pass.inside && r.endAhead && !r.gateAhead && (Y.role === "makuri" || Y.role === "nidan")) inOut.push(Y);
       });
       var overAll = L.outOf.concat(L.over.filter(function (y) { return L.outOf.indexOf(y) < 0; }));
+      // 決まり手の言葉は、すぐ左(内)の艇との関係で決める(差し: 左の艇の内を抜いた。捲り: 左の艇の外を抜いた。
+      // まくり差し: 左の艇の外を抜き、さらにその内の艇の内を抜いた)
+      var leftB = boats.filter(function (Y) { return Y.course === c - 1; })[0];
+      var leftIn = leftB && L.inOf.indexOf(leftB) >= 0, leftOut = leftB && overAll.indexOf(leftB) >= 0;
       if (c === 1) L.kind = L.pos === 1 ? "nige" : null;
+      else if (leftIn) L.kind = "sashi";
+      else if (leftOut && L.inOf.some(function (y) { return y.course < c - 1; })) L.kind = c >= 3 ? "makurizashi" : "sashi";
+      else if (leftOut && (L.outOf.length || aheadAll)) L.kind = "makuri";
       else if (L.inOf.length) {
         // 内から抜いた艇より外(自分との間)の艇を、前を横切るか外から抜いていれば、まくり差し(3〜6コースだけ)
         var yin = Math.min.apply(null, L.inOf.map(function (y) { return y.course; }));
@@ -974,8 +981,19 @@
   // 全体: 戦法を決め、ラインと時間を作り、決着パターンどおりの先頭・決まり手になるまで調整する
   // ======================================================================
   var WANT = { "逃げ": "nige", "差し": "sashi", "捲り": "makuri", "捲り差し": "makurizashi" };
+  // 決着パターン(先頭と決まり手)を守れなかったときは、着順に合わせる手直しなしで作り直し、守れた方を使う
   function plan(entries, sc, vkim, opt) {
     opt = opt || {};
+    var P = plan1(entries, sc, vkim, opt);
+    var bad = function (Q) { return !Q.labels || Q.labels.order[0] !== Q.winner || Q.labels.byCourse[Q.winner.course].kind !== Q.want; };
+    if (bad(P) && (opt.order || (sc && sc.order))) {
+      var sc2 = Object.assign({}, sc, { order: null }), opt2 = Object.assign({}, opt, { order: null });
+      var P2 = plan1(entries, sc2, vkim, opt2);
+      if (!bad(P2)) return P2;
+    }
+    return P;
+  }
+  function plan1(entries, sc, vkim, opt) {
     var boats = prepare(entries), byC = {};
     boats.forEach(function (b) { byC[b.course] = b; });
     var dec = decide(boats, sc, vkim, opt);
@@ -1022,6 +1040,8 @@
           if (kind === "makuri") winner.adj.dz -= 0.5;
         } else if (want === "makuri") boats.forEach(function (o) { if (o.course < winner.course) hold(o, 0.95); });
         else if (want === "nige" && lead !== winner) hold(lead, 0.95);
+        if (lead === byC[1] && (want === "sashi" || want === "makurizashi") && byC[1].role === "nokoshi") byC[1].role = "hari";
+        if (lead === byC[1] && (want === "sashi" || want === "makurizashi")) byC[1].flowExtra = Math.min(0.14, (byC[1].flowExtra || 0) + 0.035);
         if (lead !== winner && lead !== winner.ref && lead !== winner.under && winner.over.indexOf(lead) < 0 && want !== "nige") {
           if (lead.role === "makuri" || lead.role === "nidan" || lead.role === "mark" || lead.role === "zen" || lead.role === "soto") drift(lead, 1);
           else hold(lead, 0.95);
@@ -1149,7 +1169,7 @@
       }
       if (c === 1) {
         if ((b.role === "hari" || b.role === "nigeHari") && b.sp.yi - b.lane >= 0.5) add(b, idxAtS(b, b.sp.xin - 22), "1コース 張る", 2.4);
-        if (l.kind === "nige") add(b, idxAtG(b, gTurn), "1コース 逃げる", 1);
+        if (l.kind === "nige" && b.win) add(b, idxAtG(b, gTurn), "1コース 逃げる", 1);
         else if (b.role === "nokoshi" && l.pos <= 3) add(b, idxAtG(b, gTurn), "1コース 小回りで残す", 3.0);
         return;
       }
@@ -1163,6 +1183,8 @@
       else if (b.role === "mark" && b.ref && L[b.ref.course].kind === "makuri") { txt = "捲りについて行く"; pr = 3.4; }
       // 勝つ艇でない差し・捲りは、実際に内の艇を抜いて順位を2つ以上上げたときだけ出す
       if (txt && !b.win && (l.kind === "sashi" || l.kind === "makuri") && (l.pos > b.course - 2 || !(l.inOf.length || l.outOf.length))) txt = null;
+      // 勝つ艇でない艇の戦法の吹き出しは、3着以内に入る艇だけ(後ろの艇が外を回って少し前に出ただけのものは出さない)
+      if (txt && !b.win && txt !== "捲りに行く" && l.pos > 3) txt = null;
       if (b.win) {
         // 決着パターンの決まり手と、実際の動きが同じときだけ、その言葉を使う
         if (l.kind === P.want) { txt = { sashi: "差す", makuri: "捲る", makurizashi: "まくり差し" }[P.want] || txt; pr = 1; }
