@@ -1,0 +1,28 @@
+name: 直前情報ページの見本を取る(開発用・一時的)
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: "jcd-rno をスペース区切り"
+        required: true
+      day:
+        description: "YYYYMMDD"
+        required: true
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 見本を取る
+        run: |
+          mkdir -p out
+          for p in ${{ github.event.inputs.pages }}; do
+            jcd=${p%-*}; no=${p#*-}
+            curl -sS -A "suimen-note/1.0 (+https://mikazuki07120609-beep.github.io/boatrace/)" \
+              "https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno=${no}&jcd=${jcd}&hd=${{ github.event.inputs.day }}" -o "out/before_${jcd}_${no}.html" || true
+            sleep 3
+          done
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: samples
+          path: out
