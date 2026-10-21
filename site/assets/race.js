@@ -180,6 +180,105 @@
     pts.slice(1, 3).forEach(function (p) { lines.push(p); });
     lines.push("", "※データから見た展開の目安です。舟券の推奨ではありません。", "#ボートレース #" + V.name, location.href.split("#")[0]);
     $("#post").value = lines.join("\n");
+    updateView(R);
+  }
+
+  // ---- 1周1マーク展開ビュー(turn1.js)。展開の見立てと同じ決着パターンで、直前情報を入れたら作り直す
+  var view = null, viewSig = "", patKey = "", patIdx = 0, pats = [], ents = [], viewTimer = null, started = false, wasPlaying = false;
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function viewTitle() { return V.name + " " + D.race.no + "R 1周1マーク"; }
+  function scenOf(i) { var s = pats[i]; return { course: s.b.course, kim: s.kim, p: s.p }; }
+  function drawPats() {
+    var box = $("#t1Pats");
+    if (!box) return;
+    box.innerHTML = pats.map(function (s, i) {
+      return '<button type="button" class="pat' + (i === patIdx ? " on" : "") + '" data-i="' + i + '" aria-pressed="' + (i === patIdx) + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + "</span>" +
+        s.b.course + "コース " + s.kim + '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
+    }).join("");
+  }
+  function updateView(R) {
+    var canvas = $("#t1view");
+    if (!canvas || !window.Turn1) return;
+    pats = R.scen.filter(function (s) { return s.kim !== "抜き" && s.kim !== "恵まれ"; }).slice(0, 4);
+    if (!pats.length) return;
+    var pk = pats.map(function (s) { return s.b.waku + s.kim; }).join(",");
+    if (pk !== patKey) { patKey = pk; patIdx = 0; }
+    ents = R.B.map(function (b) {
+      var c = b.csNow || {};
+      return { waku: b.waku, course: b.course, name: b.name, st: b.stUse, motor2: b.motor2, ex: b.ex, cls: b.cls, km: c.km, ls: c.ls, n: c.n, w1: c.w1 };
+    });
+    drawPats();
+    var sc = scenOf(patIdx), sig = JSON.stringify([sc.course, sc.kim, ents.map(function (e) { return [e.waku, e.course, e.st, e.ex]; })]);
+    if (sig === viewSig) return;
+    viewSig = sig;
+    if (!view) {
+      view = Turn1.mount(canvas, { entries: ents, scen: sc, title: viewTitle(), kimarite: V.kimarite, brand: "水面ノート",
+                                   onEnd: function () { var b = $("#t1Pause"); if (b) b.textContent = "再生"; } });
+      watch(canvas);
+    } else {
+      clearTimeout(viewTimer);
+      viewTimer = setTimeout(function () { view.setScenario(sc, ents, viewTitle()); $("#t1Pause").textContent = "一時停止"; }, 700);
+    }
+  }
+  // 画面に見えたら再生し、見えなくなったら止める(電池と動作の重さのため)
+  function watch(canvas) {
+    if (reduceMotion) { view.seek(2.6); $("#t1Pause").textContent = "再生"; return; }
+    if (!("IntersectionObserver" in window)) { view.play(); started = true; return; }
+    new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) {
+          if (!started) { started = true; view.play(); $("#t1Pause").textContent = "一時停止"; }
+          else if (wasPlaying) { view.play(); wasPlaying = false; }
+        } else if (view.isPlaying()) { wasPlaying = true; view.pause(); }
+      });
+    }, { threshold: 0.35 }).observe(canvas);
+  }
+  function download(blob, name) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+  }
+  function setupViewControls() {
+    var pBox = $("#t1Pats"), pause = $("#t1Pause"), slow = $("#t1Slow"), save = $("#t1Save"), msg = $("#t1Msg"), out = $("#t1Out");
+    if (!pBox) return;
+    pBox.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-i]");
+      if (!b || !view) return;
+      patIdx = +b.getAttribute("data-i"); drawPats();
+      viewSig = JSON.stringify([scenOf(patIdx).course, scenOf(patIdx).kim, ents.map(function (x) { return [x.waku, x.course, x.st, x.ex]; })]);
+      view.setScenario(scenOf(patIdx), ents, viewTitle()); started = true; pause.textContent = "一時停止";
+    });
+    $("#t1Replay").addEventListener("click", function () { if (view) { view.replay(); started = true; pause.textContent = "一時停止"; } });
+    pause.addEventListener("click", function () {
+      if (!view) return;
+      if (view.isPlaying()) { view.pause(); pause.textContent = "再生"; } else { view.play(); started = true; pause.textContent = "一時停止"; }
+    });
+    slow.addEventListener("click", function () {
+      var on = slow.getAttribute("aria-pressed") !== "true";
+      slow.setAttribute("aria-pressed", String(on)); slow.classList.toggle("on", on); if (view) view.setSpeed(on ? 0.5 : 1);
+    });
+    // 動画の保存: 録画(実際の長さぶん時間がかかる)→ 共有ボタン(Xなどへ)と保存ボタンを出す
+    save.addEventListener("click", function () {
+      if (!view) return;
+      save.disabled = true; out.hidden = true; out.innerHTML = "";
+      msg.textContent = "動画を作っています(約" + Math.round(view.duration()) + "秒)。この画面のままお待ちください。";
+      view.record().then(function (blob) {
+        var mp4 = blob.type.indexOf("mp4") >= 0, no = ("0" + D.race.no).slice(-2);
+        var name = "suimen-" + D.race.date.replace(/-/g, "") + "-" + V.code + "-" + no + "R." + (mp4 ? "mp4" : "webm");
+        var file = typeof File !== "undefined" ? new File([blob], name, { type: blob.type }) : null;
+        var canShare = file && navigator.canShare && navigator.canShare({ files: [file] });
+        out.innerHTML = (canShare ? '<button class="primary" type="button" id="t1Share">共有する(Xなど)</button>' : "") +
+          '<button type="button" id="t1Dl">端末に保存</button>';
+        out.hidden = false;
+        if (canShare) $("#t1Share").addEventListener("click", function () {
+          navigator.share({ files: [file], title: viewTitle(), text: V.name + D.race.no + "R 1周1マークの展開シミュレーション #ボートレース #" + V.name }).catch(function () {});
+        });
+        $("#t1Dl").addEventListener("click", function () { download(blob, name); });
+        msg.textContent = mp4 ? "動画ができました(MP4)。" : "動画ができました(WebM形式)。Xに投稿するときは、MP4への変換が必要な場合があります。";
+      }).catch(function () {
+        msg.textContent = "このブラウザでは動画を作れませんでした。iPhoneのSafariか、パソコンのChromeでお試しください。";
+      }).then(function () { save.disabled = false; pause.textContent = view.isPlaying() ? "一時停止" : "再生"; });
+    });
   }
 
   document.addEventListener("input", render);
@@ -198,5 +297,6 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(function () { msg.textContent = "コピーしました"; }, sel);
     else sel();
   });
+  setupViewControls();
   render();
 })();

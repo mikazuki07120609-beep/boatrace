@@ -413,11 +413,11 @@
     var out = [];
     for (var a = 0; a < boats.length; a++) for (var c = a + 1; c < boats.length; c++) {
       var A = boats[a], B = boats[c], i0 = Math.round((Math.max(A.st, B.st) - T0) / DT);
-      for (var i = i0; i <= iEnd; i += 2) {
+      for (var i = i0; i <= iEnd; i++) {
         var dx = A.X[i] - B.X[i], dy = A.Y[i] - B.Y[i];
         if (dx * dx + dy * dy > 36) continue;
         var hb = B.H[i], fwd = dx * Math.cos(hb) + dy * Math.sin(hb), lat = -dx * Math.sin(hb) + dy * Math.cos(hb);
-        if (Math.abs(fwd) < HULL_L + 0.3 && Math.abs(lat) < HULL_W + 0.35) { out.push({ A: A, B: B, i: i, fwd: fwd, lat: lat }); break; }
+        if (Math.abs(fwd) < HULL_L + 0.5 && Math.abs(lat) < HULL_W + 0.5) { out.push({ A: A, B: B, i: i, fwd: fwd, lat: lat }); break; }
       }
     }
     return out;
@@ -659,7 +659,7 @@
     pill(P.sc.course + "コース " + P.sc.kim + (P.sc.p != null ? " " + Math.round(P.sc.p) + "%" : ""), cw - u * 2, u * 2, "right", "#f2cf1d", "#14212b", fs);
     if (t < 0) pill("スタートまで " + (-t).toFixed(1), u * 2, u * 3.2 + fs * 1.7, "left", "rgba(8,26,34,0.72)", "#ffffff", fs * 0.9);
     ctx.font = Math.max(9, u * 1.6) + "px " + FONT; ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-    ctx.fillText("データに基づくシミュレーション", cw - u * 2, ch - u * 1.5);
+    ctx.fillText((opt.brand ? opt.brand + " ・ " : "") + "データに基づくシミュレーション", cw - u * 2, ch - u * 1.5);
     if (t > P.tEnd - 0.6) {                                       // 最後に先頭を出す
       ctx.globalAlpha = sstep(P.tEnd - 0.6, P.tEnd, t);
       var w = P.winner;

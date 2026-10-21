@@ -260,7 +260,19 @@ def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
             + f'<span class="sub">{e(vprog.get("title", ""))}</span></div><div class="chips">{chips}</div>')
     data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")},
             "race": {"date": d.isoformat(), "no": race["no"], "name": race["name"]}, "entries": ents}
-    body = head + (res_html if result else "") + card + inputs + analysis + venue_html
+    # 1周1マーク展開ビュー(スタートから全艇が1マークを回り切るまでの上空シミュレーション)
+    view = ('<section class="t1" aria-labelledby="h-t1"><div class="row" style="justify-content:space-between;align-items:center">'
+            '<h2 id="h-t1">1周1マーク展開ビュー</h2><span class="sub">データに基づくシミュレーション</span></div>'
+            '<canvas id="t1view" role="img" aria-label="スタートから全艇が1周1マークを回り切るまでを上空から見たシミュレーション"></canvas>'
+            '<div class="ctrl"><button class="primary" id="t1Replay" type="button">もう一度再生</button>'
+            '<button id="t1Pause" type="button">一時停止</button>'
+            '<button id="t1Slow" type="button" aria-pressed="false">ゆっくり再生</button>'
+            '<button id="t1Save" type="button">動画を保存</button></div>'
+            '<div class="ctrl" id="t1Out" hidden></div><p class="note" id="t1Msg" aria-live="polite"></p>'
+            '<div class="pats" id="t1Pats" role="group" aria-label="決着パターン"></div>'
+            '<p class="note">展開の見立てで上位の決着パターンを、選手の平均ST・モーター・コースごとの勝ち方から動かしています。'
+            '下の「直前情報で見直す」に展示タイムや進入を入れると、映像も作り直します。</p></section>')
+    body = head + (res_html if result else "") + view + card + inputs + analysis + venue_html
     first = ents[0]
     c1 = first["cs"].get("1")
     c1txt = f"1コース1着率{pct(c1['w1'], c1['n'])}%({c1['n']}走)" if c1 and c1["n"] else f"全国勝率{f1(first['rate'], 2)}"
@@ -269,7 +281,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
     title = f"{vname} {race['no']}R {race['name']} 出走表と展開 {d.month}/{d.day} | {SITE_NAME}"
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     script = (f'<script type="application/json" id="race-data">{blob}</script>'
-              f'<script src="{rel}assets/race.js"></script>')
+              f'<script src="{rel}assets/turn1.js"></script><script src="{rel}assets/race.js"></script>')
     write(path, page(title, desc, body, depth, path, script))
     return path
 
