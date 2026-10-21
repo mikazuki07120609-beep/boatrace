@@ -1,0 +1,44 @@
+name: 直前情報と結果(開催中)
+
+# 開催中ずっと動かし、締切の前後に各レースの直前情報(展示)と結果を公式サイトから読み取って、
+# data/live/ に入れてすぐリポジトリへ送る。レースのページは開くたびにこのファイルを読みに来る。
+# 1回の実行は最長350分。2時間おきに起動を予約しておき、前の実行が終わると次が始まる(同時には1つだけ)。
+on:
+  schedule:
+    - cron: "20 22 * * *"   # 7:20(日本時間)
+    - cron: "20 0 * * *"    # 9:20
+    - cron: "20 2 * * *"    # 11:20
+    - cron: "20 4 * * *"    # 13:20
+    - cron: "20 6 * * *"    # 15:20
+    - cron: "20 8 * * *"    # 17:20
+    - cron: "20 10 * * *"   # 19:20
+    - cron: "20 12 * * *"   # 21:20
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "何分まで動かすか"
+        default: "350"
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 締切の前後に、直前情報と結果を読み取ってリポジトリへ送る
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/live.py --loop "${{ github.event.inputs.minutes || '350' }}" --push

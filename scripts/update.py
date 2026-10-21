@@ -9,9 +9,7 @@
 """
 import argparse
 import datetime as dt
-import pathlib
 import shutil
-import subprocess
 import sys
 import time
 
@@ -74,36 +72,10 @@ def lacks_wind(day: dict) -> bool:
     return c is True or c == 2
 
 
-def predlog() -> None:
-    """締切前のレースの見立てを記録する(答え合わせで、本番前に出していた数字と結果を比べるため)。"""
-    if shutil.which("node"):
-        subprocess.run(["node", str(pathlib.Path(__file__).with_name("predlog.js"))], check=False)
-
-
-def quick() -> int:
-    """直前情報だけを取り込んで、ページを作り直す(締切前のレースの見立てに反映する。10分ごと)。"""
-    import os
-    import beforeinfo
-    got = beforeinfo.run(today_jst(), False)
-    out = os.environ.get("GITHUB_OUTPUT")
-    if out:                                                   # 新しい直前情報がなければ、公開し直さない
-        with open(out, "a", encoding="utf-8") as f:
-            f.write(f"changed={'true' if got else 'false'}\n")
-    if not got:
-        print("新しい直前情報はありませんでした")
-        return 0
-    build_site.main()
-    predlog()
-    return 0
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true")
-    ap.add_argument("--before", action="store_true", help="直前情報だけ取り込む(10分ごとの実行用)")
     a = ap.parse_args()
-    if a.before:
-        return quick()
     today = today_jst()
     state = load_json(STATE, {"missing_K": []})
     missing_k = set(state.get("missing_K", []))
@@ -171,11 +143,11 @@ def main() -> int:
     cutoff = f"{today - dt.timedelta(days=HISTORY_DAYS + 7):%Y%m%d}"
     save_json(STATE, {"missing_K": sorted(k for k in missing_k if k >= cutoff)})
 
-    # 記録した本番前の見立ても、成績と同じ期間だけ残す
-    for p in (DATA / "pred").glob("*.json"):
+    # 記録した見立て・直前情報・レース直後の結果も、成績と同じ期間だけ残す
+    for p in list((DATA / "pred").glob("*.json")) + list((DATA / "live").glob("*")):
         try:
             if (today - dt.datetime.strptime(p.stem, "%Y%m%d").date()).days > HISTORY_DAYS + 7:
-                p.unlink()
+                shutil.rmtree(p) if p.is_dir() else p.unlink()
         except ValueError:
             pass
 
@@ -187,7 +159,6 @@ def main() -> int:
     except ImportError as ex:
         print("学習をとばしました:", ex)
     build_site.main()
-    predlog()
     return 0
 
 
