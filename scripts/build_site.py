@@ -3,6 +3,7 @@
 import datetime as dt
 import html
 import json
+import math
 import shutil
 
 from common import DATA, OUT, PROGRAM, RESULTS, SITE, VENUES, KIMARITE, load_json, parse_ymd, today_jst
@@ -46,7 +47,7 @@ def page(title, desc, body, depth, path, scripts=""):
 <link rel="stylesheet" href="{rel}assets/style.css">
 </head><body><div class="wrap">
 <header class="site-head"><a class="logo" href="{rel}index.html">{SITE_NAME}</a>
-<nav class="site-nav"><a href="{rel}index.html">今日のレース</a><a href="{rel}about.html">このサイトについて</a></nav></header>
+<nav class="site-nav"><a href="{rel}index.html">今日のレース</a><a href="{rel}kotae.html">答え合わせ</a><a href="{rel}about.html">このサイトについて</a></nav></header>
 {body}
 <footer><span>データは公式の番組表・競走成績ファイルから自動で作っています。正確な情報は主催者発表のものをご確認ください。</span>
 <span>当サイトは非公式のデータ解説サイトで、舟券の購入をすすめるものではありません。舟券の購入は20歳以上に限られます。</span></footer>
@@ -104,7 +105,21 @@ def racer_view(entry, racers):
     v["cs"] = cs
     v["n_all"] = n_all
     v["st_all"] = round(st_sum / st_n, 2) if st_n else None
+    # 見立てモデル(model.js)が使う集計: 着順点[合計, 走数]、ST[走数, 合計, 2乗の合計]、フライングした日
+    v["pts"] = r.get("pts", [0, 0])
+    v["stx"] = r.get("stx", [0, 0, 0])
+    v["f"] = r.get("f", [])
+    v["r8"] = r.get("r8", [])
     return v
+
+
+def course_table(vs: dict | None) -> dict:
+    """場・全国のコース別の集計を、見立てモデルが使う形(コース → 走数・1着数・決まり手)にする。"""
+    out = {}
+    for c in range(1, 7):
+        vc = (vs or {}).get("c", {}).get(str(c), {"n": 0, "w1": 0, "km": {}})
+        out[str(c)] = {"n": vc["n"], "w1": vc["w1"], "km": {k: v for k, v in vc["km"].items() if v > 0}}
+    return out
 
 
 def review_text(vname, rno, res, url):
@@ -163,7 +178,7 @@ def tactic_cell(cs, course):
     return f'<td>{e("・".join(f"{k}{v}" for k, v in items) or "—")}<span class="small">{e(typ)}</span></td>'
 
 
-def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
+def build_race(d, code, vprog, race, vinfo, racers, result, tables, pred=None, depth=2):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     path = f"{ymd}/{code}/{race['no']:02d}.html"
@@ -207,8 +222,15 @@ def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
               '<div class="row"><label class="f">風向き<select id="wind"><option value="none">無風・弱い</option>'
               '<option value="head">向かい風</option><option value="tail">追い風</option><option value="side">横風</option></select></label>'
               '<label class="f">風速(m)<input id="windspd" type="number" min="0" max="15" step="1" value="2" style="width:80px"></label></div></section>')
-    analysis = ('<section><h2>展開の見立て</h2><p class="sub" id="scenLead"></p><div class="scen" id="scen"></div>'
-                '<p class="note">場のコース別1着率と決まり手の割合に、選手のコース別成績・勝率・ST・モーター・展示・風を掛け合わせた簡易モデルです。'
+    analysis = ('<section><h2>スタートの見立て</h2><p class="sub">選手の平均ST・ばらつき・フライング持ち・コース・風から、'
+                '過去のレースで実際に起きたスタートのずれ方を当てはめて、400通りのスタートを作っています。'
+                '「出る」は両隣より0.05秒以上早い、「凹む」は両隣より0.05秒以上遅い確率です。</p>'
+                '<div class="scroll"><table class="stt"><thead><tr><th>コース</th><th>選手</th><th class="num">予想ST</th>'
+                '<th class="num">出る</th><th class="num">凹む</th><th>出たときの展開</th></tr></thead><tbody id="stRows"></tbody></table></div>'
+                '<ul class="points" id="stNotes"></ul></section>'
+                '<section><h2>展開の見立て</h2><p class="sub" id="scenLead"></p><div class="scen" id="scen"></div>'
+                '<p class="note" id="scenNote">400通りのスタートそれぞれで、どのコースがどの決まり手で1着になりやすいかを計算して平均しています。'
+                '式の重みは、過去の成績で毎晩学習し直しています(<a href="../../kotae.html">答え合わせ</a>)。'
                 '的中を保証するものではありません。</p></section>'
                 '<section><h2>道中のポイント</h2><ul class="points" id="points"></ul><div class="boats" id="boats"></div></section>'
                 '<section><div class="row" style="justify-content:space-between;align-items:center"><h2>解説文(X・note用)</h2>'
@@ -259,7 +281,15 @@ def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
             + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="sub">{e(vprog.get("title", ""))}</span></div><div class="chips">{chips}</div>')
     data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")},
-            "race": {"date": d.isoformat(), "no": race["no"], "name": race["name"]}, "entries": ents}
+            "race": {"date": d.isoformat(), "no": race["no"], "name": race["name"], "deadline": race.get("deadline")}, "entries": ents,
+            "vt": tables[0], "nt": tables[1]}
+    if result:
+        # 答え合わせ用(見立てと実際の結果を比べる)
+        data["result"] = {"kimarite": result.get("kimarite"), "wind": result.get("wind"), "wind_dir": result.get("wind_dir"),
+                          "entries": [{k: x.get(k) for k in ("waku", "course", "st", "flying", "rank", "status", "ex")}
+                                      for x in result["entries"]]}
+        if pred:
+            data["pred"] = pred          # 締切前に記録した本番前の見立て(scripts/predlog.js)
     # 1周1マーク展開ビュー(スタートから全艇が1マークを回り切るまでの上空シミュレーション)
     view = ('<section class="t1" aria-labelledby="h-t1"><div class="row" style="justify-content:space-between;align-items:center">'
             '<h2 id="h-t1">1周1マーク展開ビュー</h2><span class="sub">データに基づくシミュレーション</span></div>'
@@ -272,7 +302,12 @@ def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
             '<div class="pats" id="t1Pats" role="group" aria-label="決着パターン"></div>'
             '<p class="note">展開の見立てで上位の決着パターンを、選手の平均ST・モーター・コースごとの勝ち方から動かしています。'
             '下の「直前情報で見直す」に展示タイムや進入を入れると、映像も作り直します。</p></section>')
-    body = head + (res_html if result else "") + view + card + inputs + analysis + venue_html
+    kotae = ('<section id="kotae" aria-labelledby="h-kotae"><h2 id="h-kotae">見立ての答え合わせ</h2>'
+             '<p class="sub" id="kotaeLead"></p><div class="scroll"><table class="stt"><thead><tr><th>コース</th><th>選手</th>'
+             '<th class="num">予想ST</th><th class="num">実際</th><th class="num">ずれ</th><th>スタート</th></tr></thead>'
+             '<tbody id="kotaeRows"></tbody></table></div><ul class="points" id="kotaeNotes"></ul>'
+             '<div class="ctrl"><button class="primary" id="kotaeView" type="button">実際のSTと決まり手で映像を作る</button></div></section>') if result else ""
+    body = head + (res_html if result else "") + kotae + view + card + inputs + analysis + venue_html
     first = ents[0]
     c1 = first["cs"].get("1")
     c1txt = f"1コース1着率{pct(c1['w1'], c1['n'])}%({c1['n']}走)" if c1 and c1["n"] else f"全国勝率{f1(first['rate'], 2)}"
@@ -281,6 +316,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, depth=2):
     title = f"{vname} {race['no']}R {race['name']} 出走表と展開 {d.month}/{d.day} | {SITE_NAME}"
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     script = (f'<script type="application/json" id="race-data">{blob}</script>'
+              f'<script src="{rel}assets/model.js"></script><script src="{rel}assets/params.js"></script>'
               f'<script src="{rel}assets/turn1.js"></script><script src="{rel}assets/race.js"></script>')
     write(path, page(title, desc, body, depth, path, script))
     return path
@@ -349,6 +385,155 @@ def build_index(today, progs, dates):
                              "全国のボートレースの出走表を毎日自動更新。選手のコース別成績とレース場の特徴から展開の見立てを作るデータサイト。", body, 0, ""))
 
 
+def logged_track(model):
+    """締切前に記録した本番前の見立て(data/pred)と、実際の結果を比べた成績。日ごとと合計。"""
+    if not model:
+        return None
+    classes = model.get("classes", [])
+    ci = {c: i for i, c in enumerate(classes)}
+    days, tot = [], {"n": 0, "top1": 0, "top3": 0, "py": 0.0, "nll": 0.0, "se": 0.0, "sn": 0}
+    for pp in sorted((DATA / "pred").glob("*.json")):
+        res = load_json(RESULTS / f"{pp.stem}.json", None)
+        if not res:
+            continue
+        logs = (load_json(pp, {}) or {}).get("venues", {})
+        dd = {"n": 0, "top1": 0, "top3": 0, "py": 0.0, "nll": 0.0, "se": 0.0, "sn": 0}
+        for code, v in res.get("venues", {}).items():
+            for race in v.get("races", []):
+                lg = logs.get(code, {}).get(str(race["no"]))
+                if not lg:
+                    continue
+                ents = race.get("entries", [])
+                win = next((x for x in ents if x.get("rank") == 1), None)
+                k = race.get("kimarite")
+                k = "抜き" if k in ("抜き", "恵まれ") else k
+                y = ci.get(f"{win['course']}{k}") if win and win.get("course") else None
+                if y is None:
+                    continue
+                p = lg["p"]
+                order = sorted(range(len(p)), key=lambda i: -p[i])
+                dd["n"] += 1
+                dd["top1"] += int(order[0] == y)
+                dd["top3"] += int(y in order[:3])
+                dd["py"] += p[y]
+                dd["nll"] += -math.log(max(p[y], 1e-6))
+                for x in ents:
+                    st = x.get("st")
+                    if isinstance(st, (int, float)) and 0 <= st < 1 and not x.get("flying") and 1 <= x.get("waku", 0) <= 6:
+                        dd["se"] += (lg["st"][x["waku"] - 1][0] - st) ** 2
+                        dd["sn"] += 1
+        if dd["n"]:
+            days.append((pp.stem, dd))
+            for kk in tot:
+                tot[kk] += dd[kk]
+    return {"days": days, "tot": tot} if tot["n"] else None
+
+
+def build_kotae(ev, model):
+    """見立ての答え合わせのページ。scripts/fit.py が毎晩、学習に使っていない直近の日で見立てと結果を比べた成績を出す。"""
+    intro = ('<p class="lead">毎晩、過去の各日について「その日の朝の時点で分かっていたデータ」だけで見立てを作り直し、実際の結果と比べています。'
+             '直近の日は学習に使わずに答え合わせだけを行い、そのあと全期間で学習し直した見立てを、翌日からの各レースのページと1周1マークの映像に使います。</p>')
+    if not ev or not ev.get("latest") or not model:
+        body = '<h1>見立ての答え合わせ</h1>' + intro + '<section><p>まだ答え合わせに使える成績がたまっていません。</p></section>'
+        write("kotae.html", page(f"見立ての答え合わせ | {SITE_NAME}", "見立てと実際の結果を比べた成績。", body, 0, "kotae.html"))
+        return
+    L = ev["latest"]
+    ratio = math.exp(L["nll_prior"] - L["nll"])
+    ratio_st = math.exp(L["nll_prior"] - L["nll_with_st"])
+    kpi = (f'<div class="kpis"><div><b>{L["top1"]:.0f}%</b><span>一番高い決着パターンが当たった割合</span></div>'
+           f'<div><b>{L["top3"]:.0f}%</b><span>上位3つの中に実際の決着があった割合</span></div>'
+           f'<div><b>{L["winner_course"]:.0f}%</b><span>1着のコースが当たった割合</span></div>'
+           f'<div><b>{(ratio - 1) * 100:+.0f}%</b><span>場の傾向だけで見たときと比べた、実際の決着に付けていた確率の高さ(平均)</span></div></div>')
+    st_note = (f'<p>実際のSTが分かっていた場合に計算し直すと、一番高い決着パターンが当たった割合は{L["top1_with_st"]:.0f}%、'
+               f'実際の決着に付けていた確率は場の傾向だけのときより平均{(ratio_st - 1) * 100:+.0f}%になります。'
+               'スタートの差で展開が大きく変わることが、数字でも確かめられます。</p>')
+    cal = "".join(f'<tr><td class="num">{a:.0f}%</td><td class="num">{b:.1f}%</td><td class="num">{n}</td></tr>' for a, b, n in L["calib"])
+    kim = "".join(f'<tr><td>{e(k)}</td><td class="num">{v[0]:.1f}%</td><td class="num">{v[1]:.1f}%</td></tr>' for k, v in L["kimarite"].items())
+    days = "".join(f'<tr><td>{e(d)}</td><td class="num">{n}</td><td class="num">{t:.0f}%</td><td class="num">{p:.1f}%</td></tr>'
+                   for d, n, t, p in reversed(L["by_day"]))
+    misses = ""
+    for m in L.get("misses", [])[:10]:
+        ymd = m["d"].replace("-", "")
+        href = f'{ymd}/{m["v"]}/{m["no"]:02d}.html'
+        exists = (OUT / href).exists()
+        name = f'{m["d"][5:].replace("-", "/")} {VENUES.get(m["v"], m["v"])}{m["no"]}R'
+        link = f'<a href="{href}">{e(name)}</a>' if exists else e(name)
+        misses += (f'<tr><td>{link}</td><td>{e(m["y"][0])}コース{e(m["y"][1:])}</td>'
+                   f'<td class="num">{m["p"]:.1f}%</td><td class="num">{m["p_st"]:.1f}%</td></tr>')
+    st = model.get("start", {})
+    co = st.get("coef", {})
+    dv = model.get("dev", {})
+    facts = []
+    if co:
+        facts.append(f"フライング持ち(今の期にフライングした選手)は、平均で{co.get('f', 0):+.3f}秒スタートが遅くなる。")
+        facts.append(f"風速が3mを超えると、1mごとに全体のSTが{co.get('wind', 0):+.3f}秒遅くなる。")
+        facts.append(f"6コースは1コースより{co.get('c6', 0):+.3f}秒、4コース(カド)は{co.get('c4', 0):+.3f}秒、STが遅く出やすい。")
+        if "f2" in co:
+            facts.append(f"今の期にフライングが2回ある選手は、さらに{co['f2']:+.3f}秒(合計{co.get('f', 0) + co['f2']:+.3f}秒)遅くなる。")
+        if "nb" in co:
+            facts.append(f"両隣の選手の平均STが0.01秒早いと、その艇も約{co['nb'] * 0.01:.3f}秒早くなる(隣につられてスタートがそろう)。")
+        if "rec" in co:
+            facts.append(f"直近8走の平均STが1年の平均より0.03秒早い選手は、約{co['rec'] * 0.03 * 8 / 12:.3f}秒早めに出る(最近の調子)。")
+        ven = st.get("ven") or {}
+        if ven:
+            lo = min(ven.items(), key=lambda x: x[1]); hi = max(ven.items(), key=lambda x: x[1])
+            facts.append(f"場によってもSTの出方が違う(早い場: {VENUES.get(lo[0], lo[0])}、遅い場: {VENUES.get(hi[0], hi[0])}。差は{hi[1] - lo[1]:.3f}秒)。")
+    if dv:
+        facts.append(f"2コースが1コースより0.05秒早くスタートすると、2コースの捲りの起こりやすさは約{math.exp(dv.get('mk1_0', 0)):.1f}倍。")
+        facts.append(f"4コース(カド)が内の3艇より0.05秒早いと、4コースの捲りの起こりやすさは約{math.exp(dv.get('mk1_2', 0)):.1f}倍。")
+        facts.append(f"内の艇が先にスタートで出て攻めると、そのすぐ外の艇の差しは約{math.exp(dv.get('sa2_1', 0)):.1f}倍(3コース)、"
+                     f"捲り差しは約{math.exp(dv.get('ms3_2', 0)):.1f}倍(4コース)になりやすい。")
+        facts.append(f"1コースのSTが2・3コースより0.05秒遅れると、逃げの起こりやすさは約{math.exp(dv.get('n1_lag', 0)):.2f}倍。")
+    runs = "".join(f'<tr><td>{e(r["fitted"])}</td><td class="num">{r["races"]}</td><td class="num">{r["top1"]:.0f}%</td>'
+                   f'<td class="num">{r["top3"]:.0f}%</td><td class="num">{(math.exp(r["nll_prior"] - r["nll"]) - 1) * 100:+.0f}%</td></tr>'
+                   for r in reversed(ev.get("runs", [])))
+    tr = model.get("train", {})
+    lt = logged_track(model)
+    if lt:
+        T = lt["tot"]
+        rows_lt = "".join(
+            f'<tr><td>{e(k[:4] + "-" + k[4:6] + "-" + k[6:])}</td><td class="num">{x["n"]}</td><td class="num">{x["top1"] / x["n"] * 100:.0f}%</td>'
+            f'<td class="num">{x["top3"] / x["n"] * 100:.0f}%</td><td class="num">{x["py"] / x["n"] * 100:.1f}%</td>'
+            f'<td class="num">{(math.sqrt(x["se"] / x["sn"]) if x["sn"] else 0):.3f}</td></tr>' for k, x in reversed(lt["days"][-30:]))
+        logged = ('<section><h2>公開した見立ての成績</h2><p class="sub">各レースのページに、締切前に出していた見立て(記録したもの)と、実際の結果の比較です。'
+                  '学習で後から直した数字ではなく、本番前に見えていた数字そのものです。</p>'
+                  f'<div class="kpis"><div><b>{T["n"]}</b><span>答え合わせしたレース</span></div>'
+                  f'<div><b>{T["top1"] / T["n"] * 100:.0f}%</b><span>一番高い決着パターンが当たった割合</span></div>'
+                  f'<div><b>{T["top3"] / T["n"] * 100:.0f}%</b><span>上位3つの中に実際の決着があった割合</span></div>'
+                  f'<div><b>{(math.sqrt(T["se"] / T["sn"]) if T["sn"] else 0):.3f}秒</b><span>予想STと実際のSTのずれ(二乗平均)</span></div></div>'
+                  '<div class="scroll"><table><thead><tr><th>日付</th><th class="num">レース</th><th class="num">本命</th><th class="num">上位3つ</th>'
+                  f'<th class="num">実際の決着に付けていた%</th><th class="num">STのずれ</th></tr></thead><tbody>{rows_lt}</tbody></table></div></section>')
+    else:
+        logged = ('<section><h2>公開した見立ての成績</h2><p>各レースの締切前の見立てを記録し始めたところです。'
+                  '結果が出たレースから、ここに成績が出ます。</p></section>')
+    body = ('<h1>見立ての答え合わせ</h1>' + intro + logged +
+            f'<section><h2>直近の成績</h2><p class="sub">{e(L["label"])}({e(L["from"])}〜{e(L["to"])}・{L["races"]}レース)</p>{kpi}{st_note}</section>'
+            '<section><h2>スタートの見立て</h2>'
+            f'<p>予想STと実際のSTのずれは、平均すると{L["st_rmse"]:.3f}秒(1艇あたりの二乗平均)。'
+            'レース全体でそろって早い・遅い日があるので、1艇ずつのSTを当てるのは難しいですが、隣の艇との差(出る・凹む)は次のとおりです。</p>'
+            '<div class="scroll"><table><thead><tr><th></th><th class="num">見立て</th><th class="num">実際</th></tr></thead><tbody>'
+            f'<tr><td>隣の艇より0.05秒以上早い(出る)</td><td class="num">{L["out"][0]:.1f}%</td><td class="num">{L["out"][1]:.1f}%</td></tr>'
+            f'<tr><td>隣の艇より0.05秒以上遅い(凹む)</td><td class="num">{L["dent"][0]:.1f}%</td><td class="num">{L["dent"][1]:.1f}%</td></tr>'
+            '</tbody></table></div></section>'
+            '<section><h2>学習でわかったこと</h2><ul class="points">' + "".join(f"<li>{e(x)}</li>" for x in facts) + '</ul>'
+            f'<p class="note">学習に使ったレース: {e(tr.get("from"))}〜{e(tr.get("to"))}・{tr.get("races", 0)}レース(毎晩学習し直します)。</p></section>'
+            '<section><h2>決まり手ごとの見立てと実際</h2><div class="scroll"><table><thead><tr><th>決まり手</th><th class="num">見立て(平均)</th>'
+            f'<th class="num">実際</th></tr></thead><tbody>{kim}</tbody></table></div></section>'
+            '<section><h2>見立ての%は信用できるか</h2><p class="sub">見立てで付けた%ごとに、実際にその決着になった割合。近いほど信用できる見立てです。</p>'
+            '<div class="scroll"><table><thead><tr><th class="num">見立て(平均)</th><th class="num">実際</th><th class="num">数</th></tr></thead>'
+            f'<tbody>{cal}</tbody></table></div></section>'
+            '<section><h2>スタートで展開が変わったレース</h2><p class="sub">本番前の見立てでは低かったのに、実際のSTで計算し直すと高くなった決着。'
+            'スタートの差が結果を分けたレースです。</p><div class="scroll"><table><thead><tr><th>レース</th><th>決着</th>'
+            f'<th class="num">本番前</th><th class="num">実際のSTで</th></tr></thead><tbody>{misses}</tbody></table></div></section>'
+            '<section><h2>日ごとの成績</h2><div class="scroll"><table><thead><tr><th>日付</th><th class="num">レース</th>'
+            '<th class="num">本命が当たった割合</th><th class="num">実際の決着に付けていた%(平均)</th></tr></thead>'
+            f'<tbody>{days}</tbody></table></div></section>'
+            '<section><h2>学習し直すたびの成績</h2><div class="scroll"><table><thead><tr><th>学習した日</th><th class="num">答え合わせしたレース</th>'
+            '<th class="num">本命</th><th class="num">上位3つ</th><th class="num">場の傾向だけとの差</th></tr></thead>'
+            f'<tbody>{runs}</tbody></table></div></section>')
+    write("kotae.html", page(f"見立ての答え合わせ | {SITE_NAME}", "見立てと実際の結果を毎日比べた成績と、学習でわかったこと。", body, 0, "kotae.html"))
+
+
 def build_about():
     body = ('<h1>このサイトについて</h1><section><p>水面ノートは、ボートレースの出走表と成績をデータで読み解く非公式のサイトです。'
             '毎日、公式が配布している番組表と競走成績のファイルを自動で取り込み、選手のコース別成績とレース場の特徴をまとめています。</p>'
@@ -377,10 +562,17 @@ def main():
         return
     dates = sorted(progs)
     cache: dict = {}
-    urls = ["", "about.html"]
+    urls = ["", "about.html", "kotae.html"]
+    # 見立てモデルの重み(scripts/fit.py が学習したもの)。ページから読めるように JS にして置く
+    model = load_json(DATA / "model.json", None)
+    (OUT / "assets" / "params.js").write_text(
+        "window.SUIMEN_PARAMS = " + (json.dumps(model, ensure_ascii=False, separators=(",", ":")) if model else "null") + ";\n",
+        encoding="utf-8")
     for d in dates:
-        racers, vstats = collect(d, cache)
+        racers, vstats, nat = collect(d, cache)
+        nt = course_table(nat)
         res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
+        pred_day = (load_json(DATA / "pred" / f"{d:%Y%m%d}.json", {}) or {}).get("venues", {})
         build_day(d, progs[d], dates)
         urls.append(f"{d:%Y%m%d}/")
         for code, vprog in progs[d]["venues"].items():
@@ -390,10 +582,13 @@ def main():
             rv = {r["no"]: r for r in res_day.get("venues", {}).get(code, {}).get("races", [])}
             build_venue(d, code, vprog, vinfo, racers, rv)
             urls.append(f"{d:%Y%m%d}/{code}/")
+            tables = (course_table(vstats.get(code)), nt)
             for race in vprog["races"]:
-                urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"])))
+                urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
+                                       pred_day.get(code, {}).get(str(race["no"]))))
     build_index(today, progs, dates)
     build_about()
+    build_kotae(load_json(DATA / "eval.json", None), model)
     sm = "".join(f"<url><loc>{BASE_URL}{u}</loc></url>" for u in urls)
     write("sitemap.xml", f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{sm}</urlset>')
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}sitemap.xml\n")

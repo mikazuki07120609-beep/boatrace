@@ -88,3 +88,14 @@ button:disabled{opacity:.55;cursor:default}
 .pat{display:flex;align-items:center;gap:8px;text-align:left;padding:9px 10px;white-space:nowrap}
 .pat .p{margin-left:auto;font-family:var(--mono);font-size:13px}
 a.btn{font-size:13px;border:1px solid var(--accent);border-radius:6px;padding:7px 12px;text-decoration:none;color:var(--accent);background:var(--surface)}
+/* スタートの見立て・答え合わせ */
+.stt td{white-space:nowrap}
+.stt td.why{white-space:normal;font-size:12.5px;color:var(--muted);min-width:180px}
+.stt .up{color:var(--good);font-weight:600}
+.stt .down{color:var(--warn);font-weight:600}
+.meter{display:inline-block;width:46px;height:6px;border-radius:3px;background:var(--accent-soft);vertical-align:middle;margin-left:6px;overflow:hidden}
+.meter>i{display:block;height:100%;background:var(--accent)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpis div{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.kpis b{font-family:var(--mono);font-size:24px;font-weight:600}
+.kpis span{font-size:12px;color:var(--muted);line-height:1.4}
