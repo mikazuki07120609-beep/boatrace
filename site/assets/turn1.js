@@ -1294,6 +1294,12 @@
     ctx.closePath();
   }
 
+  // 向きの変わる速さ(前後0.1秒でならしたもの)。旋回中に艇尻が外へ流れる描き方に使う
+  function turnRate(b, t) {
+    var i = clamp(Math.round((t - T0) / DT), 6, b.H.length - 7);
+    return (b.H[i + 6] - b.H[i - 6]) / (12 * DT);
+  }
+  var DRIFT = 0.13;                                        // 艇の向きを、進む向きより旋回の内側へ向ける量(秒。角速度に掛ける)
   function sample(b, t) {
     var f = (t - T0) / DT, i = Math.floor(f), u = f - i, n = b.X.length;
     if (i < 0) { i = 0; u = 0; }
@@ -1415,14 +1421,15 @@
     P.boats.forEach(function (b, k) {
       var p = now[k], col = COLORS[b.waku] || COLORS[1];
       var amt = t < P.tEnd + 1 ? Math.max(clamp((Math.abs(p.w) - 0.3) * 1.2, 0, 1), clamp((p.wk || 0) * 1.4, 0, 1)) : 0;
+      var hd = p.h + clamp(turnRate(b, tt), -2.2, 2.2) * DRIFT;   // 旋回中は艇尻が外へ流れ、艇首が内を向く
       if (amt > 0) {
-        var ox = -Math.sin(p.h), oy = Math.cos(p.h), bx = p.x - Math.cos(p.h) * HULL_L * 0.45, by = p.y - Math.sin(p.h) * HULL_L * 0.45;
+        var ox = -Math.sin(hd), oy = Math.cos(hd), bx = p.x - Math.cos(hd) * HULL_L * 0.45, by = p.y - Math.sin(hd) * HULL_L * 0.45;
         for (var j = 0; j < 4; j++) {
           ctx.beginPath(); ctx.arc(bx + ox * (0.9 + j * 0.55), by + oy * (0.9 + j * 0.55), 0.55 + j * 0.35, 0, Math.PI * 2);
           ctx.fillStyle = "rgba(255,255,255," + (0.36 * amt * (1 - j / 4)).toFixed(3) + ")"; ctx.fill();
         }
       }
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.h);
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(hd);
       hull(ctx); ctx.fillStyle = col[0]; ctx.fill();
       ctx.lineWidth = 0.18; ctx.strokeStyle = b.waku === 1 ? "#33474f" : "rgba(255,255,255,0.7)"; ctx.stroke();
       ctx.beginPath(); ctx.ellipse(-HULL_L * 0.12, 0, 0.55, 0.42, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fill();  // 選手
