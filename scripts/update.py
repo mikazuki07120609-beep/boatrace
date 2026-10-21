@@ -47,6 +47,10 @@ def ingest(kind: str, day: dt.date, log: list, offline: bool) -> str:
         log.append(f"{kind} {day}: 読み取れたレースが0件")
         return "error"
     data["date"] = day.isoformat()
+    old = load_json(out / f"{day:%Y%m%d}.json", None) if kind == "B" else None
+    if old and len(old.get("venues", {})) > len(data["venues"]):      # 取り直した番組表の方が場が少ないときは、前のものを残す
+        log.append(f"{kind} {day}: 取り直した番組表の場が少ないので、前のものを残す")
+        return "ok"
     save_json(out / f"{day:%Y%m%d}.json", data)
     n = sum(len(v["races"]) for v in data["venues"].values())
     log.append(f"{kind} {day}: {len(data['venues'])}場 {n}レースを保存")
@@ -83,10 +87,9 @@ def main() -> int:
     missing_k = set(state.get("missing_K", []))
     log: list[str] = []
 
-    # 番組表: 今日と明日(まだ取り込んでいなければ取りに行く)
+    # 番組表: 今日と明日。前の日のうちに取ったものは、まだ全部の場がそろっていないことがあるので、毎回取り直す(1日1ファイル)
     for d in (today, today + dt.timedelta(days=1)):
-        if not (PROGRAM / f"{d:%Y%m%d}.json").exists():
-            ingest("B", d, log, a.offline)
+        ingest("B", d, log, a.offline)
 
     # 成績: 昨日の分(その日の全レースが終わったあとのファイル)と、過去分を少しずつ。
     # 今日の分は途中のファイルを取らないよう、日付が変わってから取り込む。

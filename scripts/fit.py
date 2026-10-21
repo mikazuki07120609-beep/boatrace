@@ -142,7 +142,7 @@ def motor_rate(motor, vcode, no, d):
         if lo <= day < d:
             n += a
             top += b
-    return (top + 10 * 100 / 3) / (n + 10) if n else None
+    return (top + 10 / 3) / (n + 10) * 100 if n else None     # 2連率(%)。走数が少ないうちは33%に寄せる(motor.py の motor_rates と同じ式)
 
 
 def make_record(d, vcode, race, acc, vt, nt, motor):

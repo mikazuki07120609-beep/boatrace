@@ -4,7 +4,7 @@
    2) 展開の見立て: STの組み合わせごとに、どのコースがどの決まり手で1着になりやすいか(条件付きロジット)
    本番前はSTが分からないので、1)の多数の組み合わせで2)を平均する。
    使い方: var R = SuimenModel.predict(race, params, {samples: 400});
-     race = {vt, nt, wind, date, venue, boats: [{waku, course, pts, stx, r8, f, cs, motor2, ex, est}]}
+     race = {vt, nt, wind, date, venue, boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, ex, est}]}
    ブラウザでもNode(require)でも使える。 */
 (function (root) {
   "use strict";
@@ -114,7 +114,7 @@
     var K = P.const, th = P.dev, B = race.byC, pr = prior(race.vt, race.nt, K), u = new Array(NC);
     var pts = B.map(function (b) { return (b.pts[0] + K.PTS_K * K.PTS_MEAN) / (b.pts[1] + K.PTS_K); });
     var mp = pts.reduce(function (s, x) { return s + x; }, 0) / 6;
-    var mots = B.map(function (b) { return b.motor2; }), mm = mots.filter(function (x) { return x != null; });
+    var mots = B.map(function (b) { return b.motorR != null ? b.motorR : null; }), mm = mots.filter(function (x) { return x != null; });   // 成績の2連率(学習と同じ)
     var mmean = mm.length ? mm.reduce(function (s, x) { return s + x; }, 0) / mm.length : null;
     var ls1 = ((B[0].cs || {})["1"] || {}).ls || {}, lsh = lossShare(race.nt), lsw = 0;
     Object.keys(lsh).forEach(function (k) { lsw += ls1[k] || 0; });
@@ -254,7 +254,7 @@
     var sts = t && t.length === 6 ? t : B.map(function (b) { return b.mu; }), sm = sts.reduce(function (s, x) { return s + x; }, 0) / 6;
     var exs = B.map(function (b) { return b.ex; }), exOk = exs.every(function (x) { return x != null && isFinite(x) && x >= 6.0 && x <= 7.6; });
     var exm = exOk ? exs.reduce(function (s, x) { return s + x; }, 0) / 6 : null;
-    var mots = B.map(function (b) { return b.motor2; }), mm = mots.filter(function (x) { return x != null; });
+    var mots = B.map(function (b) { return b.motorR != null ? b.motorR : null; }), mm = mots.filter(function (x) { return x != null; });
     var mmean = mm.length ? mm.reduce(function (s, x) { return s + x; }, 0) / mm.length : null;
     var u = {};
     B.forEach(function (b, i) {

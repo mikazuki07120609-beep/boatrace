@@ -75,6 +75,27 @@ def raw_scores(day: dt.date, racers: dict) -> dict:
     return out
 
 
+RATE_DAYS = 180
+
+
+def motor_rates(day: dt.date) -> dict:
+    """場ごと・モーター番号ごとの、直近180日の成績の2連率(%)。見立てのモデルが学習に使うのと同じ式(fit.py の motor_rate)。"""
+    acc: dict = {}
+    for p in sorted(RESULTS.glob("*.json")):
+        d = parse_ymd(p.stem)
+        if not (day - dt.timedelta(days=RATE_DAYS) <= d < day):
+            continue
+        for code, v in (load_json(p, {}) or {}).get("venues", {}).items():
+            for race in races_of(v):
+                for x in race["entries"]:
+                    if x.get("motor") is None or not (x.get("rank") or x.get("status")):
+                        continue
+                    a = acc.setdefault(code, {}).setdefault(str(x["motor"]), [0, 0])
+                    a[0] += 1
+                    a[1] += 1 if x.get("rank") in (1, 2) else 0
+    return {c: {k: round((t + 10 / 3) / (n + 10) * 100, 2) for k, (n, t) in v.items() if n} for c, v in acc.items()}
+
+
 def _z(vals: dict) -> dict:
     xs = [v for v in vals.values() if v is not None]
     if len(xs) < 3:

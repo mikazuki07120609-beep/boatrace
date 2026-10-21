@@ -8,7 +8,7 @@ import shutil
 
 from common import DATA, OUT, PROGRAM, RESULTS, SITE, VENUES, KIMARITE, load_json, parse_ymd, today_jst
 from alerts import badges, race_alerts
-from motor import raw_scores, venue_grades
+from motor import motor_rates, raw_scores, venue_grades
 import pace as pacemod
 from stats import collect, venue_table
 
@@ -364,7 +364,7 @@ RACE_NOTES = [
 ]
 
 
-def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None, alerts=None, pace=None):
+def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None, alerts=None, pace=None, mrates=None):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     path = f"{ymd}/{code}/{race['no']:02d}.html"
@@ -377,6 +377,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     ps = period_start(d)
     for x in ents:
         x["mg"] = (motors or {}).get(str(x["motor"]))
+        x["motorR"] = ((mrates or {}).get(code) or {}).get(str(x["motor"]))   # 直近180日の成績の2連率(見立てのモデルが使う)
         fl = (vlive.get("fl") or {}).get(x["toban"])
         if fl:
             x["fl"] = fl
@@ -624,6 +625,7 @@ def main():
         res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
         live_day = load_live(d)
         mraw = raw_scores(d, racers)
+        mrates = motor_rates(d)
         P_pace = pacemod.build(d)
         sm = (model or {}).get("start")
         al_day = {}
@@ -648,7 +650,7 @@ def main():
             for race in vprog["races"]:
                 urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
                                        ranks=ranks, vlive=vlive, motors=motors, today_m=tm, alerts=al_day[code][race["no"]],
-                                       pace=pacemod.for_race(P_pace, code, race["entries"])))
+                                       pace=pacemod.for_race(P_pace, code, race["entries"]), mrates=mrates))
     build_index(today, progs, dates, alerts_by_day)
     build_about()
     sm = "".join(f"<url><loc>{BASE_URL}{u}</loc></url>" for u in urls)
