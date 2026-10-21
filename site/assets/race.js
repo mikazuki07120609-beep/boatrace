@@ -201,7 +201,8 @@
         var sortedV = vals.filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
         rows.push(vrow(kv[1] + "<small>場の計測</small>", vals.map(function (x) { return x == null ? "—" : "<b>" + x.toFixed(2) + '</b><span class="dim">' + (sortedV.indexOf(x) + 1) + "位</span>"; }), vals, "min"));
       });
-      rows.push(vrow("直線速度<small>推定</small>", spd.map(function (v) { return v == null ? "—" : v.toFixed(1) + '<span class="dim">km/h</span>'; }), spd, "max"));
+      // 場の直線の計測があるときは、展示タイムからの推定(食い違って見えることがある)は出さない
+      if (!OG.line) rows.push(vrow("直線速度<small>推定</small>", spd.map(function (v) { return v == null ? "—" : v.toFixed(1) + '<span class="dim">km/h</span>'; }), spd, "max"));
     } else {
       rows.push(vrow("直線速度<small>推定</small>", spd.map(function (v) { return v == null ? "—" : v.toFixed(1) + '<span class="dim">km/h</span>'; }), spd, "max"));
       rows.push(vrow("一周タイム<small>推定</small>", lap.map(function (v) { return v == null ? "—" : v.toFixed(2); }), lap, "min"));
