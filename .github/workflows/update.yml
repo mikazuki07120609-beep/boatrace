@@ -2,9 +2,10 @@ name: 毎日の更新
 
 on:
   schedule:
-    - cron: "20 15 * * *"  # 毎日 0:20(日本時間): 前日の成績と今日の番組表
+    - cron: "20 15 * * *"  # 毎日 0:20(日本時間): 前日の成績と今日の番組表・学習
     - cron: "10 22 * * *"  # 毎日 7:10(日本時間): 取りこぼしの再取得
     - cron: "10 8 * * *"   # 毎日 17:10(日本時間): 明日の番組表(出ていれば)
+    - cron: "*/10 22-23,0-12 * * *"  # 7:00〜21:59(日本時間)の10分ごと: 締切が近いレースの直前情報
   workflow_dispatch:
   push:
     branches: [main]
@@ -19,8 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      publish: ${{ steps.mode.outputs.quick != 'true' || steps.before.outputs.changed == 'true' }}
     steps:
       - uses: actions/checkout@v4
+      - id: mode
+        name: 実行の種類(10分ごとの直前情報か、ふだんの更新か)
+        run: echo "quick=${{ github.event.schedule == '*/10 22-23,0-12 * * *' }}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -28,27 +34,35 @@ jobs:
         with:
           node-version: "20"
       - name: 解凍ツールと計算用のライブラリを入れる
+        if: steps.mode.outputs.quick != 'true'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq lhasa
           pip install -q numpy scipy
-      - name: 公式データを取り込んでサイトを作る
+      - name: 公式データを取り込んで学習し、サイトを作る
+        if: steps.mode.outputs.quick != 'true'
         run: python3 scripts/update.py
+      - id: before
+        name: 締切が近いレースの直前情報を取り込む
+        if: steps.mode.outputs.quick == 'true'
+        run: python3 scripts/update.py --before
       - name: 取り込んだデータを保存する
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/program data/results data/fetch_state.json data/model.json data/eval.json data/pred
+          git add data/program data/results data/fetch_state.json data/model.json data/eval.json data/pred data/before 2>/dev/null || true
           if git commit -m "データ更新 $(TZ=Asia/Tokyo date +'%Y-%m-%d %H:%M') [skip ci]"; then
-            git pull --rebase -q origin main && git push
+            for i in 1 2 3; do git pull --rebase -q origin main && git push && break; sleep 5; done
           else
             echo "変更なし"
           fi
       - uses: actions/upload-pages-artifact@v3
+        if: steps.mode.outputs.quick != 'true' || steps.before.outputs.changed == 'true'
         with:
           path: _site
 
   deploy:
     needs: build
+    if: needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write

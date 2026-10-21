@@ -32,12 +32,47 @@ def races_of(v: dict):
             for a in race["e"]:
                 ents.append({"rank": a[0] if isinstance(a[0], int) else None, "status": None if isinstance(a[0], int) else a[0],
                              "waku": a[1], "toban": a[2], "name": a[3], "course": a[4], "st": a[5], "flying": bool(a[6]),
-                             "ex": a[7] if len(a) > 7 else None, "motor": a[8] if len(a) > 8 else None})
+                             "ex": a[7] if len(a) > 7 else None, "motor": a[8] if len(a) > 8 else None,
+                             "time": a[9] if len(a) > 9 else None})
             w = race.get("w") or [None, None, None, None]
             yield {"no": race["no"], "kimarite": race.get("k"), "name": race.get("nm"), "entries": ents,
                    "weather": w[0], "wind_dir": w[1], "wind": w[2], "wave": w[3]}
         else:
             yield race
+
+
+def race_time(t):
+    """レースタイム "1.48.7" を秒に。読めなければ None。"""
+    if not isinstance(t, str):
+        return None
+    try:
+        m, sec = t.split(".", 1)
+        return int(m) * 60 + float(sec)
+    except ValueError:
+        return None
+
+
+CLOSE_SEC = 0.6       # ゴールでこの差以内なら、道中で競り合っていたとみなす
+
+
+def second_kind(c: int, ctx: dict, kim) -> str:
+    """2着になったときの展開(公式の記録は1着の決まり手だけなので、1着の艇のコース・決まり手と、自分のコース・スタートから推定)。"""
+    w = ctx.get("w")
+    if not w:
+        return "その他"
+    if c == 1:
+        return {"差し": "差され", "捲り": "捲られ", "捲り差し": "捲り差され", "抜き": "抜かれ"}.get(kim, "その他")
+    if kim == "抜き":
+        return "抜かれ"
+    if w > c:                                                   # 外の艇に抜かれたが、2着に残した
+        return {"捲り": "捲られ残し", "差し": "差され残し", "捲り差し": "捲り差され残し"}.get(kim, "その他")
+    st = ctx.get("st", {})
+    mine, inner = st.get(c), [st[k] for k in st if k < c]
+    if mine is not None and inner and mine <= min(inner) - 0.03:
+        return "攻めて"                                          # 内の艇より先にスタートで出て、攻めた
+    if c == 2 or c == w + 1:
+        return "差し続く"                                        # 勝った艇のすぐ後ろ(内)を回った
+    return "外から"
 
 
 def valid_st(e) -> bool:
@@ -71,8 +106,12 @@ class Acc:
                 if racers:
                     self.nat["races"] += sign
                     _course_table(self.nat, ents, kim, sign)
+                    win = next((e for e in ents if e.get("rank") == 1), None)
+                    ctx = {"w": win["course"] if win else None,
+                           "st": {e["course"]: e["st"] for e in ents if valid_st(e)},
+                           "fin": [(e, race_time(e.get("time"))) for e in ents if e.get("rank") and race_time(e.get("time"))]}
                     for e in ents:
-                        _racer(self.racers, e, kim, rmean, d, sign)
+                        _racer(self.racers, e, kim, rmean, d, sign, ctx)
 
     def racer(self, toban: str) -> dict:
         return self.racers.get(toban, {})
@@ -90,11 +129,31 @@ def _course_table(vs: dict, ents, kim, sign):
             vc["km"][kim] = vc["km"].get(kim, 0) + sign
 
 
-def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int):
+def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict | None = None):
     c = str(e["course"])
     rank = e.get("rank")
     r = racers.setdefault(e["toban"], {"name": e.get("name", ""), "c": {}, "pts": [0, 0], "stx": [0, 0.0, 0.0],
-                                       "rst": [0, 0.0, 0.0], "f": [], "rs": []})
+                                       "rst": [0, 0.0, 0.0], "f": [], "rs": [], "cb": [0, 0], "nk": [0, 0]})
+    ctx = ctx or {}
+    # 2コースのときに1コースを逃がした回数・2着になったときの展開
+    cs0 = r["c"].setdefault(c, {"n": 0, "w1": 0, "w2": 0, "w3": 0, "st_sum": 0.0, "st_n": 0, "km": {}})
+    if c == "2" and ctx.get("w") == 1 and kim == "逃げ":
+        cs0["ng"] = cs0.get("ng", 0) + sign
+    if rank == 2 and ctx.get("w"):
+        s2 = cs0.setdefault("s2", {})
+        k2 = second_kind(e["course"], ctx, kim)
+        s2[k2] = s2.get(k2, 0) + sign
+    # 道中: ゴールで僅差だった相手との勝ち負け(競り合い)、抜きで勝った・抜かれて2着
+    t_me = race_time(e.get("time")) if rank else None
+    if t_me is not None:
+        for o, t_o in ctx.get("fin", []):
+            if o is e or abs(t_o - t_me) > CLOSE_SEC + 1e-9:
+                continue
+            r.setdefault("cb", [0, 0])
+            r["cb"][0] += sign * (1 if rank < o["rank"] else 0)
+            r["cb"][1] += sign
+    if kim == "抜き" and rank in (1, 2):
+        r.setdefault("nk", [0, 0])[rank - 1] += sign
     if e.get("name"):
         r["name"] = e["name"]
     cs = r["c"].setdefault(c, {"n": 0, "w1": 0, "w2": 0, "w3": 0, "st_sum": 0.0, "st_n": 0, "km": {}})
@@ -145,11 +204,16 @@ def finish(racers: dict) -> dict:
             x["km"] = {k: v for k, v in cs["km"].items() if v > 0}
             if cs.get("ls"):
                 x["ls"] = {k: v for k, v in cs["ls"].items() if v > 0}
+            if cs.get("s2"):
+                x["s2"] = {k: v for k, v in cs["s2"].items() if v > 0}
+            if cs.get("ng"):
+                x["ng"] = cs["ng"]
             x["st"] = round(cs["st_sum"] / cs["st_n"], 2) if cs["st_n"] > 0 else None
             cc[c] = x
         out[t] = {"name": r["name"], "c": cc, "pts": list(r["pts"]), "stx": [r["stx"][0], round(r["stx"][1], 4), round(r["stx"][2], 5)],
                   "rst": [r["rst"][0], round(r["rst"][1], 4), round(r["rst"][2], 5)], "f": sorted(r["f"]),
-                  "r8": [round(x, 2) for x in r.get("rs", [])[-RECENT_N:]]}
+                  "r8": [round(x, 2) for x in r.get("rs", [])[-RECENT_N:]],
+                  "cb": list(r.get("cb", [0, 0])), "nk": list(r.get("nk", [0, 0]))}
     return out
 
 

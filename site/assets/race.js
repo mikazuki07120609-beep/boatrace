@@ -32,6 +32,21 @@
     return { text: items.map(function (x) { return x[0] + x[1]; }).join("・"), type: tot >= 2 && items[0][1] / tot >= 0.6 ? items[0][0] + "型" : "" };
   }
 
+  // 直前情報(自動で取り込んだもの)
+  var BI = D.before || null;
+  function estOf(waku) { var v = BI && BI.est ? BI.est[String(waku)] : null; return v == null ? null : v; }
+  function applyBefore() {
+    if (!BI) return;
+    D.entries.forEach(function (e) {
+      var w = String(e.waku), ex = BI.ex && BI.ex[w], el = document.getElementById("ex" + e.waku);
+      if (el && ex != null && !el.value) el.value = ex.toFixed(2);
+      var ci = (BI.course || []).indexOf(e.waku), cEl = document.getElementById("c" + e.waku);
+      if (cEl && ci >= 0 && (BI.course || []).length === D.entries.length) cEl.value = String(ci + 1);
+    });
+    var ws = BI.weather && BI.weather.wind, wEl = document.getElementById("windspd");
+    if (wEl && ws != null) wEl.value = String(Math.round(ws));
+  }
+
   function readState() {
     return D.entries.map(function (e) {
       var exEl = document.getElementById("ex" + e.waku), cEl = document.getElementById("c" + e.waku);
@@ -69,7 +84,7 @@
   // ---- 学習済みの見立てモデル(model.js)で計算する
   function analyzeModel(B, W) {
     var race = { vt: D.vt, nt: D.nt, wind: W.wspd, date: D.race.date, venue: V.code,
-                 boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [],
+                 boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], est: estOf(b.waku),
                                                       cs: b.cs || {}, motor2: b.motor2, ex: b.ex }; }) };
     var M = MODEL.predict(race, PARAMS, { samples: 400 });
     if (!M) return null;
@@ -120,6 +135,17 @@
     return R;
   }
 
+  // 道中の強さ: ゴールで0.6秒差以内だった相手との勝ち負け(競り合い)と、抜きで勝った・抜かれて2着になった回数
+  function dochu(b) {
+    var cb = b.cb || [0, 0], nk = b.nk || [0, 0], w = cb[0], n = cb[1];
+    var rate = (w + 5 * 0.5) / (n + 5);                       // 回数が少ないうちは5割に寄せる
+    var parts = [];
+    if (n >= 8) parts.push("競り合い(ゴールで0.6秒差以内) " + w + "勝" + (n - w) + "敗" + (rate >= 0.58 ? "で強い" : rate <= 0.42 ? "で弱い" : ""));
+    if (nk[0]) parts.push("道中で抜いて1着 " + nk[0] + "回");
+    if (nk[1]) parts.push("抜かれて2着 " + nk[1] + "回");
+    return { w: w, n: n, rate: rate, text: parts.length ? "道中: " + parts.join("、") + "。" : "" };
+  }
+
   function tier(p) {
     if (p >= 60) return ["イン天国", "1コースの逃げが決まりやすい水面"];
     if (p >= 52) return ["イン有利", "基本は1コース中心で、たまに外が届く水面"];
@@ -145,9 +171,11 @@
     if (s.fp >= 2) out.push("今期フライング2回(かなり慎重になる。" + sgn(q.f + q.f2) + "秒)");
     else if (s.fp > 0) out.push("今期フライング持ち(慎重になりやすい。" + sgn(q.f) + "秒)");
     var nbRel = (q.nb || 0) - (R.nbMean || 0);               // メンバー全体の傾向とは別に、この艇の両隣だけの分
-    if (Math.abs(nbRel) >= 0.004) out.push("両隣が" + (nbRel < 0 ? "スタートの早い選手で、つられて早くなりやすい" : "スタートの遅い選手で、つられて遅くなりやすい") + "(" + sgn(q.nb) + "秒)");
+    if (Math.abs(nbRel) >= 0.004) out.push("両隣が" + (nbRel < 0 ? "スタートの早い選手で、つられて早くなりやすい" : "スタートの遅い選手で、つられて遅くなりやすい") + "(" + sgn(nbRel) + "秒)");
     if (b.course >= 2 && Math.abs(q.course || 0) >= 0.008) out.push(b.course + "コースは" + sgn(q.course) + "秒");
     if (q.wind) out.push("風速" + R.wspd + "m(" + sgn(q.wind) + "秒)");
+    var est = estOf(b.waku);
+    if (est != null) out.push("展示ST" + (est < 0 ? "F" + st2(-est) : st2(est)) + (Math.abs(q.est || 0) >= 0.003 ? "(" + sgn(q.est) + "秒)" : ""));
     return out;
   }
   function renderStart(R) {
@@ -214,6 +242,14 @@
       pts.push("2コース" + b2.name + "の方が1コースより勝率が上。差しが決まる場面に注意。");
     if (!R.M && b4 && R.aSt != null && b4.stUse != null && b4.stUse <= R.aSt - 0.02)
       pts.push("4コース(カド)" + b4.name + "はスタートが速い(平均ST" + fmt(b4.stUse, 2) + ")。内が凹めばカドまくりの展開。");
+    // 道中: 2マーク以降の競り合いに強い艇・弱い艇、抜いて着を上げる・抜かれる可能性
+    var dws = B.map(function (b) { return { b: b, d: dochu(b) }; }).filter(function (x) { return x.d.n >= 8; });
+    var strongD = dws.filter(function (x) { return x.d.rate >= 0.58; }).sort(function (a, b) { return b.d.rate - a.d.rate; })[0];
+    var weakD = dws.filter(function (x) { return x.d.rate <= 0.42; }).sort(function (a, b) { return a.d.rate - b.d.rate; })[0];
+    if (strongD) pts.push("1周2マーク以降で競り合いになれば、" + strongD.b.course + "コース" + strongD.b.name + "が強い(ゴールで僅差だった相手に" +
+      strongD.d.w + "勝" + (strongD.d.n - strongD.d.w) + "敗)。後ろからでも2マークで着を上げる可能性。");
+    if (weakD) pts.push(weakD.b.course + "コース" + weakD.b.name + "は競り合いで負けやすい(僅差の相手に" + weakD.d.w + "勝" + (weakD.d.n - weakD.d.w) +
+      "敗)。1マークを前で回っても、道中で抜かれる可能性。");
     var mTop = B.filter(function (b) { return b.motor2 != null; }).sort(function (a, b) { return b.motor2 - a.motor2; })[0];
     if (mTop && R.aMo != null && mTop.motor2 >= R.aMo + 8) pts.push("モーターは" + mTop.course + "コース" + mTop.name + "(2連率" + fmt(mTop.motor2) + "%)が抜けている。道中で伸びてくる可能性。");
     var eTop = B.filter(function (b) { return b.ex != null; }).sort(function (a, b) { return a.ex - b.ex; })[0];
@@ -243,6 +279,8 @@
       if (b.stf) li.push("予想ST" + st2(b.stf.mean) + "。出る" + Math.round(b.stf.pOut * 100) + "%・凹む" + Math.round(b.stf.pDent * 100) + "%。");
       else if (b.stUse != null && R.aSt != null) { var ds = R.aSt - b.stUse; if (ds >= 0.02) li.push("STが速い(" + fmt(b.stUse, 2) + ")。先手を取れる。"); else if (ds <= -0.02) li.push("STが遅め(" + fmt(b.stUse, 2) + ")。スタートで後手に回りやすい。"); }
       if (b.local && b.rate) { var dl = b.local - b.rate; if (dl >= 0.4) li.push("当地勝率が全国より高い。この水面は得意。"); else if (dl <= -0.4) li.push("当地勝率が全国より低い。この水面は苦手寄り。"); }
+      var dw = dochu(b);
+      if (dw.text) li.push(dw.text);
       var grid = [1, 2, 3, 4, 5, 6].map(function (cn) {
         var cs = (b.cs || {})[String(cn)];
         return '<div class="' + (cn === b.course ? "cur" : "") + '">' + cn + "<b>" + (cs && cs.n ? pct(cs.w1, cs.n) + "%" : "—") + "</b>" + (cs && cs.n ? cs.n + "走" : "") + "</div>";
@@ -503,5 +541,6 @@
     else sel();
   });
   setupViewControls();
+  applyBefore();
   render();
 })();

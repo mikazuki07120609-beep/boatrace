@@ -36,18 +36,23 @@ function main() {
         const D = JSON.parse(m[1].replace(/<\\\//g, "</"));
         if (D.result) continue;
         if (iso === today && D.race.deadline && hm >= D.race.deadline) continue;
+        // ページを開いたときと同じ入力(直前情報が入っていれば、展示タイム・進入・風速・展示STも)
+        const BI = D.before || null, order = BI && BI.course && BI.course.length === D.entries.length ? BI.course : null;
+        const wind = BI && BI.weather && BI.weather.wind != null ? Math.round(BI.weather.wind) : 2;
         const race = {
-          vt: D.vt, nt: D.nt, wind: 2, date: iso, venue: D.venue.code,
-          boats: D.entries.map((b) => ({ waku: b.waku, course: b.waku, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [],
-                                         f: b.f || [], cs: b.cs || {}, motor2: b.motor2, ex: null })),
+          vt: D.vt, nt: D.nt, wind, date: iso, venue: D.venue.code,
+          boats: D.entries.map((b) => ({ waku: b.waku, course: order ? order.indexOf(b.waku) + 1 : b.waku, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0],
+                                         r8: b.r8 || [], f: b.f || [], cs: b.cs || {}, motor2: b.motor2,
+                                         ex: BI && BI.ex ? BI.ex[String(b.waku)] ?? null : null,
+                                         est: BI && BI.est ? BI.est[String(b.waku)] ?? null : null })),
         };
         const R = M.predict(race, params, { samples: 400 });
         if (!R) continue;
         (log.venues[v] = log.venues[v] || {})[String(D.race.no)] = {
-          fitted: params.fitted,
+          fitted: params.fitted, before: !!BI,
           at: jst.toISOString().slice(0, 16).replace("T", " "),
           p: R.p.map((x) => Math.round(x * 1e4) / 1e4),
-          st: R.st.map((s) => [r3(s.mean), r3(s.pOut), r3(s.pDent)]),
+          st: R.st.slice().sort((a, b) => a.waku - b.waku).map((s) => [r3(s.mean), r3(s.pOut), r3(s.pDent)]),   // 枠番の順
         };
         n++;
       }

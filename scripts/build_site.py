@@ -89,8 +89,9 @@ def racer_view(entry, racers):
     st_sum = st_n = n_all = 0
     for c, s in r.get("c", {}).items():
         cs[c] = {"n": s["n"], "w1": s["w1"], "w2": s["w2"], "w3": s["w3"], "st": s["st"], "km": s.get("km", {})}
-        if s.get("ls"):
-            cs[c]["ls"] = s["ls"]
+        for k in ("ls", "s2", "ng"):
+            if s.get(k):
+                cs[c][k] = s[k]
         n_all += s["n"]
         if s["st"] is not None:
             st_sum += s["st"] * s["n"]
@@ -110,7 +111,85 @@ def racer_view(entry, racers):
     v["stx"] = r.get("stx", [0, 0, 0])
     v["f"] = r.get("f", [])
     v["r8"] = r.get("r8", [])
+    v["cb"] = r.get("cb", [0, 0])            # ゴールで僅差だった相手との[勝ち, 回数](道中の競り合い)
+    v["nk"] = r.get("nk", [0, 0])            # [抜きで1着, 抜かれて2着]
+    v["series_codes"] = s if isinstance(s, list) else []
     return v
+
+
+def period_start(d: dt.date) -> str:
+    """フライングの回数を数える期の始まり(5月1日・11月1日)。"""
+    if d.month >= 11:
+        return f"{d.year}-11-01"
+    if d.month >= 5:
+        return f"{d.year}-05-01"
+    return f"{d.year - 1}-11-01"
+
+
+SERIES_MARK = {"S": "失", "F": "F", "L": "L", "K": "欠"}
+
+
+def series_points(days: list) -> tuple:
+    """今節成績(日ごとの着順の文字)から [得点, 走数]。失格・F・Lは0点で1走、欠場は数えない。"""
+    pts = n = 0
+    for day in days or []:
+        for ch in day:
+            if ch in "123456":
+                pts += {1: 10, 2: 8, 3: 6, 4: 4, 5: 2, 6: 1}[int(ch)]
+                n += 1
+            elif ch in "SFL":
+                n += 1
+    return pts, n
+
+
+def series_ranks(vprog: dict) -> dict:
+    """その場の今節の得点率(着順点の平均)の順位。番組表に載っている選手の中で。"""
+    seen = {}
+    for race in vprog.get("races", []):
+        for x in race["entries"]:
+            if x["toban"] not in seen:
+                seen[x["toban"]] = series_points(x.get("series") or [])
+    rows = sorted(((t, p / n) for t, (p, n) in seen.items() if n), key=lambda kv: -kv[1])
+    out, total = {}, len(rows)
+    for i, (t, avg) in enumerate(rows):
+        rank = 1 + sum(1 for _, a in rows if a > avg + 1e-9)                # 同点は同じ順位
+        out[t] = (rank, total, avg)
+    return out
+
+
+def series_cell(x, ranks) -> str:
+    days = x.get("series_codes") or []
+    if not days:
+        return '<td class="num">—</td>'
+    chips = []
+    for day in days:
+        chips.append("".join(f'<b class="ng">{SERIES_MARK[ch]}</b>' if ch in SERIES_MARK else e(ch) for ch in day))
+    rk = ranks.get(x["toban"])
+    sub = f'<span class="small">節間{rk[0]}位/{rk[1]}人({rk[2]:.2f})</span>' if rk else ""
+    return f'<td class="num series">{" ".join(chips)}{sub}</td>'
+
+
+SECOND_ORDER = ["差し続く", "攻めて", "外から", "捲られ残し", "差され残し", "捲り差され残し", "差され", "捲られ", "捲り差され", "抜かれ", "その他"]
+
+
+def second_cell(cs) -> str:
+    """2着になったときの展開(推定)。多い順に3つまで。"""
+    s2 = (cs or {}).get("s2") or {}
+    items = sorted(((k, v) for k, v in s2.items() if v > 0), key=lambda kv: (-kv[1], SECOND_ORDER.index(kv[0]) if kv[0] in SECOND_ORDER else 99))
+    if not items:
+        return '<td>—</td>'
+    return f'<td>{e("・".join(f"{k}{v}" for k, v in items[:3]))}</td>'
+
+
+def nige_cell(cs, course) -> str:
+    """1コースは逃げ率、2コースは逃がし率(2コースのときに1コースが逃げた割合)。"""
+    if not cs or not cs.get("n"):
+        return '<td class="num">—</td>'
+    if course == 1:
+        return f'<td class="num">逃げ{pct(cs.get("km", {}).get("逃げ", 0), cs["n"])}%</td>'
+    if course == 2:
+        return f'<td class="num">逃がし{pct(cs.get("ng", 0), cs["n"])}%</td>'
+    return '<td class="num">—</td>'
 
 
 def course_table(vs: dict | None) -> dict:
@@ -178,7 +257,21 @@ def tactic_cell(cs, course):
     return f'<td>{e("・".join(f"{k}{v}" for k, v in items) or "—")}<span class="small">{e(typ)}</span></td>'
 
 
-def build_race(d, code, vprog, race, vinfo, racers, result, tables, pred=None, depth=2):
+def before_cells(before, waku) -> str:
+    """直前情報の表の、展示ST・チルト・部品交換(とプロペラの交換)。"""
+    if not before:
+        return '<td class="num">—</td><td class="num">—</td><td>—</td>'
+    w = str(waku)
+    est = (before.get("est") or {}).get(w)
+    est_t = "—" if est is None else ("F" + f"{-est:.2f}".lstrip("0") if est < 0 else f"{est:.2f}".lstrip("0"))
+    parts = list((before.get("parts") or {}).get(w) or [])
+    if (before.get("prop") or {}).get(w):
+        parts.append("プロペラ" + before["prop"][w])
+    return (f'<td class="num">{e(est_t)}</td><td class="num">{f1((before.get("tilt") or {}).get(w), 1)}</td>'
+            f'<td>{e("・".join(parts) or "—")}</td>')
+
+
+def build_race(d, code, vprog, race, vinfo, racers, result, tables, pred=None, depth=2, ranks=None, before=None):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     path = f"{ymd}/{code}/{race['no']:02d}.html"
@@ -187,44 +280,59 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, pred=None, d
     rel = "../" * depth
     # 出走表
     rows = []
+    ps = period_start(d)
     for x in ents:
         cs = x["cs"].get(str(x["waku"]))
+        fp = sum(1 for f in x.get("f", []) if ps <= f < d.isoformat())       # 今の期のフライングの回数
+        fb = f'<b class="fbadge" title="今期フライング{fp}回">F{fp}</b>' if fp else ""
         if cs and cs["n"]:
             crec = (f'<td class="num">{pct(cs["w1"], cs["n"])}%<span class="small">{cs["n"]}走</span></td>'
+                    f'<td class="num">{pct(cs["w2"], cs["n"])}%</td>'
                     f'<td class="num">{pct(cs["w1"] + cs["w2"] + cs["w3"], cs["n"])}%</td><td class="num">{f1(cs["st"], 2)}</td>')
         else:
-            crec = '<td class="num">—</td><td class="num">—</td><td class="num">—</td>'
+            crec = '<td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>'
         rows.append(
-            f'<tr><td><span class="waku w{x["waku"]}">{x["waku"]}</span></td>'
-            f'<td>{e(x["name"])}<span class="small">{e(x["toban"])} {e(x["cls"])} {e(x["branch"])} {e(x["age"])}歳</span></td>'
+            f'<tr><td class="who"><span class="waku w{x["waku"]}">{x["waku"]}</span>{e(x["name"])}{fb}'
+            f'<span class="small">{e(x["toban"])} {e(x["cls"])} {e(x["branch"])} {e(x["age"])}歳</span></td>'
             f'<td class="num">{f1(x["rate"], 2)}<span class="small">{f1(x["rate2"])}%</span></td>'
             f'<td class="num">{f1(x["local"], 2)}<span class="small">{f1(x["local2"])}%</span></td>'
-            f'{crec}{tactic_cell(cs, x["waku"])}'
+            f'{crec}{tactic_cell(cs, x["waku"])}{second_cell(cs)}{nige_cell(cs, x["waku"])}'
             f'<td class="num">{e(x["motor"])}<span class="small">{f1(x["motor2"])}%</span></td>'
             f'<td class="num">{e(x["boat"])}<span class="small">{f1(x["boat2"])}%</span></td>'
-            f'<td class="num">{e(x["series"] or "—")}</td></tr>')
-    card = ("<section><h2>出走表</h2><p class=\"sub\">「同じコース」は枠番と同じコースに入ったときの直近1年の成績です(1着率・3連対率・平均ST)。"
-            "「勝ち方」はそのコースで勝ったときの決まり手の回数で、1号艇は1コースで負けたときの決まり手(差され・捲られ)も出しています。</p>"
-            '<div class="scroll"><table><thead><tr><th>枠</th><th>選手</th><th class="num">全国勝率</th><th class="num">当地勝率</th>'
-            '<th class="num">同じコース<br>1着率</th><th class="num">3連対率</th><th class="num">平均ST</th><th>勝ち方</th>'
+            f'{series_cell(x, ranks or {})}</tr>')
+    card = ("<section><h2>出走表</h2>"
+            '<div class="scroll"><table class="card"><thead><tr><th>選手</th><th class="num">全国勝率</th><th class="num">当地勝率</th>'
+            '<th class="num">同じコース<br>1着率</th><th class="num">2着率</th><th class="num">3連対率</th><th class="num">平均ST</th><th>勝ち方</th>'
+            '<th>2着のとき</th><th class="num">逃げ・<br>逃がし</th>'
             '<th class="num">モーター</th><th class="num">ボート</th><th class="num">今節</th></tr></thead><tbody>'
-            + "".join(rows) + "</tbody></table></div></section>")
+            + "".join(rows) + "</tbody></table></div>"
+            "<details class=\"howto\"><summary>表の見方</summary><p class=\"sub\">「同じコース」は枠番と同じコースに入ったときの直近1年の成績です(1着率・2着率・3連対率・平均ST)。"
+            "「勝ち方」はそのコースで勝ったときの決まり手で、1号艇は1コースで負けたときの決まり手(差され・捲られ)も出しています。"
+            "「2着のとき」は2着になったレースの展開です。公式の記録は1着の決まり手だけなので、1着の艇のコースと決まり手、自分のコースとスタートから推定しています"
+            "(差し続く=勝った艇の後ろ・内を回った、攻めて=内の艇より先にスタートで出て攻めた、外から=外を回った、〇〇残し=外の艇に抜かれたが残した)。"
+            "「逃げ・逃がし」は1号艇が1コースで逃げた割合と、2号艇が2コースのときに1コースが逃げた割合(逃がし率。低いほど1コースを崩している)。"
+            "名前の横の F1・F2 は今の期(5〜10月・11〜4月)のフライングの回数。今節は日ごとの着順で「失」は失格、節間順位は着順点の平均(得点率の目安)の順位です。</p></details></section>")
     # 直前情報の入力
     inrows = "".join(
         f'<tr><td><span class="waku w{x["waku"]}">{x["waku"]}</span></td><td>{e(x["name"])}</td>'
         f'<td><input id="ex{x["waku"]}" inputmode="decimal" placeholder="6.70" aria-label="{x["waku"]}号艇の展示タイム"></td>'
         f'<td><select id="c{x["waku"]}" aria-label="{x["waku"]}号艇の進入コース">'
         + "".join(f'<option value="{c}"{" selected" if c == x["waku"] else ""}>{c}</option>' for c in range(1, 7))
-        + "</select></td></tr>" for x in ents)
-    inputs = ('<section><h2>直前情報で見直す</h2><p class="sub">展示タイム・進入・風を入れると、下の展開の見立てが計算し直されます。'
-              '空欄のままでも使えます。</p><div class="scroll"><table class="inputs"><thead><tr><th>枠</th><th>選手</th><th>展示タイム</th>'
-              f'<th>進入</th></tr></thead><tbody>{inrows}</tbody></table></div>'
+        + "</select></td>" + before_cells(before, x["waku"]) + "</tr>" for x in ents)
+    if before:
+        bw = before.get("weather") or {}
+        bnote = (f'締切前の直前情報を自動で取り込みました({e(before.get("fetched") or "")}時点。出典: BOAT RACE オフィシャルウェブサイト)。'
+                 f'天候 {e(bw.get("weather") or "—")}・風速 {f1(bw.get("wind"), 0)}m・波高 {f1(bw.get("wave"), 0)}cm。値を書きかえると計算し直します。')
+    else:
+        bnote = '直前情報(展示タイム・スタート展示・風)は、締切の20分前ごろに自動で入ります。自分で入れても計算し直します。'
+    inputs = ('<section><h2>直前情報</h2><p class="sub" id="beforeNote">' + bnote + '</p><div class="scroll"><table class="inputs"><thead><tr><th>枠</th><th>選手</th><th>展示タイム</th>'
+              f'<th>進入</th><th class="num">展示ST</th><th class="num">チルト</th><th>部品交換</th></tr></thead><tbody>{inrows}</tbody></table></div>'
               '<div class="row"><label class="f">風向き<select id="wind"><option value="none">無風・弱い</option>'
               '<option value="head">向かい風</option><option value="tail">追い風</option><option value="side">横風</option></select></label>'
               '<label class="f">風速(m)<input id="windspd" type="number" min="0" max="15" step="1" value="2" style="width:80px"></label></div></section>')
     analysis = ('<section><h2>スタートの見立て</h2><p class="sub">選手の平均ST・ばらつき・フライング持ち・コース・風から、'
                 '過去のレースで実際に起きたスタートのずれ方を当てはめて、400通りのスタートを作っています。'
-                '「出る」は両隣より0.05秒以上早い、「凹む」は両隣より0.05秒以上遅い確率です。</p>'
+                '予想STの下の小さい数字は、10回のうち4回はこの範囲に入る幅です。「出る」は両隣より0.05秒以上早い、「凹む」は両隣より0.05秒以上遅い確率です。</p>'
                 '<div class="scroll"><table class="stt"><thead><tr><th>コース</th><th>選手</th><th class="num">予想ST</th>'
                 '<th class="num">出る</th><th class="num">凹む</th><th>出たときの展開</th></tr></thead><tbody id="stRows"></tbody></table></div>'
                 '<ul class="points" id="stNotes"></ul></section>'
@@ -290,6 +398,8 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, pred=None, d
                                       for x in result["entries"]]}
         if pred:
             data["pred"] = pred          # 締切前に記録した本番前の見立て(scripts/predlog.js)
+    if before:
+        data["before"] = before          # 直前情報(scripts/beforeinfo.py)
     # 1周1マーク展開ビュー(スタートから全艇が1マークを回り切るまでの上空シミュレーション)
     view = ('<section class="t1" aria-labelledby="h-t1"><div class="row" style="justify-content:space-between;align-items:center">'
             '<h2 id="h-t1">1周1マーク展開ビュー</h2><span class="sub">データに基づくシミュレーション</span></div>'
@@ -575,6 +685,7 @@ def main():
         nt = course_table(nat)
         res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
         pred_day = (load_json(DATA / "pred" / f"{d:%Y%m%d}.json", {}) or {}).get("venues", {})
+        before_day = (load_json(DATA / "before" / f"{d:%Y%m%d}.json", {}) or {}).get("venues", {})
         build_day(d, progs[d], dates)
         urls.append(f"{d:%Y%m%d}/")
         for code, vprog in progs[d]["venues"].items():
@@ -585,9 +696,11 @@ def main():
             build_venue(d, code, vprog, vinfo, racers, rv)
             urls.append(f"{d:%Y%m%d}/{code}/")
             tables = (course_table(vstats.get(code)), nt)
+            ranks = series_ranks(vprog)
             for race in vprog["races"]:
                 urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
-                                       pred_day.get(code, {}).get(str(race["no"]))))
+                                       pred_day.get(code, {}).get(str(race["no"])), ranks=ranks,
+                                       before=before_day.get(code, {}).get(str(race["no"]))))
     build_index(today, progs, dates)
     build_about()
     build_kotae(load_json(DATA / "eval.json", None), model)

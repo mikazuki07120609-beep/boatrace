@@ -4,7 +4,7 @@
    2) 展開の見立て: STの組み合わせごとに、どのコースがどの決まり手で1着になりやすいか(条件付きロジット)
    本番前はSTが分からないので、1)の多数の組み合わせで2)を平均する。
    使い方: var R = SuimenModel.predict(race, params, {samples: 400});
-     race = {vt, nt, wind, date, venue, boats: [{waku, course, pts, stx, r8, f, cs, motor2, ex}]}
+     race = {vt, nt, wind, date, venue, boats: [{waku, course, pts, stx, r8, f, cs, motor2, ex, est}]}
    ブラウザでもNode(require)でも使える。 */
 (function (root) {
   "use strict";
@@ -93,6 +93,9 @@
                               f: b.fp > 0 ? co.f : 0, f2: b.fp >= 2 ? (co.f2 || 0) : 0, wind: co.wind * Math.max(0, (wind || 0) - 3),
                               rec: (co.rec || 0) * rec, nb: (co.nb || 0) * nb, ven: (sm.ven || {})[venue] || 0 };
       p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven;
+      // 展示ST: 本番のSTは展示のSTに寄りやすい(寄る割合は学習した値。まだ学習できていないうちは0.35)
+      p.est = 0;
+      if (b.est != null && isFinite(b.est)) { p.est = (co.est != null ? co.est : 0.35) * (b.est - p.mu); p.mu += p.est; }
       return p;
     });
   }
@@ -179,7 +182,7 @@
     var ps = periodStart(race.date || "2026-10-01");
     byC.forEach(function (b) {
       b.fp = (b.f || []).filter(function (x) { return x >= ps && x < (race.date || "9999"); }).length;
-      b.scale = racerScale(sm, b.stx || [0, 0, 0]);
+      b.scale = racerScale(sm, b.stx || [0, 0, 0]) * (b.est != null && isFinite(b.est) ? (sm.est_scale || 0.9) : 1);   // 展示STが分かれば、ばらつきは小さくなる
     });
     var parts = startParts(sm, byC, race.wind, race.venue);
     byC.forEach(function (b, i) { b.mu = parts[i].mu; });
@@ -204,7 +207,7 @@
         sum += t[ci]; xs.push(t[ci]);
       });
       xs.sort(function (a, b) { return a - b; });
-      return { course: ci + 1, waku: b.waku, mu: b.mu, mean: sum / S, lo: xs[Math.floor(S * 0.2)], hi: xs[Math.floor(S * 0.8)],
+      return { course: ci + 1, waku: b.waku, mu: b.mu, mean: sum / S, lo: xs[Math.floor(S * 0.3)], hi: xs[Math.floor(S * 0.7)],   // 10回に4回はこの幅
                pOut: out / S, pDent: dent / S, scale: b.scale, fp: b.fp, parts: parts[ci] };
     });
     // 決着パターンごとの「よくあるSTの組み合わせ」(そのパターンが起きやすいSTの組み合わせほど重く数えた平均)

@@ -99,3 +99,12 @@ a.btn{font-size:13px;border:1px solid var(--accent);border-radius:6px;padding:7p
 .kpis div{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
 .kpis b{font-family:var(--mono);font-size:24px;font-weight:600}
 .kpis span{font-size:12px;color:var(--muted);line-height:1.4}
+
+/* 出走表: 選手の列を固定、F持ち、今節の失格 */
+table.card td.who, table.card th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; }
+table.card td.who .waku { margin-right: 6px; }
+.fbadge { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; background: #c62828; color: #fff; font-size: 11px; line-height: 16px; vertical-align: 1px; }
+td.series { white-space: nowrap; letter-spacing: .04em; }
+td.series b.ng { color: #c62828; font-weight: 700; }
+details.howto{margin-top:8px}
+details.howto summary{cursor:pointer;color:var(--muted);font-size:13px}

@@ -18,13 +18,13 @@ import time
 import build_site
 import fetch
 import parse
-from common import DATA, PROGRAM, RAW, RESULTS, load_json, save_json, today_jst
+from common import DATA, OUT as OUT_DIR, PROGRAM, RAW, RESULTS, load_json, save_json, today_jst
 
 HISTORY_DAYS = 365       # 選手のコース別成績・戦法の傾向に使う期間
 COMPACT_AFTER = 10       # この日数より前の成績は、集計に使う項目だけに縮めて保存する
 BACKFILL_FIRST = 30      # 成績データがほとんどないときに、1回で取り込む過去の日数
 BACKFILL_PER_RUN = 10    # ふだんの1回で取り込む過去の日数
-REFETCH_PER_RUN = 8      # 風・展示タイムを残していなかった古い縮めた成績を、取り直す日数(1回あたり)
+REFETCH_PER_RUN = 12     # 風・展示タイムを残していなかった古い縮めた成績を、取り直す日数(1回あたり)
 STATE = DATA / "fetch_state.json"
 
 
@@ -56,27 +56,54 @@ def ingest(kind: str, day: dt.date, log: list, offline: bool) -> str:
 def compact(day: dict) -> dict:
     """集計と答え合わせに使う項目だけ残す。
     レース: 決まり手(k)と天候・風向・風速・波高(w)。
-    艇: [着順か失格などの記号, 枠, 登番, 名前, 進入, ST, フライング, 展示タイム, モーター番号]"""
-    out = {"date": day.get("date"), "compact": 2, "venues": {}}
+    艇: [着順か失格などの記号, 枠, 登番, 名前, 進入, ST, フライング, 展示タイム, モーター番号, レースタイム]"""
+    out = {"date": day.get("date"), "compact": 3, "venues": {}}
     for code, v in day.get("venues", {}).items():
         out["venues"][code] = {"races": [
             {"no": r["no"], "k": r.get("kimarite"), "nm": r.get("name"),
              "w": [r.get("weather"), r.get("wind_dir"), r.get("wind"), r.get("wave")],
              "e": [[x.get("rank") or x.get("status"), x["waku"], x["toban"], x.get("name", ""), x.get("course"), x.get("st"),
-                    1 if x.get("flying") else 0, x.get("ex"), x.get("motor")] for x in r.get("entries", [])]}
+                    1 if x.get("flying") else 0, x.get("ex"), x.get("motor"), x.get("time")] for x in r.get("entries", [])]}
             for r in v.get("races", [])]}
     return out
 
 
 def lacks_wind(day: dict) -> bool:
-    """古い形式で縮めた成績(風・展示タイムを残していない)か。"""
-    return day.get("compact") is True
+    """古い形式で縮めた成績(風・展示タイム・レースタイムを残していない)か。"""
+    c = day.get("compact")
+    return c is True or c == 2
+
+
+def predlog() -> None:
+    """締切前のレースの見立てを記録する(答え合わせで、本番前に出していた数字と結果を比べるため)。"""
+    if shutil.which("node"):
+        subprocess.run(["node", str(pathlib.Path(__file__).with_name("predlog.js"))], check=False)
+
+
+def quick() -> int:
+    """直前情報だけを取り込んで、ページを作り直す(締切前のレースの見立てに反映する。10分ごと)。"""
+    import os
+    import beforeinfo
+    got = beforeinfo.run(today_jst(), False)
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:                                                   # 新しい直前情報がなければ、公開し直さない
+        with open(out, "a", encoding="utf-8") as f:
+            f.write(f"changed={'true' if got else 'false'}\n")
+    if not got:
+        print("新しい直前情報はありませんでした")
+        return 0
+    build_site.main()
+    predlog()
+    return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true")
+    ap.add_argument("--before", action="store_true", help="直前情報だけ取り込む(10分ごとの実行用)")
     a = ap.parse_args()
+    if a.before:
+        return quick()
     today = today_jst()
     state = load_json(STATE, {"missing_K": []})
     missing_k = set(state.get("missing_K", []))
@@ -160,9 +187,7 @@ def main() -> int:
     except ImportError as ex:
         print("学習をとばしました:", ex)
     build_site.main()
-    # 締切前のレースの見立てを記録する(答え合わせで、本番前に出していた数字と結果を比べるため)
-    if shutil.which("node"):
-        subprocess.run(["node", str(pathlib.Path(__file__).with_name("predlog.js"))], check=False)
+    predlog()
     return 0
 
 
