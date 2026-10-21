@@ -12,7 +12,7 @@
   var SHRINK = 10; // 走数が少ない選手の成績を、場の平均に寄せる強さ(学習済みの重みがないときの簡易モデル用)
   var LIVE_URL = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/main/data/live/" + D.race.ymd + "/" + V.code + ".json";
   var NO = String(D.race.no);
-  var BI = D.before || null, LR = D.live || null;     // 直前情報・レース直後の結果
+  var BI = D.before || null, LR = D.live || null, OG = D.orig || null;     // 直前情報・レース直後の結果・場のオリジナル展示データ
   function $(s) { return document.querySelector(s); }
   function $$(s) { return [].slice.call(document.querySelectorAll(s)); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -192,9 +192,21 @@
     var rows = [];
     rows.push(vrow("選手", E.map(function (e) { return '<b class="nm">' + esc(e.name) + "</b>"; }), null, null, "who"));
     rows.push(vrow("展示タイム", exs.map(function (x) { return x == null ? "—" : "<b>" + x.toFixed(2) + '</b><span class="dim">' + (sorted.indexOf(x) + 1) + "位</span>"; }), exs, "min"));
-    rows.push(vrow("直線速度<small>推定</small>", spd.map(function (v) { return v == null ? "—" : v.toFixed(1) + '<span class="dim">km/h</span>'; }), spd, "max"));
-    rows.push(vrow("一周タイム<small>推定</small>", lap.map(function (v) { return v == null ? "—" : v.toFixed(2); }), lap, "min"));
-    rows.push(vrow("まわり足<small>推定</small>", turn.map(function (v) { return v == null ? "—" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2); }), turn, "min"));
+    if (OG) {
+      // 場が出している展示航走の計測タイム(短いほど良い。測り方は場ごとに違うので、6艇の中で比べる)
+      [["lap", "一周"], ["half", "半周"], ["turn", "まわり足"], ["line", "直線"]].forEach(function (kv) {
+        var m = OG[kv[0]];
+        if (!m) return;
+        var vals = E.map(function (e) { var x = m[String(e.waku)]; return x == null ? null : x; });
+        var sortedV = vals.filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
+        rows.push(vrow(kv[1] + "<small>場の計測</small>", vals.map(function (x) { return x == null ? "—" : "<b>" + x.toFixed(2) + '</b><span class="dim">' + (sortedV.indexOf(x) + 1) + "位</span>"; }), vals, "min"));
+      });
+      rows.push(vrow("直線速度<small>推定</small>", spd.map(function (v) { return v == null ? "—" : v.toFixed(1) + '<span class="dim">km/h</span>'; }), spd, "max"));
+    } else {
+      rows.push(vrow("直線速度<small>推定</small>", spd.map(function (v) { return v == null ? "—" : v.toFixed(1) + '<span class="dim">km/h</span>'; }), spd, "max"));
+      rows.push(vrow("一周タイム<small>推定</small>", lap.map(function (v) { return v == null ? "—" : v.toFixed(2); }), lap, "min"));
+      rows.push(vrow("まわり足<small>推定</small>", turn.map(function (v) { return v == null ? "—" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2); }), turn, "min"));
+    }
     rows.push(vrow("進入", E.map(function (e) { var c = courseOf(e.waku); return c !== e.waku ? '<b class="moved">' + c + "</b>" : String(c); })));
     rows.push(vrow("展示ST", est.map(function (x) { return x == null ? "—" : x < 0 ? '<span class="fon">F' + st2(-x).replace("F", "") + "</span>" : st2(x); }),
       est.map(function (x) { return x != null && x >= 0 ? x : null; }), "min"));
@@ -701,7 +713,8 @@
     if (left > 90 || left < -150) return;
     fetch(LIVE_URL + "?t=" + Math.floor(Date.now() / 30000), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (!j) return;
-      var nb = (j.before || {})[NO], nr = (j.result || {})[NO], ch = false;
+      var nb = (j.before || {})[NO], nr = (j.result || {})[NO], no = (j.orig || {})[NO], ch = false;
+      if (no && JSON.stringify(no) !== JSON.stringify(OG)) { OG = no; ch = true; }
       if (nb && JSON.stringify(nb) !== JSON.stringify(BI)) { BI = nb; ch = true; }
       if (nr && JSON.stringify(nr) !== JSON.stringify(LR)) { LR = nr; ch = true; }
       if (ch) render();

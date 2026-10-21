@@ -35,7 +35,18 @@ BEFORE_FROM = 20          # 締切の何分前から直前情報を読みに行�
 BEFORE_UNTIL = -3         # 締切の何分後まで直前情報を待つか
 RESULT_AFTER = 3          # 締切の何分後から結果を読みに行くか
 RESULT_GIVEUP = 120       # 締切の何分後まで結果を待つか
-MAX_TRIES = {"b": 14, "r": 30, "l": 2}
+MAX_TRIES = {"b": 14, "r": 30, "l": 2, "o": 8}
+# 場が自分のサイトで出している、展示航走の計測タイム(オリジナル展示データ: 一周・半周・まわり足・直線)。場ごとに測り方が違うので、6艇の中で比べる
+ORIG_URL = {
+    "01": "http://www.kiryu-kyotei.com/modules/yosou/cyokuzen.php?day={ymd}&race={no}",
+    "06": "https://www.boatrace-hamanako.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
+    "10": "https://www.boatrace-mikuni.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
+    "11": "https://www.boatrace-biwako.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
+    "13": "https://boatrace-amagasaki.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
+    "14": "https://www.n14.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
+    "18": "https://www.boatrace-tokuyama.jp/modules/yosou/tenji.php?day={ymd}&race={no}&kind=2",
+    "20": "https://www.wmb.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
+}
 LIST_AHEAD = 240          # 締切の何分前から出走表(F・Lの回数)を読みに行くか
 LIST_PER_CYCLE = 3        # 出走表は急がないので、1回りに読む数を絞る
 KIM = {"逃げ": "逃げ", "まくり": "捲り", "差し": "差し", "まくり差し": "捲り差し", "抜き": "抜き", "恵まれ": "恵まれ"}
@@ -172,8 +183,58 @@ def parse_racelist(page: str) -> dict:
     return out
 
 
+ORIG_LABELS = {"一周": "lap", "半周": "half", "まわり足": "turn", "直線": "line"}
+
+
+def _cells(tr: str) -> list:
+    return [" ".join(htmlmod.unescape(re.sub(r"<[^>]+>", " ", c)).replace("\u3000", " ").split())
+            for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", tr, re.S | re.I)]
+
+
+def parse_orig(page: str) -> dict | None:
+    """場のサイトの直前情報ページから、オリジナル展示データ {lap/half/turn/line: {枠: 秒}}。まだ出ていなければ None。
+    見出しの並び(一周・半周・まわり足・直線)を読み、各艇の行の展示タイムのすぐ後ろから、その順に数字を取る。"""
+    page = re.sub(r"<script.*?</script>", " ", page, flags=re.S | re.I)
+    trs = re.findall(r"<tr[^>]*>(.*?)</tr>", page, re.S | re.I)
+    order = None
+    for tr in trs:
+        txt = " ".join(_cells(tr)).replace(" ", "")
+        if "まわり足" not in txt:
+            continue
+        found = []
+        for m in re.finditer(r"一周|半周|まわり足|直線", txt):
+            k = ORIG_LABELS[m.group(0)]
+            if k not in found:
+                found.append(k)
+        order = found
+        break
+    if not order:
+        return None
+    out = {k: {} for k in order}
+    for tr in trs:
+        cs = _cells(tr)
+        if len(cs) < 4:
+            continue
+        waku = next((int(c) for c in cs[:2] if re.fullmatch(r"[1-6]", c)), None)
+        if waku is None:
+            continue
+        nums = [float(c) if re.fullmatch(r"-?\d+\.\d{1,2}", c) else None for c in cs]
+        ix = next((i for i, x in enumerate(nums) if x is not None and 6.0 <= x <= 7.6 and i >= 2), None)
+        if ix is None:
+            continue
+        vals = nums[ix + 1:ix + 1 + len(order)]
+        if len(vals) < len(order) or any(v is None or v <= 0 for v in vals):
+            continue
+        for k, v in zip(order, vals):
+            out[k][str(waku)] = v
+    if len(out[order[0]]) < 4:
+        return None
+    return out
+
+
 def fetch(page: str, jcd: str, no: int, ymd: str) -> str | None:
-    req = urllib.request.Request(URL.format(page=page, no=no, jcd=jcd, ymd=ymd), headers={"User-Agent": UA})
+    url = ORIG_URL[jcd].format(ymd=ymd, no=no) if page == "orig" else URL.format(page=page, no=no, jcd=jcd, ymd=ymd)
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.read().decode("utf-8", "replace")
@@ -226,6 +287,10 @@ def tasks(prog: dict, venues: dict, state: dict, now: dt.datetime) -> list:
             r = (lv.get("result") or {}).get(no)
             if not r and -RESULT_GIVEUP <= mins <= -RESULT_AFTER and tries.get(f"r:{code}-{no}", 0) < MAX_TRIES["r"]:
                 out.append((1, -mins, "r", code, race["no"]))
+            o = (lv.get("orig") or {}).get(no)
+            if (code in ORIG_URL and b and b.get("ready") and not o and -10 <= mins <= BEFORE_FROM
+                    and tries.get(f"o:{code}-{no}", 0) < MAX_TRIES["o"]):
+                out.append((0, mins + 0.5, "o", code, race["no"]))
             fl = lv.get("fl") or {}
             if (BEFORE_FROM < mins <= LIST_AHEAD and any(x["toban"] not in fl for x in race.get("entries", []))
                     and tries.get(f"l:{code}-{no}", 0) < MAX_TRIES["l"]):
@@ -249,10 +314,20 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
         n += 1
         key = f"{kind}:{code}-{no}"
         state["tries"][key] = state["tries"].get(key, 0) + 1
-        page = fetch({"b": "beforeinfo", "r": "raceresult", "l": "racelist"}[kind], code, no, f"{day:%Y%m%d}")
+        page = fetch({"b": "beforeinfo", "r": "raceresult", "l": "racelist", "o": "orig"}[kind], code, no, f"{day:%Y%m%d}")
         if not page:
             continue
         v = venues.setdefault(code, {"date": day.isoformat(), "code": code})
+        if kind == "o":
+            try:
+                og = parse_orig(page)
+            except Exception:  # noqa: BLE001
+                og = None
+            if og:
+                og["fetched"] = dt.datetime.now(JST).strftime("%H:%M")
+                v.setdefault("orig", {})[str(no)] = og
+                changed.add(code)
+            continue
         if kind == "l":
             try:
                 fl = parse_racelist(page)
@@ -412,7 +487,7 @@ def main() -> int:
     if a.parse:
         kind, f = a.parse
         page = open(f, encoding="utf-8").read()
-        fn = {"before": parse_before, "result": parse_result, "list": parse_racelist}[kind]
+        fn = {"before": parse_before, "result": parse_result, "list": parse_racelist, "orig": parse_orig}[kind]
         print(json.dumps(fn(page), ensure_ascii=False, indent=1))
         return 0
     if a.loop:
