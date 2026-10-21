@@ -42,7 +42,8 @@
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
   function avg(a) { var v = a.filter(function (x) { return x != null && !isNaN(x); }); return v.length ? v.reduce(function (s, x) { return s + x; }, 0) / v.length : null; }
-  function angd(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+  var TAU = 2 * Math.PI;
+  function angd(a, b) { var d = a - b; if (d > Math.PI || d < -Math.PI) d -= TAU * Math.round(d / TAU); return d; }   // 角度の差(-π〜π)
 
   // ---- 選手ごとの性能
   function prepare(entries) {
@@ -795,7 +796,11 @@
   function headCache(boats) {                    // 向きの cos・sin(引き波の計算で何度も使う)
     boats.forEach(function (a) { if (!a.HC) { a.HC = new Float32Array(NF); a.HS = new Float32Array(NF); } for (var j = 0; j < NF; j++) { a.HC[j] = Math.cos(a.H[j]); a.HS[j] = Math.sin(a.H[j]); } });
   }
-  var COS_CROSS = Math.cos(0.26);
+  var COS_CROSS = Math.cos(0.26), LAGS = [];
+  for (var lg = 9; lg <= 96; lg += 9) {                       // 引き波の時間ごとの広がり・弱まり(先に計算しておく)
+    var tu = lg * DT;
+    LAGS.push({ lag: lg, tau: tu, spread: 0.5 + 2.2 * tu, decay: Math.exp(-tu / 1.1), near: tu < 0.7 ? 0.45 * Math.exp(-tu / 0.45) : 0 });
+  }
   function wakeExposure(b, boats, cached) {
     var W = b.WK, iS = Math.max(1, Math.round((b.st + 0.8 - T0) / DT)), iE = Math.min(NF - 1, Math.round((b.done + 1.5 - T0) / DT));
     W.fill(0);
@@ -807,18 +812,18 @@
         if (a === b) continue;
         var ddx = a.X[i] - b.X[i], ddy = a.Y[i] - b.Y[i];
         if (ddx * ddx + ddy * ddy > 1600) continue;
-        for (var lag = 9; lag <= 96; lag += 9) {
-          var j = i - lag;
+        for (var k = 0; k < LAGS.length; k++) {
+          var L = LAGS[k], j = i - L.lag;
           if (j < 1 || T0 + j * DT < a.st + 0.2) break;
           var hx = a.HC[j], hy = a.HS[j], dx = b.X[i] - a.X[j], dy = b.Y[i] - a.Y[j];
           var fw = dx * hx + dy * hy;
           if (fw > 2.2 || fw < -2.2) continue;
-          var lt = -dx * hy + dy * hx, tau = lag * DT, spread = 0.5 + 2.2 * tau, decay = Math.exp(-tau / 1.1);
+          var lt = -dx * hy + dy * hx, spread = L.spread, decay = L.decay;
           var turn = clamp(Math.abs(a.H[j] - a.H[j - 1]) / DT / 0.7, 0, 1);
           var outer = (0.3 + 0.7 * turn) * decay, inner = (0.3 - 0.15 * turn) * decay, cr = hbc * hx + hbs * hy < COS_CROSS ? 1 : 0.5, ww = 0;
           if (Math.abs(lt - spread) < 1.0) ww += outer * (1 - Math.abs(lt - spread));
           if (Math.abs(lt + spread) < 1.0) ww += inner * (1 - Math.abs(lt + spread));
-          if (Math.abs(lt) < Math.max(0.4, spread - 1.0) && tau < 0.7) ww += 0.45 * Math.exp(-tau / 0.45);
+          if (L.near && Math.abs(lt) < Math.max(0.4, spread - 1.0)) ww += L.near;
           w += ww * cr;
         }
       }
@@ -1059,15 +1064,18 @@
         return m + (kindOk() ? 0 : 1000);
       };
       var save = function () {
-        return boats.map(function (b) {
+        var st = boats.map(function (b) {
           return { b: b, vmax: b.bias.vmax, alat: b.bias.alat, dz: b.adj.dz, yo: b.adj.yo, fx: b.flowExtra, role: b.role, ref: b.ref, wait: b.wait, sinkZ: b.sinkZ,
                    extra: b.extra.map(function (z) { return Object.assign({}, z); }) };
         });
+        st.res = { lab: lab, rel: rel, tEnd: tEnd, iEnd: iEnd };              // その形で走らせた結果(戻したときに並びも戻す)
+        return st;
       };
       var restore = function (st) {
         st.forEach(function (x) { var b = x.b; b.bias.vmax = x.vmax; b.bias.alat = x.alat; b.adj.dz = x.dz; b.adj.yo = x.yo; b.flowExtra = x.fx;
                                   b.extra = x.extra.map(function (z) { return Object.assign({}, z); });   // 保存した形は書きかえない
                                   b.role = x.role; b.ref = x.ref; b.wait = x.wait; b.sinkZ = x.sinkZ; });
+        if (st.res) { lab = st.res.lab; rel = st.res.rel; tEnd = st.res.tEnd; iEnd = st.res.iEnd; }
       };
       var runOnce = function (fast) {
         // fast: 引き波は前回の計算の分をそのまま使う(途中の調整を軽くする。最後に1回、引き波も計算し直す)
@@ -1092,7 +1100,7 @@
         lab = labels(boats, rel, iEnd);
       };
       var best = miss(), bestSt = save(), st0 = bestSt, moved = false, tries = {}, fullOk = false, noBoost = {};
-      for (var it = 0; it < (opt.orderIters || 7) && best > 0 && best < 1000; it++) {
+      for (var it = 0; it < (opt.orderIters || 10) && best > 0 && best < 1000; it++) {
         var cur = lab.order.map(function (b) { return b.course; }), k2 = -1;
         for (var q = 1; q < 5; q++) if (cur[q] !== tgt[q]) { k2 = q; break; }
         if (k2 < 0) break;
@@ -1106,6 +1114,11 @@
           if ((up.role === "soto" || up.role === "zen" || (up.role === "sashi" && dn.course < up.course)) && k2 <= 3 && ahead && ahead.course < up.course && !ahead.win) { up.role = "mark"; up.ref = ahead; }
           if (dn.role === "sashi" || dn.role === "makurizashi" || dn.role === "mark") dn.wait = Math.min(1.5, (dn.wait || 0) + 0.6);
           if (up.wait) up.wait = Math.max(0, up.wait - 0.4);                  // 前に出したい艇は、待ちを短く
+          // 捲られて大きく後ろへ下がる艇(見立てで2つ以上後ろ)は、最初から引き波に沈む形にする
+          if ((want === "makuri" || want === "makurizashi") && dn.course < winner.course && tgt.indexOf(dn.course) - k2 >= 2 && !dn.sinkZ && dn.P) {
+            dn.sinkZ = true;
+            dn.extra.push({ s0: dn.P.sStart + (dn.P.sEnd - dn.P.sStart) * 0.25, s1: dn.P.sEnd + 12, f: 0.86, kind: "wake" });
+          }
         }
         var soft = !!noBoost[key];                                          // 前の艇を抜いて先頭が崩れた組は、後ろの艇を下げるだけにする
         if (tries[key] >= 2 && !dn.sinkZ && dn.P) {                        // 抜けないときは、前の艇が引き波に沈む形にする(出口で失速)
