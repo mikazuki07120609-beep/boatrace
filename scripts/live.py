@@ -184,6 +184,28 @@ def parse_racelist(page: str) -> dict:
     return out
 
 
+def parse_span(page: str, day: dt.date) -> dict | None:
+    """ページの上にある節の日付の並び(「10月18日 初日」…「10月23日 最終日」)から、節の初日と最終日。読めなければ None。
+    準優の勝負駆け(予選の最終日はふつう最終日の2日前)を出すのに使う。"""
+    text = " ".join(htmlmod.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<script.*?</script>", " ", page, flags=re.S | re.I))).split())
+    text = zen2han(text)
+
+    def at(label: str):
+        m = re.search(r"(\d{1,2})(?:月|/)(\d{1,2})日?\s*" + label, text)
+        if not m:
+            return None
+        mo, d = int(m.group(1)), int(m.group(2))
+        y = day.year + (1 if mo < day.month - 6 else -1 if mo > day.month + 6 else 0)
+        try:
+            return dt.date(y, mo, d)
+        except ValueError:
+            return None
+    first, last = at("初日"), at("最終日")
+    if not first or not last or not (first <= day <= last) or (last - first).days > 9:
+        return None
+    return {"first": first.isoformat(), "last": last.isoformat()}
+
+
 ORIG_LABELS = {"一周": "lap", "半周": "half", "まわり足": "turn", "直線": "line"}
 
 
@@ -327,6 +349,14 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
         if not page:
             continue
         v = venues.setdefault(code, {"date": day.isoformat(), "code": code})
+        if kind in ("l", "b") and "span" not in v:      # 節の初日と最終日(1度読めればよい)
+            try:
+                sp = parse_span(page, day)
+            except Exception:  # noqa: BLE001
+                sp = None
+            if sp:
+                v["span"] = sp
+                changed.add(code)
         if kind == "o":
             try:
                 og = parse_orig(page)

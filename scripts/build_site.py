@@ -5,8 +5,9 @@ import html
 import json
 import math
 import shutil
+import subprocess
 
-from common import DATA, OUT, PROGRAM, RESULTS, SITE, VENUES, KIMARITE, load_json, parse_ymd, today_jst
+from common import DATA, OUT, PROGRAM, RESULTS, ROOT, SITE, VENUES, KIMARITE, load_json, parse_ymd, today_jst
 from alerts import badges, race_alerts
 from motor import motor_rates, raw_scores, venue_grades
 import pace as pacemod
@@ -16,6 +17,7 @@ SITE_NAME = "水面ノート"
 BASE_URL = "https://mikazuki07120609-beep.github.io/boatrace/"
 PAST_DAYS = 0          # 今日より前に何日分のページを残すか(終わった日のページは出さない。今日と明日だけ)
 LIVE_BASE = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/main/data/live/"   # 直前情報・結果(ページが開いている間に読みに行く)
+SEARCH: dict = {}      # 日付ごとの検索用のデータ(レース検索のページが読む {ymd}/search.json)
 WD = "月火水木金土日"
 
 
@@ -57,7 +59,7 @@ def page(title, desc, body, depth, path, scripts="", notes=None):
 <link rel="stylesheet" href="{rel}assets/style.css">
 </head><body><div class="wrap">
 <header class="site-head"><a class="logo" href="{rel}index.html">{SITE_NAME}</a>
-<nav class="site-nav"><a href="{rel}index.html">今日のレース</a><a href="{rel}about.html">このサイトについて</a></nav></header>
+<nav class="site-nav"><a href="{rel}index.html">今日のレース</a><a href="{rel}search.html">レース検索</a><a href="{rel}about.html">このサイトについて</a></nav></header>
 {body}
 <footer><h2>注意とこのページの見方</h2><ul class="notes">{items}</ul></footer>
 </div>{scripts}</body></html>"""
@@ -394,6 +396,11 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         x["series_days"] = list(x.get("series_codes") or []) + ([(today_m or {}).get(x["toban"])] if (today_m or {}).get(x["toban"]) else [])
         rk = (ranks or {}).get(x["toban"])
         x["srank"] = [rk[0], rk[1]] if rk else None
+    SEARCH.setdefault(ymd, {"venues": {}, "races": []})["races"].append({
+        "c": code, "no": race["no"], "nm": race["name"], "dl": race.get("deadline"), "ds": race.get("distance"),
+        "al": {k: v for k, v in (alerts or {}).items() if v},
+        "e": [{"w": x["waku"], "t": x["toban"], "n": x["name"], "k": x.get("cls"), "f": x.get("fp") or 0,
+               "g": (x.get("mg") or {}).get("grade"), "z": (x.get("mg") or {}).get("z")} for x in ents]})
     rel = "../" * depth
     names = "".join(f'<li><span class="waku w{x["waku"]}">{x["waku"]}</span> {e(x["name"])} <span class="small">{e(x["cls"])} {e(x["branch"])}</span></li>' for x in ents)
     card = ('<section><h2>出走表</h2><div id="cardBox"><ul class="plain">' + names + "</ul></div>"
@@ -584,6 +591,55 @@ def build_index(today, progs, dates, alerts_by_day=None):
                              '<script src="assets/day.js"></script>', DAY_NOTES))
 
 
+def search_venue(vname: str, vprog: dict, vnext: dict | None) -> dict:
+    """検索用: 場の今節の段階(予選・準優・優勝戦)と、選手ごとの今節成績(準優の勝負駆けを出すため)。"""
+    names = " ".join(r["name"] for r in vprog.get("races", []))
+    phase = "final" if "優勝" in names and "準優" not in names else "junyu" if "準優" in names else "yosen"
+    last = None                            # 明日の番組がまだないとき(ナイターの場は夜に足される)は分からない
+    if vnext is not None:
+        nn = " ".join(r["name"] for r in vnext.get("races", []))
+        last = phase == "yosen" and "準優" in nn
+    roster = {}
+    for race in vprog.get("races", []):
+        for x in race["entries"]:
+            roster.setdefault(x["toban"], {"n": x.get("name"), "s": list(x.get("series") or [])})
+    return {"name": vname, "day": vprog.get("day"), "title": vprog.get("title", ""), "phase": phase, "last": last, "roster": roster}
+
+
+def write_search(dates, today):
+    """日付ごとの検索用のデータ({ymd}/search.json)と、レース検索のページ。見立て(1号艇の逃げなど)は node で足す(scripts/searchidx.js)。"""
+    for d in dates:
+        ymd = f"{d:%Y%m%d}"
+        blob = SEARCH.get(ymd)
+        if blob:
+            blob["date"] = d.isoformat()
+            blob["ymd"] = ymd
+            write(f"{ymd}/search.json", json.dumps(blob, ensure_ascii=False, separators=(",", ":")))
+    try:
+        subprocess.run(["node", str(ROOT / "scripts" / "searchidx.js")], cwd=ROOT, timeout=600, check=False)
+    except Exception as ex:  # noqa: BLE001  見立てが足せなくても、検索のページは出す
+        print("検索用の見立てを足せませんでした:", ex)
+    tabs = "".join(f'<button type="button" class="chip{" on" if d == today else ""}" data-ymd="{d:%Y%m%d}">'
+                   f'{"今日" if d == today else "明日" if d == today + dt.timedelta(days=1) else ""} {d.month}/{d.day}</button>' for d in dates)
+    body = ('<h1>レース検索</h1><p class="lead">条件を選ぶと、当てはまるレースが締切の順に並びます。「直前」の条件は、スタート展示のあとに取り込んだレースから探します。</p>'
+            f'<div class="chips" id="sDates">{tabs}</div>'
+            '<section class="sform"><div id="sConds" class="sconds"></div>'
+            '<div class="srow"><input type="search" id="sName" placeholder="選手名・登番" autocomplete="off" aria-label="選手名・登番">'
+            '<select id="sVenue" aria-label="場"><option value="">すべての場</option></select></div>'
+            '<div class="srow"><label class="sw"><input type="checkbox" id="sUpcoming" checked> これからのレースだけ</label>'
+            '<span class="sw"><label><input type="radio" name="sMode" value="and" checked>すべて満たす</label>'
+            '<label><input type="radio" name="sMode" value="or">どれか満たす</label></span>'
+            '<button type="button" id="sClear">条件を外す</button></div>'
+            '<button type="button" id="sJump" class="sjump" hidden></button></section>'
+            '<section><h2 id="sCount">レース</h2><div id="sList" class="slist"><p class="sub">読み込み中…</p></div></section>')
+    notes = ["準優の勝負駆けは、今節の着順を点数(1着10点・2着8点・3着6点・4着4点・5着2点・6着1点)にした得点率で、今の18位をボーダーの目安にした推定です。"
+             "残り1走の選手は、その1走で何着以内ならボーダーの目安に届くかを出しています。場によって点数の数え方や準優の枠の数が違うことがあります。",
+             "モーター評価は、展示タイムが出ていればそれも加えて計算し直します。チルト・進入・展示タイム・部品交換・風は、取り込んだ直前情報から調べます。",
+             "逃げの見立ては、ページを作ったときの計算です(展示の前のものは枠なり・ふだんのSTとして計算)。"]
+    write("search.html", page(f"レース検索 | {SITE_NAME}", "イン飛び・カドまくりの警報、準優の勝負駆け、モーター評価S、チルトを跳ねた選手などで、今日のレースを探す。",
+                              body, 0, "search.html", f'<script>window.LIVE_BASE = {json.dumps(LIVE_BASE)};</script><script src="assets/search.js"></script>', notes))
+
+
 def build_about():
     body = ('<h1>このサイトについて</h1><section><p>水面ノートは、ボートレースの出走表と成績をデータで読み解く非公式のサイトです。'
             '毎日、公式が配布している番組表と競走成績のファイルを自動で取り込み、選手のコース別成績とレース場の特徴をまとめています。'
@@ -603,6 +659,7 @@ def load_live(d: dt.date) -> dict:
 
 
 def main():
+    SEARCH.clear()
     today = today_jst()
     stadiums = load_json(DATA / "stadiums.json", {})
     progs = {}
@@ -644,10 +701,12 @@ def main():
         alerts_by_day[d] = al_day
         build_day(d, progs[d], dates, al_day)
         urls.append(f"{d:%Y%m%d}/")
+        nxt = progs.get(d + dt.timedelta(days=1))
         for code, vprog in progs[d]["venues"].items():
             vinfo = venue_info(code, vstats, stadiums)
             if not vinfo["place"]:
                 continue
+            SEARCH.setdefault(f"{d:%Y%m%d}", {"venues": {}, "races": []})["venues"][code] = search_venue(vinfo["name"], vprog, (nxt or {}).get("venues", {}).get(code))
             vlive = live_day.get(code, {})
             rv = {r["no"]: r for r in res_day.get("venues", {}).get(code, {}).get("races", [])}
             build_venue(d, code, vprog, vinfo, racers, rv, vlive, al_day.get(code))
@@ -662,6 +721,7 @@ def main():
                                        pace=pacemod.for_race(P_pace, code, race["entries"]), mrates=mrates))
     build_index(today, progs, dates, alerts_by_day)
     build_about()
+    write_search(dates, today)
     sm = "".join(f"<url><loc>{BASE_URL}{u}</loc></url>" for u in urls)
     write("sitemap.xml", f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{sm}</urlset>')
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}sitemap.xml\n")
