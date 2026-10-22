@@ -23,6 +23,7 @@ from common import DATA, OUT as OUT_DIR, PROGRAM, RAW, RESULTS, load_json, save_
 HISTORY_DAYS = 365       # 選手のコース別成績・戦法の傾向に使う期間
 COMPACT_AFTER = 10       # この日数より前の成績は、集計に使う項目だけに縮めて保存する
 BACKFILL_FIRST = 30      # 成績データがほとんどないときに、1回で取り込む過去の日数
+LIVE_KEEP_DAYS = 90      # 取り込んだ直前情報・結果(data/live)と答え合わせの記録(data/learn)を残す日数
 BACKFILL_PER_RUN = int(os.environ.get("BACKFILL_PER_RUN") or 10)   # ふだんの1回で取り込む過去の日数
 REFETCH_PER_RUN = int(os.environ.get("REFETCH_PER_RUN") or 12)     # 風・展示タイムを残していなかった古い縮めた成績を、取り直す日数(1回あたり)
 STATE = DATA / "fetch_state.json"
@@ -127,8 +128,8 @@ def main() -> int:
             if r != "ok":
                 missing_k.add(p.stem)   # 取れなかった日は、縮めたまま使い続ける
 
-    # 古いデータは消す(番組表は14日、成績は HISTORY_DAYS+7 日を超えたもの)
-    for folder, keep in ((PROGRAM, 14), (RESULTS, HISTORY_DAYS + 7)):
+    # 古いデータは消す(番組表は3日、成績は HISTORY_DAYS+7 日を超えたもの)。ページに出すのは今日と明日だけなので、番組表は短くてよい
+    for folder, keep in ((PROGRAM, 3), (RESULTS, HISTORY_DAYS + 7)):
         for p in folder.glob("*.json"):
             try:
                 if (today - dt.datetime.strptime(p.stem, "%Y%m%d").date()).days > keep:
@@ -148,13 +149,15 @@ def main() -> int:
     cutoff = f"{today - dt.timedelta(days=HISTORY_DAYS + 7):%Y%m%d}"
     save_json(STATE, {"missing_K": sorted(k for k in missing_k if k >= cutoff)})
 
-    # 記録した見立て・直前情報・レース直後の結果も、成績と同じ期間だけ残す
-    for p in list((DATA / "pred").glob("*.json")) + list((DATA / "live").glob("*")):
+    # 取り込んだ直前情報・結果と、毎晩の答え合わせの記録は LIVE_KEEP_DAYS 日だけ残す(展示STの効き方の学習に使う分)。
+    # 前に使っていた見立ての置き場(data/pred)は、もう使っていないので消す
+    for p in list((DATA / "live").glob("*")) + list((DATA / "learn").glob("*.json")) + list((DATA / "pred").glob("*.json")):
         try:
-            if (today - dt.datetime.strptime(p.stem, "%Y%m%d").date()).days > HISTORY_DAYS + 7:
-                shutil.rmtree(p) if p.is_dir() else p.unlink()
+            age = (today - dt.datetime.strptime(p.stem, "%Y%m%d").date()).days
         except ValueError:
-            pass
+            continue
+        if p.parent.name == "pred" or age > LIVE_KEEP_DAYS:
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
 
     print("\n".join(log))
     # 見立ての学習と答え合わせ(numpy・scipy が必要。ない環境では前回の学習結果をそのまま使う)

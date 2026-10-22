@@ -14,7 +14,7 @@ from stats import VENUE_DAYS, collect, venue_table
 
 SITE_NAME = "水面ノート"
 BASE_URL = "https://mikazuki07120609-beep.github.io/boatrace/"
-PAST_DAYS = 6          # 今日より前に何日分のページを残すか
+PAST_DAYS = 0          # 今日より前に何日分のページを残すか(終わった日のページは出さない。今日と明日だけ)
 WD = "月火水木金土日"
 
 

@@ -18,6 +18,7 @@ import argparse
 import datetime as dt
 import html as htmlmod
 import json
+import os
 import re
 import subprocess
 import sys
@@ -29,13 +30,13 @@ from common import DATA, JST, PROGRAM, ROOT, load_json, save_json, zen2han
 LIVE = DATA / "live"
 URL = "https://www.boatrace.jp/owpc/pc/race/{page}?rno={no}&jcd={jcd}&hd={ymd}"
 UA = "suimen-note/1.0 (+https://mikazuki07120609-beep.github.io/boatrace/)"
-WAIT_SEC = 3              # 読むたびにあける秒数
-CYCLE_SEC = 120           # 一回りの間隔
-BEFORE_FROM = 20          # 締切の何分前から直前情報を読みに行くか(展示はおおむね締切の10〜15分前に出る)
+WAIT_SEC = 2              # 読むたびにあける秒数
+CYCLE_SEC = 60            # 一回りの間隔(出たらすぐ取り込めるよう、1分ごと)
+BEFORE_FROM = 25          # 締切の何分前から直前情報を読みに行くか(展示はおおむね締切の10〜18分前に出る)
 BEFORE_UNTIL = -3         # 締切の何分後まで直前情報を待つか
 RESULT_AFTER = 3          # 締切の何分後から結果を読みに行くか
 RESULT_GIVEUP = 120       # 締切の何分後まで結果を待つか
-MAX_TRIES = {"b": 14, "r": 30, "l": 2, "o": 8}
+MAX_TRIES = {"b": 32, "r": 90, "l": 2, "o": 15}
 # 場が自分のサイトで出している、展示航走の計測タイム(オリジナル展示データ: 一周・半周・まわり足・直線)。場ごとに測り方が違うので、6艇の中で比べる
 ORIG_URL = {
     "01": "http://www.kiryu-kyotei.com/modules/yosou/cyokuzen.php?day={ymd}&race={no}",
@@ -248,6 +249,9 @@ def day_dir(day: dt.date):
     return LIVE / f"{day:%Y%m%d}"
 
 
+_TRIES: dict = {}          # 読みに行った回数(実行中はここに持つ。ファイルには、データが入ったときだけ書く)
+
+
 def load_day(day: dt.date) -> tuple[dict, dict]:
     """場ごとの {before, result} と、読みに行った回数の記録。"""
     d = day_dir(day)
@@ -256,6 +260,9 @@ def load_day(day: dt.date) -> tuple[dict, dict]:
         for p in sorted(d.glob("[0-9][0-9].json")):
             venues[p.stem] = load_json(p, {}) or {}
     state = load_json(d / "state.json", None) or {"tries": {}}
+    tries = state.setdefault("tries", {})
+    for k, n in _TRIES.get(day.isoformat(), {}).items():
+        tries[k] = max(n, tries.get(k, 0))
     return venues, state
 
 
@@ -265,7 +272,9 @@ def save_day(day: dt.date, venues: dict, state: dict, changed: set) -> None:
         v = venues[code]
         v["updated"] = dt.datetime.now(JST).strftime("%H:%M")
         save_json(d / f"{code}.json", v)
-    save_json(d / "state.json", state)
+    _TRIES[day.isoformat()] = dict(state.get("tries", {}))
+    if changed:
+        save_json(d / "state.json", state)
 
 
 # ---------------------------------------------------------------- 1回り
@@ -427,7 +436,7 @@ def git_push(msg: str) -> None:
     if _git("diff", "--cached", "--quiet").returncode != 0:
         _git("commit", "-q", "-m", msg)
     for _ in range(4):
-        if _git("pull", "--rebase", "-q", "origin", "main").returncode != 0:
+        if _git("pull", "--rebase", "--autostash", "-q", "origin", "main").returncode != 0:
             _sync_with_remote(msg)
         if _git("push", "-q").returncode == 0:
             return
@@ -437,34 +446,55 @@ def git_push(msg: str) -> None:
 
 def git_sync() -> None:
     """読みに行く前に、リポジトリの最新(ほかの実行が送った分)を取り込む。"""
-    if _git("pull", "--rebase", "-q", "origin", "main").returncode != 0:
+    if _git("pull", "--rebase", "--autostash", "-q", "origin", "main").returncode != 0:
         _sync_with_remote("直前情報・結果(合わせ直し) [skip ci]")
 
 
-def after_change(day: dt.date) -> None:
-    """直前情報が新しく入ったら、締切前のレースの見立てを記録する(学習用。サイトには出さない)。"""
+def after_change(day: dt.date, push: bool) -> None:
+    """直前情報が新しく入ったら、締切前のレースの見立てを記録する(学習用。サイトには出さない)。
+    取り込んだデータを送ったあとで作り、手元でまとめておいて次の回に一緒に送る。"""
     subprocess.run([sys.executable, str(ROOT / "scripts" / "build_site.py")], cwd=ROOT, capture_output=True)
     subprocess.run(["node", str(ROOT / "scripts" / "predlog.js")], cwd=ROOT)
+    if push:
+        _git("add", "data/live")
+        if _git("diff", "--cached", "--quiet").returncode != 0:
+            _git("commit", "-q", "-m", f"見立ての記録 {dt.datetime.now(JST):%Y-%m-%d %H:%M} [skip ci]")
+
+
+def dispatch(workflow: str) -> bool:
+    """GitHub Actions の別の実行を起こす(GH_TOKEN があるときだけ)。"""
+    if not os.environ.get("GH_TOKEN"):
+        return False
+    r = subprocess.run(["gh", "workflow", "run", workflow, "--ref", "main"], cwd=ROOT, capture_output=True, text=True)
+    print(f"{workflow} を起こしました" if r.returncode == 0 else f"{workflow} を起こせませんでした: {r.stderr.strip()}", flush=True)
+    return r.returncode == 0
 
 
 def loop(minutes: float, push: bool) -> None:
     t0 = time.time()
+    asked_update = False
     while True:
         now = dt.datetime.now(JST)
         day = now.date()
-        if now.hour < 7:                     # 日付が変わったら終わる(朝の実行に任せる)
+        if now.hour < 5:                     # 日付が変わったら終わる(朝の実行に任せる)
             print("今日の開催は終わりました", flush=True)
             return
         try:
             if push:
                 git_sync()
+            # 今日の番組表がまだないとき(毎日の更新の起動が遅れた・落ちた): 毎日の更新を起こす(1回だけ)
+            if not (PROGRAM / f"{day:%Y%m%d}.json").exists():
+                if push and not asked_update and now.hour >= 6:
+                    asked_update = dispatch("update.yml")
             changed = cycle(day, now)
-            if changed:
-                after_change(day)
             if push:
                 git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
-            if not remaining(day, now):
+            if changed:
+                after_change(day, push)
+            if (PROGRAM / f"{day:%Y%m%d}.json").exists() and not remaining(day, now):
                 print("今日の分は終わりました", flush=True)
+                if push:
+                    git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
                 return
         except Exception:  # noqa: BLE001  1回の失敗で止めず、次の回にやり直す
             import traceback
@@ -483,7 +513,14 @@ def main() -> int:
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--push", action="store_true", help="取れたらリポジトリへ送る(GitHub Actions 用)")
     ap.add_argument("--parse", nargs=2, metavar=("KIND", "FILE"))
+    ap.add_argument("--need-more", action="store_true", help="今日の分がまだ残っていれば 0 で終わる(次の実行を起こすかどうか)")
     a = ap.parse_args()
+    if a.need_more:
+        now = dt.datetime.now(JST)
+        if now.hour < 5:
+            return 1
+        prog_exists = (PROGRAM / f"{now.date():%Y%m%d}.json").exists()
+        return 0 if (not prog_exists or remaining(now.date(), now)) else 1
     if a.parse:
         kind, f = a.parse
         page = open(f, encoding="utf-8").read()

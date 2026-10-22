@@ -722,7 +722,7 @@
   function poll() {
     var left = minsLeft();
     if (left > 90 || left < -150) return;
-    fetch(LIVE_URL + "?t=" + Math.floor(Date.now() / 30000), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    fetch(LIVE_URL + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (!j) return;
       var nb = (j.before || {})[NO], nr = (j.result || {})[NO], no = (j.orig || {})[NO], ch = false;
       if (no && JSON.stringify(no) !== JSON.stringify(OG)) { OG = no; ch = true; }
@@ -731,13 +731,21 @@
       if (ch) render();
     }).catch(function () {});
   }
+  // 直前情報を待っている間(締切の25分前〜)と、結果を待っている間(締切の後)は20秒ごと、それ以外は1分ごとに読み直す
+  function hot() {
+    var left = minsLeft();
+    return (left <= 25 && left >= -3 && !(BI && BI.ready)) || (left < -2 && left > -90 && !LR);
+  }
   function schedule() {
-    clearInterval(pollTimer);
-    pollTimer = setInterval(function () {
-      if (document.hidden) return;
-      renderDeadline();
-      if (!(finished() && LR)) poll();
-    }, 60000);
+    clearTimeout(pollTimer);
+    function tick() {
+      if (!document.hidden) {
+        renderDeadline();
+        if (!(finished() && LR)) poll();
+      }
+      pollTimer = setTimeout(tick, hot() ? 20000 : 60000);
+    }
+    pollTimer = setTimeout(tick, hot() ? 20000 : 60000);
   }
   document.addEventListener("visibilitychange", function () { if (!document.hidden) { renderDeadline(); if (!(finished() && LR)) poll(); } });
   function copyBtn(id, ta, m) {

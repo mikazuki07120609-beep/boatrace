@@ -2,23 +2,18 @@ name: 直前情報と結果(開催中)
 
 # 開催中ずっと動かし、締切の前後に各レースの直前情報(展示)と結果を公式サイトから読み取って、
 # data/live/ に入れてすぐリポジトリへ送る。レースのページは開くたびにこのファイルを読みに来る。
-# 1回の実行は最長350分。2時間おきに起動を予約しておき、前の実行が終わると次が始まる(同時には1つだけ)。
+# 1回の実行は最長345分。終わるときに今日の分が残っていれば、自分で次の実行を起こして引き継ぐ。
+# 予約の起動は遅れたり落ちたりすることがあるので、朝6:40から1時間おきにも起動を予約しておく
+# (同時に動くのは1つだけ。動いている間に来た起動は待たされ、前の実行が終わるとすぐ始まる)。
 on:
   schedule:
-    - cron: "40 21 * * *"   # 6:40(日本時間)。予約の起動は数十分遅れることがあるので、朝のレース(8時台)に間に合うよう早めにも
-    - cron: "20 22 * * *"   # 7:20
-    - cron: "20 0 * * *"    # 9:20
-    - cron: "20 2 * * *"    # 11:20
-    - cron: "20 4 * * *"    # 13:20
-    - cron: "20 6 * * *"    # 15:20
-    - cron: "20 8 * * *"    # 17:20
-    - cron: "20 10 * * *"   # 19:20
-    - cron: "20 12 * * *"   # 21:20
+    - cron: "40 21 * * *"              # 6:40(日本時間)
+    - cron: "20 22,23,0-13 * * *"      # 7:20〜22:20 の毎時
   workflow_dispatch:
     inputs:
       minutes:
         description: "何分まで動かすか"
-        default: "350"
+        default: "345"
 
 concurrency:
   group: live
@@ -30,6 +25,7 @@ jobs:
     timeout-minutes: 358
     permissions:
       contents: write
+      actions: write          # 次の実行・毎日の更新を起こすため
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +37,19 @@ jobs:
         with:
           node-version: "20"
       - name: 締切の前後に、直前情報と結果を読み取ってリポジトリへ送る
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python3 scripts/live.py --loop "${{ github.event.inputs.minutes || '350' }}" --push
+          python3 scripts/live.py --loop "${{ github.event.inputs.minutes || '345' }}" --push
+      - name: 今日の分が残っていれば、次の実行を起こして引き継ぐ
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if python3 scripts/live.py --need-more; then
+            gh workflow run live.yml --ref main && echo "次の実行を起こしました"
+          else
+            echo "今日の分は終わりです"
+          fi
