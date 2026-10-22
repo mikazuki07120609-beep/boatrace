@@ -249,11 +249,17 @@
     return lines.join("");
   }
 
+  function topThree(order) {
+    var fin = (order || []).filter(function (x) { return x.rank; }).sort(function (a, b) { return a.rank - b.rank; });
+    return fin.length >= 3 ? fin.slice(0, 3).map(function (x) { return x.waku; }) : null;
+  }
   // 結果(3連単の組と払戻金)
   function renderResult() {
     var bar = $("#resbar");
-    if (!bar || !LR || !LR.tri) return;
-    var t = LR.tri.map(function (w) { return '<span class="waku w' + w + '">' + w + "</span>"; }).join('<span class="sep">-</span>');
+    if (!bar || !LR) return;
+    var tri = LR.tri && LR.tri.length === 3 ? LR.tri : topThree(LR.order);       // 3連単がない(返還など)ときは着順から
+    if (!tri) return;
+    var t = tri.map(function (w) { return '<span class="waku w' + w + '">' + w + "</span>"; }).join('<span class="sep">-</span>');
     bar.innerHTML = '<span class="lbl">結果</span><span class="tri">' + t + "</span>" +
       (LR.pay ? '<b class="odds">' + (LR.pay / 100).toFixed(1) + "倍</b>" + (LR.pop ? '<span class="dim">' + LR.pop + "番人気</span>" : "") : "") +
       (LR.kimarite ? '<span class="tag">' + esc(LR.kimarite) + "</span>" : "") + (LR.note ? '<span class="sub">' + esc(LR.note) + "</span>" : "");
@@ -717,11 +723,11 @@
     });
   }
 
-  // 直前情報と結果を読み直す(raw.githubusercontent.com。開いている間は1分ごと、締切の1時間前から結果が出るまで)
+  // 直前情報と結果を読み直す(raw.githubusercontent.com。締切の1時間半前から、結果が出るまで。締切から時間がたっていても、結果がまだなら読みに行く)
   var pollTimer = null;
   function poll() {
     var left = minsLeft();
-    if (left > 90 || left < -150) return;
+    if (left > 90) return;
     fetch(LIVE_URL + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (!j) return;
       var nb = (j.before || {})[NO], nr = (j.result || {})[NO], no = (j.orig || {})[NO], ch = false;

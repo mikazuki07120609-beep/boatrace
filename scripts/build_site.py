@@ -15,6 +15,7 @@ from stats import VENUE_DAYS, collect, venue_table
 SITE_NAME = "水面ノート"
 BASE_URL = "https://mikazuki07120609-beep.github.io/boatrace/"
 PAST_DAYS = 0          # 今日より前に何日分のページを残すか(終わった日のページは出さない。今日と明日だけ)
+LIVE_BASE = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/main/data/live/"   # 直前情報・結果(ページが開いている間に読みに行く)
 WD = "月火水木金土日"
 
 
@@ -522,13 +523,13 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
                     f'<td class="num"><span class="dl">{e(race["deadline"])}</span><span class="small cd"></span></td>'
                     f'<td><a href="{race["no"]:02d}.html">{e(race["name"])}</a>' + (f'<span class="small">{race["distance"]}m</span>' if race["distance"] != 1800 else "")
                     + (f'<span class="alrow">{badges((al_map or {}).get(race["no"]), True)}</span>' if (al_map or {}).get(race["no"]) and any((al_map or {}).get(race["no"]).values()) else "")
-                    + f'</td><td>{restxt}</td><td><span class="waku w1">1</span> {e(x["name"])} <span class="small">{e(x["cls"])}</span></td>'
+                    + f'</td><td class="res">{restxt}</td><td><span class="waku w1">1</span> {e(x["name"])} <span class="small">{e(x["cls"])}</span></td>'
                     f'<td class="num">{c1txt}</td></tr>')
     p1 = vinfo["place"][0][0] if vinfo["place"] else 0
     body = (f'<nav class="crumb"><a href="../../index.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
-            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
+            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{e(LIVE_BASE)}{ymd}/{code}.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
             '<th>結果</th><th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
             + "</tbody></table></div></section>")
     title = f"{vname} {jdate(d)} 出走表・レース一覧 | {SITE_NAME}"

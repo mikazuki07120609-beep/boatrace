@@ -51,7 +51,40 @@
       if (cd) cd.textContent = isNext ? label(left) : "";
     });
   }
-  function tick() { cards(); raceList(); }
+  // レース一覧の結果: ページを作ったあとに出た結果は、取り込んだ結果(data/live)を読みに行って埋める
+  var resBusy = false;
+  function fillResults() {
+    var tbl = document.querySelector(".race-list[data-live]");
+    if (!tbl || resBusy) return;
+    var now = nowJst(), day = tbl.getAttribute("data-date");
+    if (day > now.iso) return;
+    var want = [].slice.call(tbl.querySelectorAll("tr[data-deadline]")).filter(function (tr) {
+      var cell = tr.querySelector(".res");
+      return cell && !cell.textContent.trim() && (day < now.iso || toMin(tr.getAttribute("data-deadline")) - now.min < -3);
+    });
+    if (!want.length) return;
+    resBusy = true;
+    fetch(tbl.getAttribute("data-live") + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var res = (j && j.result) || {};
+        want.forEach(function (tr) {
+          var x = res[tr.getAttribute("data-no")], cell = tr.querySelector(".res");
+          if (!x || !cell) return;
+          var tri = x.tri && x.tri.length === 3 ? x.tri : null;
+          if (!tri) {                                                   // 3連単がない(返還など)ときは着順から
+            var fin = (x.order || []).filter(function (y) { return y.rank; }).sort(function (a, b) { return a.rank - b.rank; });
+            if (fin.length >= 3) tri = fin.slice(0, 3).map(function (y) { return y.waku; });
+          }
+          if (!tri) return;
+          cell.innerHTML = '<span class="tri small-tri">' + tri.map(function (w) { return '<span class="waku w' + w + '">' + w + "</span>"; }).join("-") + "</span>"
+            + (x.pay ? '<span class="small">' + (x.pay / 100).toFixed(1) + "倍</span>" : "");
+        });
+      })
+      .catch(function () {})
+      .then(function () { resBusy = false; });
+  }
+  function tick() { cards(); raceList(); fillResults(); }
   tick();
   setInterval(tick, 30000);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) tick(); });
