@@ -50,7 +50,7 @@ PARAMS = ([f"d_{c}{k}" for c, k in CLASSES] + [f"str_{k}" for k in KIMS] + ["rec
           + [f"mk{j}_{g}" for g in range(4) for j in (1, 2)]
           + [f"sa{j}_{g}" for g in range(4) for j in (1, 2, 3)]
           + [f"ms{j}_{g}" for g in range(4) for j in (1, 2, 3)]
-          + ["w_nige", "w_mk", "w_sa", "w_ms", "loc"])
+          + ["w_nige", "w_mk", "w_sa", "w_ms", "loc", "nb_ms", "nb_sa"])
 PI = {n: i for i, n in enumerate(PARAMS)}
 NP = len(PARAMS)
 REG = np.array([2.0 if n.startswith("d_") else 0.5 for n in PARAMS])
@@ -158,6 +158,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
     # スタートの見立ての学習用(普通にスタートした艇は全部使う)
     vals = [by[c]["st"] for c in range(1, 7) if valid_st(by[c])]
     six = [acc.racer(by[c]["toban"]) for c in range(1, 7)]
+    mz = maeduke(by)
     for c in range(1, 7):
         e = by[c]
         if valid_st(e):
@@ -166,7 +167,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
             sts.append({"d": d, "v": vcode, "no": race["no"], "c": c, "waku": e.get("waku"), "st": e["st"], "stx": list(r.get("stx", [0, 0.0, 0.0])),
                         "toban": e["toban"], "rname": race.get("name"), "r8": list(r.get("rs", []))[-RECENT_N:], "nb": nbs,
                         "fp": sum(1 for x in r.get("f", []) if x >= period_start(d).isoformat()),
-                        "wind": race.get("wind"), "n6": len(vals)})
+                        "wind": race.get("wind"), "n6": len(vals), "mz": mz})
     win = next((e for e in ents if e.get("rank") == 1), None)
     kim = kim_class(race.get("kimarite"))
     y = None
@@ -175,7 +176,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
         if ck in CI:
             y = CI[ck]
     clean = st_ok and not any(e.get("flying") or (e.get("status") or "").startswith(("L", "K")) for e in ents)
-    rec = {"d": d, "v": vcode, "no": race["no"], "y": y, "clean": clean, "wind": race.get("wind"),
+    rec = {"d": d, "v": vcode, "no": race["no"], "y": y, "clean": clean, "wind": race.get("wind"), "mz": mz,
            "vt": vt, "nt": nt, "b": [], "_sts": sts}
     for c in range(1, 7):
         e = by[c]
@@ -271,7 +272,19 @@ def static_terms(rec):
             qk = q[(c, k)] / q3
             terms.append((PI["tac"], i, math.log(((km.get(k, 0) + TAC_K * qk) / (W + TAC_K)) / qk)))
             terms.append((PI["ls"], i, math.log(((ls1.get(k, 0) + LS_K * lsh[k]) / (lsw + LS_K)) / lsh[k])))
+        if c >= 3 and k in ("差し", "捲り差し"):
+            terms.append((PI["nb_sa" if k == "差し" else "nb_ms"], i, nb_makuri(B, q, c)))
     return lp, terms
+
+
+def nb_makuri(B, q, c):
+    """すぐ内(c-1コース)の艇が、そのコースで勝つときに捲りが多いか(場の割合と比べた対数)。内の艇が捲りに行けば、外の艇の差し・捲り差しが生まれやすい。"""
+    cc = c - 1
+    km = B[cc - 1]["cs"].get("km", {})
+    W = sum(km.get(x, 0) for x in ("捲り", "差し", "捲り差し"))
+    q3 = q[(cc, "捲り")] + q[(cc, "差し")] + q[(cc, "捲り差し")]
+    qk = q[(cc, "捲り")] / q3
+    return math.log(((km.get("捲り", 0) + TAC_K * qk) / (W + TAC_K)) / qk)
 
 
 def st_terms(t, wind):
@@ -381,13 +394,20 @@ def start_row(s, K, m_pop, vens):
     rec = (sum(r8) + REC_ST_K * mr) / (len(r8) + REC_ST_K) - mr if r8 else 0.0
     nbm = [(x[1] + K * m_pop) / (x[0] + K) for x in s.get("nb") or []]
     nb = sum(nbm) / len(nbm) - m_pop if nbm else 0.0
+    mz = 1.0 if s.get("mz") else 0.0
     return ([1.0, mr] + [1.0 if s["c"] == c else 0.0 for c in range(2, 7)]
-            + [1.0 if s["fp"] > 0 else 0.0, max(0, (s["wind"] or 0) - 3), 1.0 if s["fp"] >= 2 else 0.0, rec, nb]
+            + [1.0 if s["fp"] > 0 else 0.0, max(0, (s["wind"] or 0) - 3), 1.0 if s["fp"] >= 2 else 0.0, rec, nb,
+               mz if s["c"] <= 4 else 0.0, mz if s["c"] >= 5 else 0.0]
             + [1.0 if s["v"] == v else 0.0 for v in vens[1:]])
 
 
 REC_ST_K = 4              # 直近の平均STを、1年の平均に寄せる強さ(走数)
-START_NAMES = ["a", "b"] + [f"c{c}" for c in range(2, 7)] + ["f", "wind", "f2", "rec", "nb"]
+START_NAMES = ["a", "b"] + [f"c{c}" for c in range(2, 7)] + ["f", "wind", "f2", "rec", "nb", "mz_in", "mz_out"]
+
+
+def maeduke(by: dict) -> bool:
+    """前づけ: 3〜6号艇のどれかが、枠より内のコースに入ったレース(起こしが前になり、スロー勢が不利になりやすい)。by は {コース: 出走表の艇}。"""
+    return any((by[c].get("waku") or c) > c and (by[c].get("waku") or 0) >= 3 for c in by)
 
 
 def fit_start(sts):
@@ -505,7 +525,7 @@ def start_means(sm, rec):
     out = []
     for i, b in enumerate(B):
         s = {"stx": b["stx"], "r8": b.get("r8") or [], "fp": b["fp"], "c": b["c"], "wind": rec["wind"], "v": rec["v"],
-             "nb": [B[j]["stx"] for j in (i - 1, i + 1) if 0 <= j < 6]}
+             "nb": [B[j]["stx"] for j in (i - 1, i + 1) if 0 <= j < 6], "mz": rec.get("mz")}
         row = start_row(s, sm["K"], sm["m_pop"], [None])
         co = sm["coef"]
         out.append(sum(co[n] * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(rec["v"], 0.0))
@@ -552,7 +572,8 @@ def predict(th, sm, rec, S, rng):
 #   2着から順に「残った艇の中で、点数に応じた割合で選ばれる」として学習する(5着まで。段ごとに点数の効き方 λ を変える)
 # ======================================================================
 KG = {"逃げ": 0, "捲り": 1, "差し": 2, "捲り差し": 3, "抜き": 4}
-ORDER_FEATS = ["str", "st", "ex", "mot", "c2", "cb", "top3", "loc", "st_mk", "st_sa", "st_ms"]   # 最後の3つ: 決まり手ごとのSTの効き方の上乗せ
+ORDER_FEATS = ["str", "st", "ex", "mot", "c2", "cb", "top3", "loc", "st_mk", "st_sa", "st_ms",   # 決まり手ごとのSTの効き方の上乗せ
+               "st_p1", "st_p1mk", "mz_dash"]     # 1着のすぐ外の艇(捲りなら、ついて行く艇)のSTの効き方と、前づけのときのダッシュ勢
 ORD_K2 = 8
 NF_ORD = len(ORDER_FEATS)
 
@@ -562,8 +583,9 @@ def rel_idx(d: int) -> int:
     return d + 5 if d < 0 else d + 4
 
 
-def order_feats(r: dict, base: dict, t=None, k=None) -> list:
-    """6艇(コース順)の特徴。t はST(なければ実際のST)、k は1着の決まり手。"""
+def order_feats(r: dict, base: dict, t=None, k=None, cw=None) -> list:
+    """6艇(コース順)の特徴。t はST(なければ実際のST)、k は1着の決まり手、cw は1着のコース。"""
+    mz = 1.0 if r.get("mz") else 0.0
     B = r["b"]
     pts = [(b["pts"][0] + PTS_K * PTS_MEAN) / (b["pts"][1] + PTS_K) for b in B]
     mp = sum(pts) / 6
@@ -594,7 +616,10 @@ def order_feats(r: dict, base: dict, t=None, k=None) -> list:
                     ((cb[0] + 2.5) / (cb[1] + 5) - 0.5) * 4,
                     math.log(((cs.get("w1", 0) + cs.get("w2", 0) + cs.get("w3", 0) + ORD_K2 * b3) / (cs.get("n", 0) + ORD_K2)) / b3),
                     locd[i] - mloc,
-                    stx if k == "捲り" else 0.0, stx if k == "差し" else 0.0, stx if k == "捲り差し" else 0.0])
+                    stx if k == "捲り" else 0.0, stx if k == "差し" else 0.0, stx if k == "捲り差し" else 0.0,
+                    stx if cw is not None and i + 1 == cw + 1 else 0.0,
+                    stx if cw is not None and i + 1 == cw + 1 and k == "捲り" else 0.0,
+                    mz if i + 1 >= 4 else 0.0])
     return out
 
 
@@ -607,7 +632,7 @@ def order_data(recs, base):
         if sorted(x for x in ranks if x) != [1, 2, 3, 4, 5, 6]:
             continue
         cw, k = CLASSES[r["y"]]
-        f = order_feats(r, base, None, k)
+        f = order_feats(r, base, None, k, cw)
         others = [c for c in range(1, 7) if c != cw]
         G.append(KG[k])
         IDX.append([rel_idx(c - cw) for c in others])

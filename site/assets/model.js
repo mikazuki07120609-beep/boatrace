@@ -73,6 +73,8 @@
   }
 
   // ---- スタートの見立て
+  // 前づけ: 3〜6号艇のどれかが、枠より内のコースに入った(起こしが前になり、スロー勢のスタートが遅れやすい。fit.py の maeduke と同じ)
+  function maeduke(byC) { return byC.some(function (b) { return b.waku != null && b.waku > b.course && b.waku >= 3; }); }
   function racerScale(sm, stx) {
     var n = stx[0], s1 = stx[1], s2 = stx[2], sp2 = sm.sd_pop * sm.sd_pop;
     var v = n >= 2 ? (s2 - s1 * s1 / n) / n : sp2;
@@ -82,7 +84,7 @@
   // 6艇の予想ST(fit.py の start_means と同じ式): 選手の平均ST(走数で全体の平均に寄せる)・コース・フライング持ち(F1/F2)・風・
   // 直近8走の調子・隣の艇のスタートの傾向・場の補正
   function startParts(sm, byC, wind, venue) {
-    var co = sm.coef, K = sm.K, RK = sm.REC_K || 4;
+    var co = sm.coef, K = sm.K, RK = sm.REC_K || 4, mz = maeduke(byC);
     function mrOf(stx) { return (stx[1] + K * sm.m_pop) / (stx[0] + K); }
     var parts = byC.map(function (b, i) {
       var stx = b.stx || [0, 0, 0], mr = mrOf(stx), r8 = b.r8 || [], rec = 0, nb = 0, nn = 0, r8m = null;
@@ -91,8 +93,9 @@
       nb = nn ? nb / nn - sm.m_pop : 0;
       var c = b.course, p = { mr: mr, r8m: r8m, n8: r8.length, base: co.a + co.b * mr, course: c >= 2 ? (co["c" + c] || 0) : 0,
                               f: b.fp > 0 ? co.f : 0, f2: b.fp >= 2 ? (co.f2 || 0) : 0, wind: co.wind * Math.max(0, (wind || 0) - 3),
-                              rec: (co.rec || 0) * rec, nb: (co.nb || 0) * nb, ven: (sm.ven || {})[venue] || 0 };
-      p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven;
+                              rec: (co.rec || 0) * rec, nb: (co.nb || 0) * nb, ven: (sm.ven || {})[venue] || 0,
+                              mz: mz ? (c <= 4 ? (co.mz_in || 0) : (co.mz_out || 0)) : 0 };
+      p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven + p.mz;
       p.est = 0;
       return p;
     });
@@ -110,6 +113,13 @@
   function startMeans(sm, byC, wind, venue) { return startParts(sm, byC, wind, venue).map(function (p) { return p.mu; }); }
 
   // ---- 展開の見立て: STに関係しない点数(クラスごと)
+  // すぐ内(c-1コース)の艇が、そのコースで勝つときに捲りが多いか(fit.py の nb_makuri と同じ)
+  function nbMakuri(B, q, c, K) {
+    var cc = c - 1, km = (((B[cc - 1] || {}).cs || {})[String(cc)] || {}).km || {};
+    var W = (km["捲り"] || 0) + (km["差し"] || 0) + (km["捲り差し"] || 0);
+    var q3 = q[cc + "捲り"] + q[cc + "差し"] + q[cc + "捲り差し"], qk = q[cc + "捲り"] / q3;
+    return Math.log((((km["捲り"] || 0) + K.TAC_K * qk) / (W + K.TAC_K)) / qk);
+  }
   function staticU(race, P) {
     var K = P.const, th = P.dev, B = race.byC, pr = prior(race.vt, race.nt, K), u = new Array(NC);
     var pts = B.map(function (b) { return (b.pts[0] + K.PTS_K * K.PTS_MEAN) / (b.pts[1] + K.PTS_K); });
@@ -140,7 +150,9 @@
         p.tac = th.tac * Math.log((((km[k] || 0) + K.TAC_K * qk) / (W + K.TAC_K)) / qk);
         p.ls = th.ls * Math.log((((ls1[k] || 0) + K.LS_K * lsh[k]) / (lsw + K.LS_K)) / lsh[k]);
       }
-      u[i] = v + p.d + p.str + p.loc + p.rec + p.mot + p.ex + p.tac + p.ls;
+      p.nb = 0;                                                         // 内の艇が捲りに行くと、外の艇の差し・捲り差しが生まれやすい
+      if (c >= 3 && (k === "差し" || k === "捲り差し")) p.nb = (th[k === "差し" ? "nb_sa" : "nb_ms"] || 0) * nbMakuri(B, pr.q, c, K);
+      u[i] = v + p.d + p.str + p.loc + p.rec + p.mot + p.ex + p.tac + p.ls + p.nb;
       parts.push(p);
     });
     return { u: u, parts: parts, prior: pr };
@@ -251,7 +263,7 @@
   function orderFor(race, P, ci, t) {
     var O = P && P.order, B = race.byC;
     if (!O || !B || B.length !== 6) return null;
-    var cw = CLASSES[ci][0], k = CLASSES[ci][1], alpha = O.alpha[k], beta = O.beta, K = P.const;
+    var cw = CLASSES[ci][0], k = CLASSES[ci][1], alpha = O.alpha[k], beta = O.beta, K = P.const, mz = maeduke(B);
     var pts = B.map(function (b) { return ((b.pts || [0, 0])[0] + K.PTS_K * K.PTS_MEAN) / ((b.pts || [0, 0])[1] + K.PTS_K); });
     var mp = pts.reduce(function (s, x) { return s + x; }, 0) / 6;
     var sts = t && t.length === 6 ? t : B.map(function (b) { return b.mu; }), sm = sts.reduce(function (s, x) { return s + x; }, 0) / 6;
@@ -275,6 +287,8 @@
         x.loc = locd[i] - mloc;
       }
       x.st_mk = k === "捲り" ? x.st : 0; x.st_sa = k === "差し" ? x.st : 0; x.st_ms = k === "捲り差し" ? x.st : 0;   // 決まり手ごとのSTの効き方の上乗せ
+      x.st_p1 = c === cw + 1 ? x.st : 0; x.st_p1mk = c === cw + 1 && k === "捲り" ? x.st : 0;           // 1着のすぐ外の艇(捲りについて行く)
+      x.mz_dash = mz && c >= 4 ? 1 : 0;                                                                  // 前づけのときのダッシュ勢
       var d = c - cw, v = alpha[d < 0 ? d + 5 : d + 4];
       Object.keys(beta).forEach(function (n) { v += beta[n] * (x[n] || 0); });
       u[c] = v;

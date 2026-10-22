@@ -53,9 +53,12 @@
                motor2: e.motor2, ex: e.ex, cls: e.cls, km: e.km || {}, ls: e.ls || {}, n: e.n || 0, w1: e.w1 || 0 };
     }).sort(function (a, b) { return a.course - b.course; });
     var am = avg(boats.map(function (b) { return b.motor2; })), ae = avg(boats.map(function (b) { return b.ex; }));
+    // 前づけ(3〜6号艇が枠より内のコースへ)があると、起こしが前になって(助走が短く)スロー勢の伸びが落ち、ダッシュ勢が有利になりやすい。
+    // そのときはスローが4艇(1〜4コース)・ダッシュが2艇になりやすい
+    var mz = boats.some(function (b) { return b.waku > b.course && b.waku >= 3; });
     boats.forEach(function (b) {
-      var dash = b.course >= 4;                  // 4〜6コースはダッシュ、1〜3コースはスロー
-      b.vline = dash ? 21.6 : 18.0;              // スタートラインを越えるときの速さ(m/秒)
+      var dash = b.course >= (mz ? 5 : 4);       // ふだんは4〜6コースがダッシュ、1〜3コースがスロー
+      b.vline = dash ? 21.6 : (mz ? 17.2 : 18.0);   // スタートラインを越えるときの速さ(m/秒)。前づけで起こしが深いと、スロー勢は遅い
       b.apre = dash ? 1.3 : 2.6;                 // スタート前の加速
       var vm = 22.0;                             // 直線の最高速(モーターと展示タイムで上下)
       if (b.motor2 != null && am != null) vm += 0.045 * (b.motor2 - am);
