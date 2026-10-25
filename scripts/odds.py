@@ -23,13 +23,14 @@ import subprocess
 import sys
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from common import JST, PROGRAM, ROOT, load_json
 
 URL = "https://www.boatrace.jp/owpc/pc/race/{page}?rno={no}&jcd={jcd}&hd={ymd}"
 UA = "boatrace-site/0.1 (+https://github.com/mikazuki07120609-beep/boatrace)"
-WAIT_SEC = 2                 # 公式サイトへのアクセスの間隔
+WORKERS = 5                  # 同時に読むページの数(公式サイトの返事は1ページ数秒かかるので、少しだけ並べて読む)
 CYCLE_SEC = 60
 WINDOW_MIN = 15              # 締切の何分前から読むか
 PAGES_PER_CYCLE = 27         # 1回り(1分)に読むページの上限。超える分は次の回り(古いものから)
@@ -142,12 +143,15 @@ def fetch(page: str, jcd: str, no: int, ymd: str) -> str | None:
 
 
 def read_race(jcd: str, no: int, ymd: str) -> dict | None:
-    """1レース分のオッズ(3ページ)。どれも読めなければ None。"""
+    """1レース分のオッズ(3ページを順に読む)。どれも読めなければ None。"""
+    return parse_race({page: fetch(page, jcd, no, ymd) for page in PAGES})
+
+
+def parse_race(pages: dict) -> dict | None:
+    """読んだページ {ページ名: HTML} から、1レース分のオッズ。どれも読めなければ None。"""
     rec: dict = {}
-    for i, page in enumerate(PAGES):
-        if i:
-            time.sleep(WAIT_SEC)
-        html = fetch(page, jcd, no, ymd)
+    for page in PAGES:
+        html = pages.get(page)
         if not html:
             continue
         stamp, final = parse_stamp(html)
@@ -289,14 +293,19 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
     jobs, pages, changed = race_jobs(prog, base, day, now, state), 0, 0
     final_path = base / "data" / "odds_final" / f"{day:%Y%m%d}.json"
     finals = load_json(final_path, {}) or {}
-    for kind, _, _, code, no in jobs:
+    sel = []
+    for job in jobs:
         if pages + len(PAGES) > PAGES_PER_CYCLE:
             break
-        if pages:
-            time.sleep(WAIT_SEC)
-        key = f"{code}-{no}"
-        rec = read_race(code, no, f"{day:%Y%m%d}")
+        sel.append(job)
         pages += len(PAGES)
+    ymd = f"{day:%Y%m%d}"
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:                  # 1回りの分を、少しだけ並べて読む
+        futs = {(code, no, page): ex.submit(fetch, page, code, no, ymd) for _, _, _, code, no in sel for page in PAGES}
+        got = {k: f.result() for k, f in futs.items()}
+    for kind, _, _, code, no in sel:
+        key = f"{code}-{no}"
+        rec = parse_race({page: got.get((code, no, page)) for page in PAGES})
         if kind == 0:
             state["last"][key] = time.time()
         else:
