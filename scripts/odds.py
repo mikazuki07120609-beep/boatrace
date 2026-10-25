@@ -276,8 +276,8 @@ def race_jobs(prog: dict, base: Path, day: dt.date, now: dt.datetime, state: dic
             mins = (now.replace(hour=hh, minute=mm, second=0, microsecond=0) - now).total_seconds() / 60
             key = f"{code}-{race['no']}"
             if -1 < mins <= WINDOW_MIN:
-                last = state["last"].get(key, 0)
-                if time.time() - last >= CYCLE_SEC - 5:
+                last = state["last"].get(key, 0)                          # 前の回りを始めた時刻(読み終わりではない)
+                if time.time() - last >= CYCLE_SEC - 15:
                     out.append((0, last, mins, code, race["no"]))
             elif -FINAL_UNTIL <= mins <= -1 and str(race["no"]) not in (finals.get(code) or {}) and state["tries"].get(key, 0) < FINAL_TRIES:
                 out.append((1, state["tries"].get(key, 0), -mins, code, race["no"]))
@@ -300,15 +300,17 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
         sel.append(job)
         pages += len(PAGES)
     ymd = f"{day:%Y%m%d}"
+    t_start = time.time()
+    for kind, _, _, code, no in sel:                                       # 毎分そろうよう、読み始めの時刻で数える
+        if kind == 0:
+            state["last"][f"{code}-{no}"] = t_start
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:                  # 1回りの分を、少しだけ並べて読む
         futs = {(code, no, page): ex.submit(fetch, page, code, no, ymd) for _, _, _, code, no in sel for page in PAGES}
         got = {k: f.result() for k, f in futs.items()}
     for kind, _, _, code, no in sel:
         key = f"{code}-{no}"
         rec = parse_race({page: got.get((code, no, page)) for page in PAGES})
-        if kind == 0:
-            state["last"][key] = time.time()
-        else:
+        if kind == 1:
             state["tries"][key] = state["tries"].get(key, 0) + 1
         if not rec:
             continue
