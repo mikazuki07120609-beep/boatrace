@@ -123,18 +123,18 @@
         var hits = r.e.filter(function (e) { return B.near[e.t]; });
         if (!hits.length) return null;
         return hits.map(function (e) { var x = B.near[e.t];
-          return waku(e.w) + " " + esc(e.n) + ' <span class="dim">得点率' + x.rate.toFixed(2) + "・" + x.rank + "位</span> " +
+          return waku(e.w) + " " + esc(e.n) + (e.fm ? '<span class="fem">♥</span>' : "") + ' <span class="dim">得点率' + x.rate.toFixed(2) + "・" + x.rank + "位</span> " +
             (x.need ? "<b>" + x.need + "着以内</b>でボーダー(目安)" : (isToday() ? "今日あと" : "明日") + x.left + "走"); })
           .concat(['<span class="dim">' + (B.last ? "予選最終日" : "予選" + B.day + "日目") + "・18位の得点率 " + B.line.toFixed(2) + "(" + B.total + "人中)</span>"]); } },
       { id: "main", label: "優勝戦・準優・ドリーム", test: function (r) { return /優勝|準優|ドリーム/.test(r.nm || "") ? [esc(r.nm)] : null; } },
       { id: "b1", label: "1号艇がB級", test: function (r) {
-        var e = r.e.filter(function (x) { return x.w === 1; })[0]; return e && /^B/.test(e.k || "") ? [waku(1) + " " + esc(e.n) + " " + esc(e.k)] : null; } },
+        var e = r.e.filter(function (x) { return x.w === 1; })[0]; return e && /^B/.test(e.k || "") ? [waku(1) + " " + esc(e.n) + (e.fm ? '<span class="fem">♥</span>' : "") + " " + esc(e.k)] : null; } },
       { id: "a1out", label: "4〜6号艇にA1級", test: function (r) {
         var hit = r.e.filter(function (e) { return e.w >= 4 && e.k === "A1"; });
-        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + " A1"; }) : null; } },
+        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + (e.fm ? '<span class="fem">♥</span>' : "") + " A1"; }) : null; } },
       { id: "fhold", label: "F持ちがいる", test: function (r) {
         var hit = r.e.filter(function (e) { return e.f > 0; });
-        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + ' <span class="fon">F' + e.f + "</span>"; }) : null; } }
+        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + (e.fm ? '<span class="fem">♥</span>' : "") + ' <span class="fon">F' + e.f + "</span>"; }) : null; } }
     ]],
     ["モーター・直前情報", [
       { id: "motorS", label: "モーター評価S", test: function (r) {
@@ -143,7 +143,7 @@
       { id: "tilt", label: "チルトを跳ねた選手", live: true, test: function (r) {
         var bi = beforeOf(r); if (!bi || !bi.tilt) return null;
         var hit = r.e.filter(function (e) { var v = bi.tilt[String(e.w)]; return v != null && v >= 0.5; });
-        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + " チルト+" + bi.tilt[String(e.w)].toFixed(1); }) : null; } },
+        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + (e.fm ? '<span class="fem">♥</span>' : "") + " チルト+" + bi.tilt[String(e.w)].toFixed(1); }) : null; } },
       { id: "shinnyu", label: "前づけ・進入が動いた", live: true, test: function (r) {
         var bi = beforeOf(r); if (!bi || !bi.course || bi.course.length !== 6) return null;
         var moved = bi.course.some(function (w, i) { return w !== i + 1; });
@@ -187,7 +187,7 @@
       if (q) {
         var who = r.e.filter(function (e) { return (e.n || "").replace(/[\s　]/g, "").indexOf(q) >= 0 || String(e.t) === q; });
         if (!who.length) return;
-        why.push({ label: "選手", w: who.map(function (e) { return waku(e.w) + " " + esc(e.n) + ' <span class="dim">' + esc(e.t) + " " + esc(e.k || "") + "</span>"; }) });
+        why.push({ label: "選手", w: who.map(function (e) { return waku(e.w) + " " + esc(e.n) + (e.fm ? '<span class="fem">♥</span>' : "") + ' <span class="dim">' + esc(e.t) + " " + esc(e.k || "") + "</span>"; }) });
       }
       conds.forEach(function (c) { var w = c.test(r); if (w) { hits++; why.push({ label: c.id === "in" || c.id === "kado" ? "" : c.label, w: w }); } });
       if (conds.length && (mode === "and" ? hits < conds.length : hits === 0)) return;

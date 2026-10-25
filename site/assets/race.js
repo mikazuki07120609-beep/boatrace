@@ -72,7 +72,7 @@
   }
   function windState() { var w = windSpeed(); return { wind: "none", wspd: w, strong: w >= 4 }; }
 
-  // ---- 表(縦: 列が1〜6号艇、行が項目)。ランキングにできる項目は、一番良い艇の枠を赤で塗る
+  // ---- 表(縦: 列が1〜6号艇、行が項目)。ランキングにできる項目は、1位を赤、2位を青で塗る
   var KS = { "逃げ": "逃げ", "捲り": "捲り", "差し": "差し", "捲り差し": "捲差", "抜き": "抜き", "恵まれ": "恵まれ" };
   var SECOND_ORDER = ["差し", "捲り", "捲り差し", "残し", "道中", "差され", "捲られ", "捲り差され", "抜かれ", "その他"];
   function winText(cs, course) {
@@ -95,16 +95,35 @@
     if (ok.every(function (v) { return Math.abs(v - best) < 1e-9; })) return vals.map(function () { return false; });
     return vals.map(function (v) { return v != null && isFinite(v) && Math.abs(v - best) < 1e-9; });
   }
-  function vrow(label, cells, vals, dir, cls) {
-    var t = vals ? tops(vals, dir) : null;
-    return '<tr class="' + (cls || "") + '"><th scope="row">' + label + "</th>" +
-      cells.map(function (c, i) { return '<td class="' + (t && t[i] ? "top" : "") + '">' + c + "</td>"; }).join("") + "</tr>";
+  // 1位(赤)と2位(青)。1位が2艇以上で並んだときは2位を付けない。2位が3艇以上で並んだときも付けない
+  function rank12(vals, dir) {
+    var ok = vals.filter(function (v) { return v != null && isFinite(v); });
+    if (ok.length < 2) return vals.map(function () { return 0; });
+    var u = ok.slice().sort(function (a, b) { return dir === "min" ? a - b : b - a; }).filter(function (v, i, a) { return i === 0 || Math.abs(v - a[i - 1]) > 1e-9; });
+    if (u.length < 2) return vals.map(function () { return 0; });
+    function cnt(x) { return ok.filter(function (v) { return Math.abs(v - x) < 1e-9; }).length; }
+    var two = cnt(u[0]) === 1 && cnt(u[1]) <= 2 && ok.length >= 3;
+    return vals.map(function (v) {
+      if (v == null || !isFinite(v)) return 0;
+      if (Math.abs(v - u[0]) < 1e-9) return 1;
+      return two && Math.abs(v - u[1]) < 1e-9 ? 2 : 0;
+    });
   }
-  function vhead() {
-    return "<thead><tr><th></th>" + D.entries.map(function (e) { return '<th class="bw w' + e.waku + '">' + e.waku + "</th>"; }).join("") + "</tr></thead>";
+  function rkClass(r) { return r === 1 ? "top" : r === 2 ? "top2" : ""; }
+  function vrow(label, cells, vals, dir, cls) {
+    var t = vals ? rank12(vals, dir) : null;
+    return '<tr class="' + (cls || "") + '"><th scope="row">' + label + "</th>" +
+      cells.map(function (c, i) { return '<td class="' + (t ? rkClass(t[i]) : "") + '">' + c + "</td>"; }).join("") + "</tr>";
+  }
+  function femMark(e) { return e && e.fem ? '<span class="fem" title="女子レーサー" aria-label="女子レーサー">♥</span>' : ""; }
+  // 表の見出し(枠番)。names を付けると、選手名も見出しに入れる(下へ動かしても上に残る)
+  function vhead(names) {
+    return '<thead><tr><th class="corner"></th>' + D.entries.map(function (e) {
+      return '<th class="bw w' + e.waku + '"><span class="bn">' + e.waku + "</span>" + (names ? '<span class="hn">' + esc(e.name) + femMark(e) + "</span>" : "") + "</th>";
+    }).join("") + "</tr></thead>";
   }
   function p0(a, b) { return b ? Math.round(a / b * 100) : null; }
-  function cell(v, suf, d) { return v == null || !isFinite(v) ? "—" : (d != null ? Number(v).toFixed(d) : v) + (suf || ""); }
+  function cell(v, suf, d) { return v == null || !isFinite(v) ? "—" : (d != null ? Number(v).toFixed(d) : v) + (suf ? '<span class="u">' + suf + "</span>" : ""); }
   var SM = { "S": "失", "F": "F", "L": "L", "K": "欠" };
 
   // モーター評価(艇ごと、D.entries の順): 展示タイムが4艇以上そろったら、レースの平均との差を加える(重みは scripts/motor.py と同じ)
@@ -128,7 +147,7 @@
     var CS = E.map(function (e, i) { return (e.cs || {})[String(C[i])] || null; });
     var mz = motorZs();
     var rows = [];
-    rows.push(vrow("選手", E.map(function (e) { return '<b class="nm">' + esc(e.name) + '</b><span class="dim">' + esc(e.toban) + " " + esc(e.cls) + "</span>"; }), null, null, "who"));
+    rows.push(vrow("級別・登番", E.map(function (e) { return '<b class="cls c' + esc(e.cls) + '">' + esc(e.cls) + '</b><span class="dim">' + esc(e.toban) + "</span>"; })));
     rows.push(vrow("支部・年齢", E.map(function (e) { return '<span class="dim">' + esc(e.branch || "") + "<br>" + esc(e.age) + "歳 " + (e.weight ? e.weight + "kg" : "") + "</span>"; })));
     rows.push(vrow("F・L", E.map(function (e) { return '<span class="' + (e.fp ? "fon" : "") + '">F' + (e.fp || 0) + "</span>" + (e.lp != null ? ' <span class="dim">L' + e.lp + "</span>" : ""); })));
     rows.push(vrow("平均ST", E.map(function (e) { return st2(e.ast); }), E.map(function (e) { return e.ast; }), "min"));
@@ -151,6 +170,15 @@
       if (!cs || !cs.n || C[i] > 2) return "—";
       return '<span class="dim">' + (C[i] === 1 ? "逃げ" : "逃がし") + "</span>" + p0(C[i] === 1 ? (cs.km || {})["逃げ"] || 0 : cs.ng || 0, cs.n) + "%";
     })));
+    // このレースの区分(女子戦・SG・G1・G2・G3・一般)のときの、このコースの成績(直近1年)
+    if (D.cat) {
+      var G = E.map(function (e, i) { var g = (e.csg || {})[String(C[i])]; return g && g[0] ? g : null; });
+      function gr(k) { return G.map(function (g) { return g ? p0(g[k], g[0]) : null; }); }
+      function gv(k) { return G.map(function (g) { return g && g[0] >= 3 ? p0(g[k], g[0]) : null; }); }   // 3走未満は1位・2位の色を付けない
+      rows.push('<tr class="grp gcat"><th colspan="7"><span class="cattag">' + esc(D.cat) + "</span>のときのこのコース(直近1年)</th></tr>");
+      [1, 2, 3].forEach(function (k) { rows.push(vrow(k + "着率", gr(k).map(function (v) { return cell(v, "%"); }), gv(k), "max")); });
+      rows.push(vrow("走数", G.map(function (g) { return g ? g[0] : 0; })));
+    }
     rows.push('<tr class="grp"><th colspan="7">モーター・ボート</th></tr>');
     rows.push(vrow("モーター評価", mz.map(function (z) { var g = grade(z); return '<b class="g g' + g + '">' + g + "</b>"; }), mz, "max", "mo"));
     rows.push(vrow("モーター", E.map(function (e) { return '<span class="dim">' + esc(e.motor) + "号機</span>" + cell(e.motor2, "%", 1); }), E.map(function (e) { return e.motor2; }), "max"));
@@ -164,7 +192,7 @@
     }), null, null, "series"));
     rows.push(vrow("節間順位", E.map(function (e) { return e.srank ? e.srank[0] + '<span class="dim">/' + e.srank[1] + "</span>" : "—"; }),
       E.map(function (e) { return e.srank ? e.srank[0] : null; }), "min"));
-    box.innerHTML = '<div class="vt-wrap"><table class="vt">' + vhead() + "<tbody>" + rows.join("") + "</tbody></table></div>";
+    box.innerHTML = '<div class="vt-wrap stick"><table class="vt rcv">' + vhead(true) + "<tbody>" + rows.join("") + "</tbody></table></div>";
   }
 
   // 直前情報(展示タイム・推定タイム・スタート展示など)
@@ -194,7 +222,6 @@
     var tm = avg(turn0), turn = turn0.map(function (v) { return v == null || tm == null ? null : v - tm; });   // 6艇の平均との差
     var est = E.map(function (e) { return has && BI.est ? BI.est[String(e.waku)] : null; });
     var rows = [];
-    rows.push(vrow("選手", E.map(function (e) { return '<b class="nm">' + esc(e.name) + "</b>"; }), null, null, "who"));
     rows.push(vrow("展示タイム", exs.map(function (x) { return x == null ? "—" : "<b>" + x.toFixed(2) + '</b><span class="dim">' + (sorted.indexOf(x) + 1) + "位</span>"; }), exs, "min"));
     if (OG) {
       // 場が出している展示航走の計測タイム(短いほど良い。測り方は場ごとに違うので、6艇の中で比べる)
@@ -231,25 +258,37 @@
     var wl = has ? [W.at ? W.at + "時点" : "", W.weather || "", W.temp != null ? "気温" + fmt(W.temp, 0) + "℃" : "", W.wind != null ? "風速" + fmt(W.wind, 0) + "m" : "",
                     W.wave != null ? "波高" + fmt(W.wave, 0) + "cm" : "", W.water != null ? "水温" + fmt(W.water, 0) + "℃" : ""].filter(Boolean).join("・")
                  : (D.result ? "風 " + (D.result.wind_dir || "") + (D.result.wind != null ? D.result.wind + "m" : "") + "(競走成績から)" : "");
-    box.innerHTML = '<div class="vt-wrap"><table class="vt">' + vhead() + "<tbody>" + rows.join("") + "</tbody></table></div>" +
+    box.innerHTML = '<div class="vt-wrap stick"><table class="vt">' + vhead(true) + "<tbody>" + rows.join("") + "</tbody></table></div>" +
       (wl ? '<p class="sub">' + esc(wl) + "</p>" : "");
     if (at) at.textContent = has ? (BI.fetched ? BI.fetched + " 取り込み" : "") : "";
     // 展示タイム1位の艇の1着率
     var best = exMean != null ? Math.min.apply(null, okx) : null, bi = best != null ? exs.indexOf(best) : -1;
     if (exb) exb.innerHTML = ex1Text(bi >= 0 ? { e: E[bi], c: courseOf(E[bi].waku) } : null);
   }
+  // 展示タイム1位の艇の成績(直近半年): 回数と、1着・2着・3着の割合。全国と当地、コース別
   function ex1Text(b) {
     var X = D.pace && D.pace.ex1;
     if (!X || !X.nat || !X.nat[0]) return "";
-    function r(a) { return a && a[0] >= 20 ? Math.round(a[1] / a[0] * 100) + "%" : "—"; }
-    var lines = ['<div class="ex1"><b>展示タイム1位の艇の1着率</b><span>全国 ' + r(X.nat) + "</span><span>" + esc(V.name) + " " + r(X.ven) + "</span></div>"];
-    var cells = [1, 2, 3, 4, 5, 6].map(function (c) {
-      var hit = b && b.c === c;
-      return '<td class="' + (hit ? "top" : "") + '">' + r((X.course || {})[String(c)]) + '<span class="dim">' + r((X.vcourse || {})[String(c)]) + "</span></td>";
+    function r(a, k) { return a && a[0] >= 20 && a.length > k ? Math.round(a[k] / a[0] * 100) : null; }
+    function rt(a, k) { var v = r(a, k); return v == null ? "—" : v + "%"; }
+    function n(a) { return a && a[0] ? Number(a[0]).toLocaleString() : "0"; }
+    var has3 = X.nat.length >= 4, ks = has3 ? [1, 2, 3] : [1];
+    function sum(lbl, a, cls) {
+      return '<div class="ex1s ' + cls + '"><span class="lbl">' + esc(lbl) + "</span>" + ks.map(function (k) { return '<span class="rk r' + k + '">' + k + "着 <b>" + rt(a, k) + "</b></span>"; }).join("") +
+        '<span class="cnt">' + n(a) + "回</span></div>";
+    }
+    var lines = ['<div class="ex1"><h3>展示タイム1位の艇の成績<small>直近半年</small></h3>' + sum("全国", X.nat, "nat") + sum(V.name, X.ven, "ven") + "</div>"];
+    var vals = {};
+    ks.forEach(function (k) { vals[k] = [1, 2, 3, 4, 5, 6].map(function (c) { return r((X.course || {})[String(c)], k); }); });
+    var rows = [1, 2, 3, 4, 5, 6].map(function (c) {
+      var A = (X.course || {})[String(c)], Vc = (X.vcourse || {})[String(c)], hit = b && b.c === c;
+      return '<tr class="' + (hit ? "hit" : "") + '"><th scope="row"><span class="cn">' + c + "</span>" + (hit ? '<span class="here">このレース</span>' : "") + "</th>" +
+        '<td><b>' + n(A) + '</b><span class="dim">' + n(Vc) + "</span></td>" +
+        ks.map(function (k) { return '<td class="r' + k + '"><b>' + rt(A, k) + '</b><span class="dim">' + rt(Vc, k) + "</span></td>"; }).join("") + "</tr>";
     }).join("");
-    lines.push('<div class="vt-wrap"><table class="vt ex1t"><thead><tr><th>コース</th>' + [1, 2, 3, 4, 5, 6].map(function (c) { return "<th>" + c + "</th>"; }).join("") +
-      '</tr></thead><tbody><tr><th scope="row">展示1位の<br>1着率<small>全国/当地</small></th>' + cells + "</tr></tbody></table></div>");
-    if (b) lines.push('<p class="sub">このレースの展示タイム1位は ' + b.e.waku + "号艇 " + esc(b.e.name) + "(" + b.c + "コース)。赤い枠が、そのコースの数字です。</p>");
+    lines.push('<div class="gridt-wrap"><table class="gridt ex1t"><thead><tr><th>コース</th><th>展示1位の回数</th>' + ks.map(function (k) { return "<th>" + k + "着率</th>"; }).join("") +
+      "</tr></thead><tbody>" + rows + "</tbody></table></div>");
+    lines.push('<p class="sub">各マスの上が全国、下が' + esc(V.name) + "の数字です。" + (b ? "このレースの展示タイム1位は " + b.e.waku + "号艇 " + esc(b.e.name) + "(" + b.c + "コース)。色の付いた行が、そのコースです。" : "") + "</p>");
     return lines.join("");
   }
 
@@ -413,27 +452,34 @@
     return out;
   }
   function renderStart(R) {
-    var rows = $("#stRows"), notes = $("#stNotes");
-    if (!rows) return;
-    if (!R.M) { rows.innerHTML = '<tr><td colspan="6" class="why">学習済みの見立てがまだありません。</td></tr>'; return; }
+    var box = $("#stBox"), notes = $("#stNotes");
+    if (!box) return;
+    if (!R.M) { box.innerHTML = '<p class="wait">学習済みの見立てがまだありません。</p>'; return; }
     var B = R.B.slice().sort(function (a, b) { return a.course - b.course; }), M = R.M;
     R.nbMean = avg(B.map(function (b) { return (b.stf.parts || {}).nb || 0; }));
-    var stTop = tops(B.map(function (b) { return b.stf.mean; }), "min"), outTop = tops(B.map(function (b) { return b.stf.pOut; }), "max");
-    rows.innerHTML = B.map(function (b, bi) {
-      var s = b.stf, wb = M.whenBoat(b.course - 1, "out"), top = "—";
-      if (wb) {
-        var bi = 0;
-        wb.p.forEach(function (p, i) { if (p > wb.p[bi]) bi = i; });
-        top = M.classes[bi][0] + "コース" + M.classes[bi][1] + " " + Math.round(wb.p[bi] * 100) + "%";
-      }
-      return '<tr><td><span class="waku w' + b.waku + '">' + b.waku + "</span> " + b.course + "</td><td>" + esc(b.name) + "</td>" +
-        '<td class="num' + (stTop[bi] ? " top" : "") + '">' + st2(s.mean) + '<span class="small">' + st2(s.lo) + "〜" + st2(s.hi) + "</span></td>" +
-        '<td class="num' + (outTop[bi] ? " top" : "") + '">' + Math.round(s.pOut * 100) + '%<span class="meter"><i style="width:' + Math.min(100, s.pOut * 250).toFixed(0) + '%"></i></span></td>' +
-        '<td class="num">' + Math.round(s.pDent * 100) + '%<span class="meter"><i style="width:' + Math.min(100, s.pDent * 250).toFixed(0) + '%"></i></span></td>' +
-        "<td>" + esc(top) + "</td></tr>";
-    }).join("");
+    // 一撃スタートのときに一番起こりやすい決着パターン
+    var tops = B.map(function (b) {
+      var wb = M.whenBoat(b.course - 1, "out");
+      if (!wb) return null;
+      var bi = 0;
+      wb.p.forEach(function (p, i) { if (p > wb.p[bi]) bi = i; });
+      return { c: M.classes[bi][0], k: M.classes[bi][1], p: Math.round(wb.p[bi] * 100) };
+    });
+    function meter(v) { return '<span class="meter"><i style="width:' + Math.min(100, v * 250).toFixed(0) + '%"></i></span>'; }
+    var rows = [];
+    rows.push(vrow("コース", B.map(function (b) { return '<b class="cn">' + b.course + "</b>"; })));
+    rows.push(vrow("予想ST", B.map(function (b) { return "<b>" + st2(b.stf.mean) + '</b><span class="dim rg">' + st2(b.stf.lo) + "<br>〜" + st2(b.stf.hi) + "</span>"; }),
+      B.map(function (b) { return b.stf.mean; }), "min"));
+    rows.push(vrow("一撃<br>スタート", B.map(function (b) { return "<b>" + Math.round(b.stf.pOut * 100) + "%</b>" + meter(b.stf.pOut); }),
+      B.map(function (b) { return b.stf.pOut; }), "max", "out"));
+    rows.push(vrow("凹む", B.map(function (b) { return Math.round(b.stf.pDent * 100) + "%" + meter(b.stf.pDent); }), null, null, "dent"));
+    rows.push(vrow("一撃スタート<br>の時の展開", tops.map(function (t) { return t ? '<span class="tx">' + t.c + "コース<br>" + esc(t.k) + "<br><b>" + t.p + "%</b></span>" : "—"; })));
+    var head = '<thead><tr><th class="corner"></th>' + B.map(function (b) {
+      return '<th class="bw w' + b.waku + '"><span class="bn">' + b.waku + '</span><span class="hn">' + esc(b.name) + femMark(b) + "</span></th>";
+    }).join("") + "</tr></thead>";
+    box.innerHTML = '<div class="vt-wrap"><table class="vt stv">' + head + "<tbody>" + rows.join("") + "</tbody></table></div>";
     var ven = (B[0].stf.parts || {}).ven || 0;
-    notes.innerHTML = B.map(function (b) { return "<li>" + b.course + "コース " + esc(b.name) + ": " + esc(stReasons(b, R).join("、")) + "</li>"; }).join("") +
+    notes.innerHTML = B.map(function (b) { return "<li><b>" + b.course + "コース " + esc(b.name) + femMark(b) + "</b>: " + esc(stReasons(b, R).join("、")) + "</li>"; }).join("") +
       (Math.abs(R.nbMean) >= 0.004 ? "<li>" + esc("メンバー全体が" + (R.nbMean < 0 ? "スタートの早い選手ぞろいで、そろって早いスタートになりやすい" : "スタートの遅めの選手が多く、そろって遅めのスタートになりやすい") +
         "(隣の艇につられる分、平均" + sgn(R.nbMean) + "秒)。") + "</li>" : "") +
       (Math.abs(ven) >= 0.005 ? "<li>" + esc(V.name + "は、全体にSTが" + (ven < 0 ? "早く" : "遅く") + "出やすい場です(" + sgn(ven) + "秒)。") + "</li>" : "");
@@ -515,8 +561,8 @@
       if (dent) pts.push(dent.course + "コース" + dent.name + "は凹む確率" + Math.round(dent.stf.pDent * 100) + "%。凹むと外の" + (dent.course + 1) +
         "コースが" + (dent.course === 2 ? "まくり差し" : "捲り") + "で攻めやすくなる。");
       var outB = B.filter(function (b) { return b.course >= 2 && b.stf.pOut >= 0.15; }).sort(function (a, b) { return b.stf.pOut - a.stf.pOut; })[0];
-      if (outB) pts.push(outB.course + "コース" + outB.name + "はスタートで出る確率" + Math.round(outB.stf.pOut * 100) + "%。" +
-        (outB.course === 2 ? "1コースより先に出ると、ジカまくりも。" : outB.course === 4 ? "カドから出れば、絞ってのカドまくり。" : "出れば内を絞って攻める。"));
+      if (outB) pts.push(outB.course + "コース" + outB.name + "は一撃スタートの確率" + Math.round(outB.stf.pOut * 100) + "%。" +
+        (outB.course === 2 ? "1コースより先に出ると、ジカまくりも。" : outB.course === 4 ? "カドから一撃なら、絞ってのカドまくり。" : "一撃なら内を絞って攻める。"));
     } else if (b2 && b3 && b2.stUse != null && b3.stUse != null && b2.stUse - b3.stUse >= 0.03) {
       pts.push("2コースの平均ST(" + fmt(b2.stUse, 2) + ")が3コース(" + fmt(b3.stUse, 2) + ")より遅い。2コースが凹むと、3コースのまくりが入りやすい。");
     }
@@ -573,7 +619,7 @@
         if (lsTxt) li.push("1コースで負けたときは " + lsTxt + "。");
       }
       if (b.power != null && R.aPow != null) { var d = b.power - R.aPow; li.push(d >= 0.8 ? "このメンバーでは勝率が上位。" : d <= -0.8 ? "このメンバーでは勝率が下位。展開の助けが必要。" : "勝率はメンバーの中で平均的。"); }
-      if (b.stf) li.push("予想ST" + st2(b.stf.mean) + "。出る" + Math.round(b.stf.pOut * 100) + "%・凹む" + Math.round(b.stf.pDent * 100) + "%。");
+      if (b.stf) li.push("予想ST" + st2(b.stf.mean) + "。一撃スタート" + Math.round(b.stf.pOut * 100) + "%・凹む" + Math.round(b.stf.pDent * 100) + "%。");
       else if (b.stUse != null && R.aSt != null) { var ds = R.aSt - b.stUse; if (ds >= 0.02) li.push("STが速い(" + fmt(b.stUse, 2) + ")。先手を取れる。"); else if (ds <= -0.02) li.push("STが遅め(" + fmt(b.stUse, 2) + ")。スタートで後手に回りやすい。"); }
       if (b.local && b.rate) { var dl = b.local - b.rate; if (dl >= 0.4) li.push("当地勝率が全国より高い。この水面は得意。"); else if (dl <= -0.4) li.push("当地勝率が全国より低い。この水面は苦手寄り。"); }
       var dw = dochu(b);
@@ -582,7 +628,7 @@
         var cs = (b.cs || {})[String(cn)];
         return '<div class="' + (cn === b.course ? "cur" : "") + '">' + cn + "<b>" + (cs && cs.n ? pct(cs.w1, cs.n) + "%" : "—") + "</b>" + (cs && cs.n ? cs.n + "走" : "") + "</div>";
       }).join("");
-      return '<div class="boat"><h3><span class="waku w' + b.waku + '">' + b.waku + "</span>" + esc(b.name) + '<span class="tag">' + b.course + "コース</span>" +
+      return '<div class="boat"><h3><span class="waku w' + b.waku + '">' + b.waku + "</span>" + esc(b.name) + femMark(b) + '<span class="tag">' + b.course + "コース</span>" +
         '<span class="sub">勝ち筋 ' + b.share.toFixed(0) + '%</span></h3><div class="courses" aria-label="コース別1着率">' + grid + "</div><ul>" +
         li.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
     }).join("");
@@ -930,7 +976,7 @@
     boxB.innerHTML = R.B.slice().sort(function (a, b) { return a.waku - b.waku; }).map(function (b) {
       var on = b.waku === axis.waku;
       return '<button type="button" class="nvb' + (on ? " on" : "") + '" data-w="' + b.waku + '" aria-pressed="' + on + '">' + wk(b.waku) +
-        '<span class="nm">' + esc(surname(b.name)) + (b.course !== b.waku ? '<small>' + b.course + "コース</small>" : "") + "</span>" +
+        '<span class="nm">' + esc(surname(b.name)) + femMark(b) + (b.course !== b.waku ? '<small>' + b.course + "コース</small>" : "") + "</span>" +
         '<span class="p">1着' + pTxt(b.share || 0) + "</span></button>";
     }).join("");
     boxT.innerHTML = NV_KS.map(function (kk) {
@@ -1104,6 +1150,11 @@
     tabs.forEach(function (b) { b.addEventListener("click", function () { show(b.getAttribute("data-tab"), true); }); });
     var h = (location.hash || "").slice(1);
     show(names.indexOf(h) >= 0 ? h : names[0], false);
+    // 表の見出し(選手名)を、上に止まるタブのすぐ下に止める
+    var bar = $(".tabs");
+    function tabsH() { if (bar) document.documentElement.style.setProperty("--tabsH", bar.offsetHeight + "px"); }
+    tabsH();
+    window.addEventListener("resize", tabsH);
   }
   setupTabs();
   copyBtn("#btnCopy", "#post", "#copyMsg");

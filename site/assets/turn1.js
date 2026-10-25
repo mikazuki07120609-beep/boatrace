@@ -36,8 +36,8 @@
   var PRIOR = { 2: [0.28, 0.0, 0.64], 3: [0.42, 0.37, 0.12], 4: [0.49, 0.25, 0.17], 5: [0.16, 0.65, 0.07], 6: [0.27, 0.45, 0.12] };
   var COLORS = { 1: ["#f4f6f8", "#14212b"], 2: ["#1b1b1b", "#ffffff"], 3: ["#d7282f", "#ffffff"],
                  4: ["#1d5fbf", "#ffffff"], 5: ["#f2cf1d", "#14212b"], 6: ["#1f9a4b", "#ffffff"] };
-  var FONT = '"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif';
-  var MONO = '"IBM Plex Mono",ui-monospace,monospace';
+  var FONT = '"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
+  var MONO = '"M PLUS Rounded 1c","Hiragino Sans",ui-monospace,monospace';
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
@@ -175,6 +175,16 @@
       return best;
     }
     function set(b, role, ref, over, under) { if (!b) return; b.role = role; b.ref = ref || null; b.over = over || []; b.under = under || null; }
+    // 捲りに対抗する艇: 攻める艇のすぐ内から順に、スタートで並んでいる(遅れていない)艇が張って止めに行く。
+    // 4の攻めには3、3の攻めには2。内の艇がみんな遅れていたら null(1コースが対抗するしかない)
+    var BLOCK_LEAD = 0.05;
+    function counterOf(a) {
+      for (var c = a.course - 1; c >= 2; c--) {
+        var x = byC[c];
+        if (x && !x.win && lead(a, x) < BLOCK_LEAD) return x;
+      }
+      return null;
+    }
     function midBoats(lo, hi) { return boats.filter(function (o) { return o.course > lo && o.course < hi; }); }
 
     // 着順の並び(予想、または実際のレースの着順)が分かっていれば、それに合わない仕掛けはさせない
@@ -192,7 +202,13 @@
             lead(kado, byC[kado.course - 1]) >= 0.02 && lead(kado, b1) >= -0.25 && kado.tac["捲り"] + kado.tac["捲り差し"] >= 0.5) A = kado;
       }
       if (A) {
-        set(A, "makuri", b1); A.fail = true; set(b1, strong1() >= 0.45 ? "nigeHari" : "nige");   // 1コースは張り気味に先に回って止める
+        set(A, "makuri", b1); A.fail = true;
+        var X = counterOf(A);
+        if (X && !(tgt && tpos(X.course) <= 1)) {
+          // すぐ内の艇がスタートで並んでいて、張って止めに行く(攻めた艇と一緒に流れる)。1コースはふつうに逃げる
+          set(X, "kabe", A); X.flowOut = true; A.ref = X;
+          set(b1, "nige");
+        } else set(b1, strong1() >= 0.45 ? "nigeHari" : "nige");   // 内の艇が遅れた: 1コースが張り気味に先に回って止める
         // 止められた捲りの外の艇は、捲りについて行かず、流れた捲りの内へ切り替えて差す
         //(すぐ外はブイ際へ、その外は内の差しと捲りの間へ、遠い艇は内の差しの後ろ)
         boats.forEach(function (o) { if (o.course > A.course) set(o, "sashi", A); });
@@ -202,7 +218,9 @@
       A = W;
       force(W, inner(W), Math.max(0.035, thr(W) * 0.7));
       set(W, "makuri", b1);
-      set(b1, strong1() >= 0.8 && lead(W, b1) < 0.05 ? "hari" : "nokoshi");
+      // 捲りに対抗するのは、すぐ内の艇(並んでいれば張りに行くが、捲られる)。1コースが張るのは、内の艇がみんな遅れたときだけ
+      if (counterOf(W)) set(b1, "nokoshi");
+      else set(b1, strong1() >= 0.8 && lead(W, b1) < 0.05 ? "hari" : "nokoshi");
     } else if (k === "差し") {
       if (cw === 2) {
         // 2コースの差しが決まるのは、1コースが全速で流れるか、外の捲りに張って2艇とも流れたとき
@@ -286,10 +304,12 @@
           over.forEach(function (o) { o.flowExtra = Math.max(o.flowExtra || 0, 0.04); });
         } else if (U) {
           if (X.course === 2) set(X, "sashi", U);
+          else if (follow(U) && X.course === U.course + 1 && X.tac["捲り差し"] + X.tac["差し"] >= 0.25) set(X, "makurizashi", null, [], U);   // 捲りのすぐ外は、捲りについて行って、その内を捲り差す
           else if (follow(U)) set(X, "mark", U);
           else set(X, "soto");                                               // 自分のコースの外を回る(内の艇と並んで回る)
         } else if (W.course < X.course) {
-          if (follow(W)) set(X, "mark", W); else set(X, "soto");             // 捲った勝つ艇の外について回る。そうでなければ自分のコースの外
+          if (follow(W) && X.course === W.course + 1 && X.tac["捲り差し"] + X.tac["差し"] >= 0.25) set(X, "makurizashi", null, [], W);
+          else if (follow(W)) set(X, "mark", W); else set(X, "soto");        // 捲った勝つ艇の外について回る。そうでなければ自分のコースの外
         } else {
           set(X, "sashi", byC[tgt[p0 - 1]] || W); X.wait = Math.max(X.wait, 0.5);
         }
@@ -300,12 +320,23 @@
       if (b.role) return;
       var c = b.course;
       if (c === 1) { set(b, A && !A.fail ? (strong1() >= 0.8 && lead(A, b) < 0.04 ? "hari" : "nokoshi") : "nige"); return; }
-      if (A && c < A.course) { set(b, "sashi", b1); b.squeezed = true; return; }          // 捲られる側: 内で小回り(遅れる)
+      if (A && c < A.course) {                                                             // 捲られる側: 内で小回り(遅れる)
+        set(b, "sashi", b1);
+        b.squeezed = !(A.ref && A.ref.role === "kabe" && c < A.ref.course);                  // 張って止める艇より内の艇は、絞られない
+        return;
+      }
       if (A && c === A.course + 1) {
         var lc = lead(b, A);
         if (lc >= 0.03 && b.tac["捲り"] >= 0.4 && !A.win) { set(b, "nidan", A); return; }         // さらに外から捲る
-        if (lc >= -0.02 && b.tac["捲り"] >= 0.33 && b.tac["差し"] < 0.45) { set(b, "mark", A); return; }   // 捲りについて行く
-        if (b.tac["捲り差し"] >= b.tac["差し"]) set(b, "makurizashi", null, midBoats(1, A.course), A);
+        if (A.flowOut) {                                                                          // 捲った艇が1コースに張られて流れる形: これまでどおり
+          if (lc >= -0.02 && b.tac["捲り"] >= 0.33 && b.tac["差し"] < 0.45) { set(b, "mark", A); return; }
+          if (b.tac["捲り差し"] >= b.tac["差し"]) set(b, "makurizashi", null, midBoats(1, A.course), A);
+          else set(b, "sashi", A);
+          return;
+        }
+        if (lc >= -0.02 && b.tac["捲り"] >= 0.5 && b.tac["捲り差し"] < 0.15 && b.tac["差し"] < 0.3) { set(b, "mark", A); return; }   // 捲り一本の選手は、捲りについて行く
+        // 内の艇が捲りに行けば、そのすぐ外の艇は捲りについて行って、その内を捲り差す(3が捲りに行けば4は捲り差し)
+        if (b.tac["捲り差し"] + b.tac["捲り"] >= b.tac["差し"] * 0.8) set(b, "makurizashi", null, [], A);
         else set(b, "sashi", A);
         return;
       }
@@ -324,7 +355,12 @@
       }
       var left = byC[c - 1];
       if (c === 4) { if (b.tac["差し"] >= 0.3 || !left) set(b, "sashi", left || b1); else set(b, "soto"); return; }   // 内を差すか、3コースの外を並んで回る
-      // 5・6コース: 内の艇が遅れていれば、その前を横切ってさらに内の艇の内へ(まくり差し)。そうでなければ差すか外を回す
+      // 5・6コース: すぐ内の艇が差しに向かえば(差し構えで待つ)、その前を横切ってさらに内の艇の内へ捲り差すチャンス
+      if (left && left.role === "sashi" && !left.win && lead(b, left) >= -0.02 && b.tac["捲り差し"] >= 0.3) {
+        var und = left.ref && left.ref !== b && !left.ref.win ? left.ref : byC[c - 2];
+        if (und && !und.win) { set(b, "makurizashi", null, [left], und); left.wait = Math.max(left.wait, 0.5); return; }
+      }
+      // 内の艇が遅れていれば、その前を横切ってさらに内の艇の内へ(まくり差し)。そうでなければ差すか外を回す
       if (left && lead(b, left) >= 0.05 && b.tac["捲り差し"] >= 0.4 && byC[c - 2] && byC[c - 2].role !== "sashi" && !left.win && !byC[c - 2].win) {
         set(b, "makurizashi", null, [left], byC[c - 2]); left.wait = Math.max(left.wait, 0.5); return;
       }
@@ -334,7 +370,8 @@
     boats.forEach(function (b) {
       if (b.role === "makurizashi" && !b.under) b.under = b1;
       // 勝つ艇の前を横切ったり、勝つ艇の内を差したりする動きは、決着パターンと食い違うのでさせない(後ろから差すか、ついて行く)
-      if (!b.win && b.role === "makurizashi" && (b.over.indexOf(W) >= 0 || b.under === W) && !(b.byOrder && k === "逃げ" && b.under === W)) {
+      if (!b.win && b.role === "makurizashi" && (b.over.indexOf(W) >= 0 || b.under === W) && !(b.byOrder && k === "逃げ" && b.under === W) &&
+          !(k === "捲り" && b.under === W && b.course === W.course + 1)) {
         if (A && A !== b && !A.win) set(b, b.tac["差し"] >= 0.3 ? "sashi" : "mark", A); else set(b, "sashi", W);
         b.over = [];
       }
@@ -347,7 +384,7 @@
   // ライン(走る道筋): 1マークに入る横位置(yi)、ブイに一番近づく距離(dz)、出口の横位置(yo)、旋回の膨らみ方(rho = 出口の半径/入口の半径)
   // ======================================================================
   function natY(c) { return 5.8 + 4.2 * (c - 1); }          // 仕掛けがないときに、1マークの手前で寄っている位置
-  var ORDER = { nige: 0, nigeHari: 0, kotsu: 0, zensoku: 0, hari: 0, nokoshi: 0, makuri: 1, nidan: 2, mark: 2, zen: 3, sashi: 4, makurizashi: 4, soto: 5 };
+  var ORDER = { nige: 0, nigeHari: 0, kotsu: 0, zensoku: 0, hari: 0, nokoshi: 0, kabe: 1, makuri: 1, nidan: 2, mark: 2, zen: 3, sashi: 4, makurizashi: 4, soto: 5 };
 
   // 1マークの手前に着く順番の目安(直線の見込みと、戦法ごとの待ち)。差しの「内の壁」(先に回る艇)を決めるのに使う
   function arrivals(boats) {
@@ -388,6 +425,13 @@
       case "kotsu": sp = { yi: 5.6, dz: 3.8, yo: -9.6, rho: 1.25 }; break;                          // 小回り(差しの余地をなくす)
       case "zensoku": sp = { yi: 6.4, dz: 6.2, yo: -15.5, rho: 1.35 }; break;                       // 全速で回って膨らむ
       case "hari": sp = { yi: L + 3.2, dz: 7.6, yo: -18.0, rho: 1.3, late: true }; break;           // 外へ張って止めに行く
+      case "kabe": {                                                                                // 2〜5コース: 外の捲りに張って止めに行く(一緒に流れる)
+        var innK = boats.filter(function (o) { return o.sp && o !== b && o.course < c && !o.sp.queue; });
+        var dmK = innK.length ? Math.max.apply(null, innK.map(function (o) { return o.sp.dz; })) : s1.dz;
+        var ymK = innK.length ? Math.min.apply(null, innK.map(function (o) { return o.sp.yo; })) : s1.yo;
+        sp = { yi: Math.max(L + 2.6, natY(c) + 1.2), dz: dmK + 3.2, yo: ymK - 3.0, rho: 1.2, late: true };
+        break;
+      }
       case "nokoshi": sp = { yi: 5.6, dz: 3.7, yo: -9.0, rho: 1.3 }; break;                         // 小回りで残す
       case "makuri": sp = { yi: rs.yi + 3.4, dz: rs.dz + 3.4, yo: Math.min(-12.5, rs.yo - 2.4), rho: 1.08, sq: true }; break;
       case "nidan": sp = { yi: rs.yi + 3.3, dz: rs.dz + 3.2, yo: rs.yo - 2.6, rho: 1.06, sq: true }; break;
@@ -463,7 +507,7 @@
     if ((b.role === "zen" || b.role === "makurizashi" || b.role === "sashi") && byC[1]) d.push(byC[1]);
     if (b.role === "sashi" || b.role === "makurizashi")
       boats.forEach(function (o) { if (o.course < b.course && o.tArr < b.tArr - 0.04 && o.role !== "soto") d.push(o); });
-    if (b.role === "soto") boats.forEach(function (o) { if (o.course < b.course && o.role !== "soto") d.push(o); });
+    if (b.role === "soto" || b.role === "kabe") boats.forEach(function (o) { if (o.course < b.course && o.role !== "soto") d.push(o); });
     return d.filter(function (o) { return o && o !== b; });
   }
   function specs(boats, byC) {
@@ -741,7 +785,7 @@
       if (x === b) return;
       if (x.role === "makurizashi" && x.over.indexOf(b) >= 0) out.push(x);
       if ((x.role === "makuri" || x.role === "nidan") && !x.fail && b.course < x.course &&
-          ((x.ref === b && b.role !== "hari") || b.squeezed)) out.push(x);
+          ((x.ref === b && b.role !== "hari" && b.role !== "kabe") || b.squeezed)) out.push(x);
     });
     return out;
   }
@@ -835,6 +879,7 @@
       if ((x.role === "makuri" || x.role === "nidan") && !x.fail) boats.forEach(function (o) { if (o.course < x.course) e(x, o); });
       if (x.role === "nidan" && x.ref) e(x, x.ref);
       if ((x.role === "makuri" || x.role === "nidan") && x.fail && byC[1]) e(byC[1], x);
+      if (x.role === "kabe" && x.ref && x.ref.fail) e(x, x.ref);                             // 張って止める艇が先(止められた捲りは、その外を回る)
       if (x.role === "sashi") {
         if (x.ref) e(x.ref, x);
         boats.forEach(function (o) { if (o.course < x.course && o.role !== "sashi" && o.role !== "makurizashi") e(o, x); });
@@ -1393,6 +1438,7 @@
         else if (b.role === "nokoshi" && l.pos <= 3) add(b, idxAtG(b, gTurn), "1コース 小回りで残す", 3.0);
         return;
       }
+      if (b.role === "kabe" && b.sp.yi - b.lane >= 0.8) add(b, idxAtS(b, b.sp.xin - 22), c + "コース 張る", 2.5);
       var txt = null, pr = 3.2, gi = gTurn;
       // 捲った艇の外について回ったか(ついて行く相手をたどって、捲った艇に行き着くか)
       var follows = function (x) {

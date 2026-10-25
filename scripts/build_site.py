@@ -11,7 +11,7 @@ from common import DATA, OUT, PROGRAM, RESULTS, ROOT, SITE, VENUES, KIMARITE, lo
 from alerts import badges, race_alerts
 from motor import motor_rates, raw_scores, venue_grades
 import pace as pacemod
-from stats import VENUE_DAYS, collect, venue_table
+from stats import VENUE_DAYS, category_resolver, collect, venue_table
 
 SITE_NAME = "水面ノート"
 BASE_URL = "https://mikazuki07120609-beep.github.io/boatrace/"
@@ -55,7 +55,7 @@ def page(title, desc, body, depth, path, scripts="", notes=None):
 <meta property="og:site_name" content="{SITE_NAME}"><meta name="twitter:card" content="summary">
 <link rel="canonical" href="{BASE_URL}{path}">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Mochiy+Pop+One&display=swap">
 <link rel="stylesheet" href="{rel}assets/style.css">
 </head><body><div class="wrap">
 <header class="site-head"><a class="logo" href="{rel}index.html">{SITE_NAME}</a>
@@ -348,7 +348,9 @@ def result_banner(res_live, result) -> str:
 
 
 RACE_NOTES = [
-    "出走表:「このコース」は、枠番と同じコースに入ったとき(展示で進入が変わったら、そのコース)の直近1年の成績です。1着・2着・3着の率、平均STと走数。赤い枠は、その項目で一番良い艇です。黄色の印はフライング(F)と、今節の失格・出遅れ・欠場です。",
+    "出走表:「このコース」は、枠番と同じコースに入ったとき(展示で進入が変わったら、そのコース)の直近1年の成績です。1着・2着・3着の率、平均STと走数。赤はその項目で1位、青は2位の艇です。黄色の印はフライング(F)と、今節の失格・出遅れ・欠場です。",
+    "女子戦・SG・G1・G2・G3・一般の区分は、BOAT RACE オフィシャルウェブサイトの開催のグレードから取っています(オールレディース・ヴィーナスシリーズと、6艇とも女子レーサーのレースは女子戦)。"
+    "出走表の「(区分)のときのこのコース」は、その区分のレースだけで数えた直近1年の成績です。♥は女子レーサーです(公式の選手期別成績から。新しくデビューした選手は、次のファイルが出るまで付きません)。",
     "勝ち方は、そのコースで1着になったときの決まり手の回数。2着の時は、2着になったレースでどう動いたかの推定です(公式の記録は1着の決まり手だけなので、1着の艇のコース・決まり手と、スタートの並びから推定)。"
     "1コースは差され・捲られなど負け方、2〜6コースは差し(勝った艇の内の筋)・捲り(内より先に出て外から)・捲差(間の艇の前を横切って内へ)・残し(外に先に回られたが残した)・道中(道中の抜き合い)。",
     "逃げ・逃がしは、1コースのときに逃げた割合と、2コースのときに1コースが逃げた割合(逃がし率。低いほど1コースを崩している)。",
@@ -360,8 +362,8 @@ RACE_NOTES = [
     "測り方は場ごとに違うので、同じレースの6艇の中で比べてください(短いほど良い)。",
     "直線速度(推定)は展示タイム(直線150m)から出した速さです。一周タイム(推定)は、その場の標準の一周に、モーター(直近60日)と選手(直近1年)のレースのペース"
     "(同じレースの同じ着順の平均と比べた速さ)と、展示タイムの差を足したもの。まわり足(推定)は、そのペースのうち展示タイム(直線の速さ)では説明できない分で、マイナスほど旋回が速い目安です。"
-    "どちらも公式の計測ではなく、レースタイムから計算した推定です。展示タイム1位の1着率は、直近半年の全レースで、展示タイムが一番速かった艇が1着になった割合です。",
-    "1周1マークの映像・スタートの見立て・展開の見立ては、スタート展示の進入とSTが出てから計算します。スタートの見立ては、選手の平均ST・ばらつき・フライング持ち・コース・風・展示STから、"
+    "どちらも公式の計測ではなく、レースタイムから計算した推定です。展示タイム1位の成績は、直近半年の全レースで、展示タイムが一番速かった艇(同タイムは全部)の回数と、1着・2着・3着になった割合です(回数が20回に満たないときは「—」)。",
+    "1周1マークの映像・スタートの見立て(直前情報のタブ)・展開の見立ては、スタート展示の進入とSTが出てから計算します。スタートの見立ては、選手の平均ST・ばらつき・フライング持ち・コース・風・展示STから、"
     "過去のレースで実際に起きたスタートのずれ方を当てはめた400通りのスタートで計算し、展開の見立てはそれぞれのスタートでどのコースがどの決まり手で1着になりやすいかを平均したものです。式の重みは毎晩学習し直しています。",
     "映像の差しは内の艇の後ろから内へ、捲りは内の艇の外を全速で、まくり差しは隣の艇の前を横切ってさらに内の艇の内へ。吹き出しの戦法名は、走らせた結果の位置関係から決めています。",
     "本線の2着・3着は、1着の艇と決まり手ごとに、1着の艇から見た位置・勝率・スタート・展示タイム・モーター・そのコースの2着率から、過去のレースで学習した式で出しています。"
@@ -377,7 +379,41 @@ RACE_NOTES = [
 ]
 
 
-def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None, alerts=None, pace=None, mrates=None):
+CAT_CLASS = {"女子戦": "cw", "SG": "cSG", "G1": "cG1", "G2": "cG2", "G3": "cG3", "一般": "cIp"}
+
+
+def cat_tag(cat) -> str:
+    return f'<span class="tag cat {CAT_CLASS.get(cat, "")}">{e(cat)}</span>' if cat else ""
+
+
+KIM_HEAD = {"逃げ": "逃げ", "捲り": "捲り", "差し": "差し", "捲り差し": "捲り<br>差し", "抜き": "抜き", "恵まれ": "恵まれ"}
+
+
+def place_kim_tables(place, kim) -> str:
+    """コース別の着順(1着・2着・3着)と、1着の決まり手の割合を、横に動かさなくても見られる2つの表にする。
+    1位(一番高い)は赤、2位は青(着順は列ごと、決まり手は行ごと)。"""
+    if not place:
+        return ""
+    def r12(vals):
+        u = sorted({v for v in vals if v is not None and v > 0}, reverse=True)
+        return (u[0] if u else None), (u[1] if len(u) > 1 else None)
+    cols = [r12([place[i][j] for i in range(6)]) for j in range(3)]
+    rows1 = "".join(f'<tr><td><span class="waku w{i + 1}">{i + 1}</span></td>' + "".join(
+        f'<td class="num{" hi" if v == cols[j][0] else " hi2" if v == cols[j][1] else ""}">{f1(v)}</td>' for j, v in enumerate(place[i])) + "</tr>" for i in range(6))
+    rows2 = ""
+    for i in range(6):
+        k = kim[i] if kim else [0] * 6
+        a, b = r12(k)
+        rows2 += (f'<tr><td><span class="waku w{i + 1}">{i + 1}</span></td>' + "".join(
+            f'<td class="num{" hi" if v == a else " hi2" if v == b else ""}">{f1(v)}</td>' for v in k) + "</tr>")
+    return ('<div class="pkt"><div class="gridt-wrap"><table class="gridt kt"><caption>着順の割合</caption><thead><tr><th>コース</th><th class="num">1着</th><th class="num">2着</th><th class="num">3着</th></tr></thead>'
+            f'<tbody>{rows1}</tbody></table></div>'
+            '<div class="gridt-wrap"><table class="gridt kt kk"><caption>1着の決まり手</caption><thead><tr><th>コース</th>'
+            + "".join(f'<th class="num">{KIM_HEAD.get(k, k)}</th>' for k in KIMARITE) + f'</tr></thead><tbody>{rows2}</tbody></table></div></div>')
+
+
+def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ranks=None, vlive=None, motors=None, today_m=None, alerts=None, pace=None, mrates=None,
+               cat=None, cat_tbl=None, fem=None):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     path = f"{ymd}/{code}/{race['no']:02d}.html"
@@ -401,18 +437,24 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         x["series_days"] = list(x.get("series_codes") or []) + ([(today_m or {}).get(x["toban"])] if (today_m or {}).get(x["toban"]) else [])
         rk = (ranks or {}).get(x["toban"])
         x["srank"] = [rk[0], rk[1]] if rk else None
+        x["fem"] = 1 if fem and x["toban"] in fem else 0            # 女子レーサー(公式の選手期別成績から)
+        if cat:
+            x["csg"] = ((racers.get(x["toban"]) or {}).get("g") or {}).get(cat) or {}   # このレースの区分(女子戦・SG など)での、コースごとの[走数, 1着, 2着, 3着]
     SEARCH.setdefault(ymd, {"venues": {}, "races": []})["races"].append({
         "c": code, "no": race["no"], "nm": race["name"], "dl": race.get("deadline"), "ds": race.get("distance"),
         "al": {k: v for k, v in (alerts or {}).items() if v},
-        "e": [{"w": x["waku"], "t": x["toban"], "n": x["name"], "k": x.get("cls"), "f": x.get("fp") or 0,
+        "e": [{"w": x["waku"], "t": x["toban"], "n": x["name"], "k": x.get("cls"), "f": x.get("fp") or 0, "fm": x.get("fem") or 0,
                "g": (x.get("mg") or {}).get("grade"), "z": (x.get("mg") or {}).get("z")} for x in ents]})
     rel = "../" * depth
-    names = "".join(f'<li><span class="waku w{x["waku"]}">{x["waku"]}</span> {e(x["name"])} <span class="small">{e(x["cls"])} {e(x["branch"])}</span></li>' for x in ents)
+    names = "".join(f'<li><span class="waku w{x["waku"]}">{x["waku"]}</span> {e(x["name"])}{"<span class=\"fem\">♥</span>" if x.get("fem") else ""} <span class="small">{e(x["cls"])} {e(x["branch"])}</span></li>' for x in ents)
     card = ('<section><h2>出走表</h2><div id="cardBox"><ul class="plain">' + names + "</ul></div>"
-            '<p class="note">赤い枠は、その項目で一番良い艇です。黄色の印はフライング(F)と、今節の失格・出遅れ・欠場です。</p></section>')
+            '<p class="note">赤はその項目で1位、青は2位の艇です。黄色の印はフライング(F)と、今節の失格・出遅れ・欠場です。</p></section>')
     before_html = ('<section aria-labelledby="h-before"><div class="row-head"><h2 id="h-before">直前情報</h2><span class="sub" id="beforeAt"></span></div>'
                    '<div id="beforeBox"><p class="wait">展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。</p></div>'
-                   '<div id="ex1Box"></div><p class="note">赤い枠は、その項目で一番良い艇です。推定の数字は、過去のレースのタイムと展示タイムから計算した目安です。</p></section>')
+                   '<p class="note">赤はその項目で1位、青は2位の艇です。推定の数字は、過去のレースのタイムと展示タイムから計算した目安です。</p></section>'
+                   '<section class="ex1sec"><div id="ex1Box"></div></section>'
+                   '<section class="gated" aria-labelledby="h-st"><h2 id="h-st">スタートの見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
+                   '<div id="stBox"></div><ul class="points" id="stNotes"></ul></div></section>')
     view = ('<section class="t1" aria-labelledby="h-t1"><div class="row-head"><h2 id="h-t1">1周1マーク展開シミュレーション</h2></div>'
             '<p class="wait" id="t1Wait">スタート展示の進入とSTが出たら、それをもとに作ります。</p>'
             '<div id="t1Body" hidden><canvas id="t1view" role="img" aria-label="スタートから全艇が1周1マークを回り切るまでを上空から見たシミュレーション"></canvas>'
@@ -428,11 +470,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
             '<div class="nvsel"><div class="nvl">軸艇</div><div class="nvboats" id="nvBoats" role="group" aria-label="軸艇"></div>'
             '<div class="nvl">戦術</div><div class="nvtacs" id="nvTacs" role="group" aria-label="戦術"></div></div>'
             '<div id="nvOut"><p class="wait">計算しています…</p></div></section>')
-    analysis = ('<section class="gated"><h2>スタートの見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
-                '<div class="scroll"><table class="stt"><thead><tr><th>コース</th><th>選手</th><th class="num">予想ST</th>'
-                '<th class="num">出る</th><th class="num">凹む</th><th>出たときの展開</th></tr></thead><tbody id="stRows"></tbody></table></div>'
-                '<ul class="points" id="stNotes"></ul></div></section>'
-                '<section class="gated"><h2>展開の見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
+    analysis = ('<section class="gated"><h2>展開の見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
                 '<p class="sub" id="scenLead"></p><div class="scen" id="scen"></div><div class="p2" id="scen2"></div></div></section>'
                 '<section class="gated"><h2>道中のポイント</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
                 '<ul class="points" id="points"></ul><div class="boats" id="boats"></div></div></section>'
@@ -447,43 +485,37 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         top_st = min(sts) if sts else None
         trs = "".join(
             f'<tr><td class="num">{x["rank"] or e(x["status"])}</td><td><span class="waku w{x["waku"]}">{x["waku"]}</span></td>'
-            f'<td>{e(x["name"])}</td><td class="num">{x["course"] or "—"}</td>'
+            f'<td>{e(x["name"])}{"<span class=\"fem\">♥</span>" if fem and x.get("toban") in fem else ""}</td><td class="num">{x["course"] or "—"}</td>'
             f'<td class="num{" hi" if x.get("st") is not None and x["st"] == top_st and not x.get("flying") else ""}">'
             f'{("F" if x.get("flying") else "") + f1(x.get("st"), 2)}</td><td class="num">{f1(x.get("ex"), 2)}</td>'
             f'<td class="num">{e(x.get("time") or "—")}</td></tr>' for x in rr)
         rv = review_text(vname, race["no"], result, url)
         res_html = (f'<section><div class="row-head"><h2>結果の詳細</h2><span class="tag">決まり手 {e(result.get("kimarite") or "—")}</span>'
                     f'<span class="sub">{e(result.get("weather"))}・風 {e(result.get("wind_dir"))}{e(result.get("wind"))}m・波 {e(result.get("wave"))}cm</span></div>'
-                    '<div class="scroll"><table><thead><tr><th class="num">着</th><th>枠</th><th>選手</th><th class="num">進入</th>'
+                    '<div class="gridt-wrap"><table class="gridt"><thead><tr><th class="num">着</th><th>枠</th><th>選手</th><th class="num">進入</th>'
                     f'<th class="num">ST</th><th class="num">展示</th><th class="num">タイム</th></tr></thead><tbody>{trs}</tbody></table></div>'
                     '<div class="row-head"><h2>回顧文</h2><button id="btnCopyR" type="button">コピー</button></div>'
                     f'<textarea id="review" aria-label="回顧文">{e(rv)}</textarea><p class="note" id="copyMsgR" aria-live="polite"></p></section>')
     # 場
-    vrows = ""
-    if vinfo["place"]:
-        for i in range(6):
-            pl = vinfo["place"][i]
-            k = vinfo["kimarite"][i]
-            mx = max(k) if k else 0
-            vrows += (f'<tr><td><span class="waku w{i + 1}">{i + 1}</span></td>' + "".join(f'<td class="num">{f1(v)}</td>' for v in pl)
-                      + "".join(f'<td class="num{" hi" if v == mx and v > 0 else ""}">{f1(v)}</td>' for v in k) + "</tr>")
     p1 = vinfo["place"][0][0] if vinfo["place"] else 0
     facts = " ".join(f'<span class="tag">{e(t)}</span>' for t in [vinfo.get("pref"), vinfo.get("water") and "水質:" + vinfo["water"],
                                                                      vinfo.get("tide") and "干満差:" + vinfo["tide"], tier(p1)] if t)
     venue_html = ('<section><h2>レース場の特徴</h2>' + f'<div class="meta">{facts}</div>'
-                  '<div class="scroll"><table><thead><tr><th>コース</th><th class="num">1着</th><th class="num">2着</th><th class="num">3着</th>'
-                  + "".join(f'<th class="num">{k}</th>' for k in KIMARITE) + f'</tr></thead><tbody>{vrows}</tbody></table></div>'
-                  f'<p class="note">単位:%。{e(vinfo["src"])}</p></section>')
+                  + place_kim_tables(vinfo["place"], vinfo["kimarite"]) + f'<p class="note">単位:%。{e(vinfo["src"])}</p></section>')
+    if cat and cat_tbl:
+        venue_html += (f'<section class="catsec"><h2>{e(cat)}のコース別成績 <small class="h2s">全国・直近1年</small></h2>'
+                       + place_kim_tables(cat_tbl["place"], cat_tbl["kimarite"]) +
+                       f'<p class="note">単位:%。全国の{e(cat)}({cat_tbl["races"]}レース)の、コースごとの1着・2着・3着の割合と、1着になったときの決まり手の割合(当サイト集計)。</p></section>')
     # ナビ
     chips = "".join(f'<a class="chip{" on" if r["no"] == race["no"] else ""}" href="{r["no"]:02d}.html">{r["no"]}R</a>' for r in vprog["races"])
     head = (f'<nav class="crumb"><a href="{rel}index.html">今日のレース</a>›<a href="{rel}{ymd}/index.html">{jdate(d)}</a>›'
             f'<a href="index.html">{e(vname)}</a></nav>'
             f'<h1>{e(vname)} {race["no"]}R {e(race["name"])}</h1>'
             f'<div class="meta"><span class="tag" id="dlTag">締切 {e(race["deadline"])}</span><span class="tag">{race["distance"]}m</span>'
-            + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
+            + cat_tag(cat) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="sub">{e(vprog.get("title", ""))}</span></div>'
             f'<div class="alerts" id="alerts">{badges(alerts or {})}</div><div class="chips">{chips}</div>')
-    data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")}, "alerts": alerts or {},
+    data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")}, "alerts": alerts or {}, "cat": cat,
             "race": {"date": d.isoformat(), "ymd": ymd, "no": race["no"], "name": race["name"], "deadline": race.get("deadline")}, "entries": ents,
             "vt": tables[0], "nt": tables[1]}
     if result:
@@ -554,7 +586,7 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
                     f'<td class="num">{c1txt}</td></tr>')
     p1 = vinfo["place"][0][0] if vinfo["place"] else 0
     body = (f'<nav class="crumb"><a href="../../index.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
-            f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
+            f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + cat_tag(venue_cat(ymd, code)) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
             f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{e(LIVE_BASE)}{ymd}/{code}.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
             '<th>結果</th><th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
@@ -563,6 +595,17 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
     desc = f"{vname}の{jdate(d)}の全レースの出走表、選手のコース別成績、展開の見立て。{vprog.get('title', '')}"
     notes = ["1号艇の1コース1着率は、直近1年に1コースに入ったときの成績です。締切までの時間は、この端末の時計で数えています。"]
     write(f"{ymd}/{code}/index.html", page(title, desc, body, 2, f"{ymd}/{code}/", '<script src="../../assets/day.js"></script>', notes))
+
+
+GRADES_ALL: dict = {}   # 開催のグレード(data/grades.json。main で読み込む)
+
+
+def venue_cat(ymd: str, code: str):
+    """開催のグレードの表示名(オールレディース・ヴィーナスシリーズは「女子戦」)。"""
+    g = (GRADES_ALL.get(ymd) or {}).get(code)
+    if not g:
+        return None
+    return "女子戦" if ("lady" in g or "venus" in g) else g[0]
 
 
 def day_cards(d, prog, depth_prefix, alerts=None):
@@ -575,7 +618,7 @@ def day_cards(d, prog, depth_prefix, alerts=None):
         am = (alerts or {}).get(code, {})
         als = ",".join(f"{no}:{k}{lv}" for no, a in sorted(am.items()) for k, lv in a.items() if lv)
         items.append((first, f'<a class="card vcard" href="{depth_prefix}{ymd}/{code}/index.html" data-dl="{dls}" data-al="{als}" data-code="{code}">'
-                             f'<span class="vrow"><span class="v">{e(VENUES.get(code, code))}</span><span class="als"></span></span>'
+                             f'<span class="vrow"><span class="v">{e(VENUES.get(code, code))}</span>{cat_tag(venue_cat(ymd, code))}<span class="als"></span></span>'
                              f'<span class="next" aria-live="polite"></span>'
                              f'<span class="t">{e(v.get("title", ""))}</span><span class="sub">'
                              + (f'第{v["day"]}日 ・ ' if v.get("day") else "") + f'{len(v["races"])}R ・ 締切 {e(first)}〜{e(last)}</span></a>'))
@@ -705,8 +748,12 @@ def main():
         "window.SUIMEN_PARAMS = " + (json.dumps(model, ensure_ascii=False, separators=(",", ":")) if model else "null") + ";\n",
         encoding="utf-8")
     alerts_by_day = {}
+    cats = category_resolver()                # レースの区分(開催のグレードと女子戦)と女子レーサー
+    GRADES_ALL.clear()
+    GRADES_ALL.update(cats.grades)
     for d in dates:
-        racers, vstats, nat = collect(d, cache)
+        ctabs: dict = {}
+        racers, vstats, nat = collect(d, cache, cats, ctabs)
         nt = course_table(nat)
         res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
         live_day = load_live(d)
@@ -736,9 +783,11 @@ def main():
             ranks = series_ranks(vprog, tm)
             motors = venue_grades(code, vprog, mraw)
             for race in vprog["races"]:
+                cat = cats(d, code, race["entries"])
                 urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
                                        ranks=ranks, vlive=vlive, motors=motors, today_m=tm, alerts=al_day[code][race["no"]],
-                                       pace=pacemod.for_race(P_pace, code, race["entries"]), mrates=mrates))
+                                       pace=pacemod.for_race(P_pace, code, race["entries"]), mrates=mrates,
+                                       cat=cat, cat_tbl=venue_table(ctabs.get(cat), 100) if cat else None, fem=cats.fem))
     build_index(today, progs, dates, alerts_by_day)
     build_about()
     write_search(dates, today)

@@ -7,8 +7,8 @@
   var D = JSON.parse(el.textContent);
   var URL0 = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/odds/data/odds/" + D.race.ymd + "/" + D.venue.code + "/" + ("0" + D.race.no).slice(-2) + ".json";
   var WINDOW = 15, O = null, kind = "3t", first = 1, timer = null, lastFetch = 0;
-  var names = {};
-  D.entries.forEach(function (e) { names[e.waku] = e.name; });
+  var names = {}, fems = {};
+  D.entries.forEach(function (e) { names[e.waku] = e.name; fems[e.waku] = !!e.fem; });
   function $(s) { return document.querySelector(s); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function wk(w) { return '<span class="waku w' + w + '">' + w + "</span>"; }
@@ -26,6 +26,12 @@
     return "";
   }
   function pane() { return document.getElementById("pane-odds"); }
+  // 一番低いオッズ(1番人気)は赤、2番目は青
+  function favs(vals) {
+    var u = vals.filter(function (v) { return v != null && v > 0; }).sort(function (a, b) { return a - b; });
+    return { a: u.length ? u[0] : null, b: u.length > 1 && u[1] > u[0] ? u[1] : null };
+  }
+  function favCls(v, f) { return v != null && v > 0 && v === f.a ? " fav" : v != null && v > 0 && v === f.b ? " fav2" : ""; }
   function visible() { var p = pane(); return p && !p.hidden && !document.hidden; }
 
   function stamp() {
@@ -58,26 +64,32 @@
     if (!keys.length) return '<p class="wait">3連単のオッズがまだありません。</p>';
     var top = keys.slice(0, 20).map(function (k, i) {
       var c = k.split("-");
-      return "<tr><td class=\"num rk\">" + (i + 1) + '</td><td class="cmb">' + wk(c[0]) + wk(c[1]) + wk(c[2]) + '</td><td class="num od' + (i === 0 ? " fav" : "") + '">' + fmt(T[k]) + move(T[k], PT[k]) + "</td></tr>";
+      return "<tr><td class=\"num rk\">" + (i + 1) + '</td><td class="cmb">' + wk(c[0]) + wk(c[1]) + wk(c[2]) + '</td><td class="num od' + (i === 0 ? " fav" : i === 1 && T[k] > T[keys[0]] ? " fav2" : "") + '">' + fmt(T[k]) + move(T[k], PT[k]) + "</td></tr>";
     }).join("");
     var heads = [1, 2, 3, 4, 5, 6].map(function (w) { return '<button type="button" class="chip' + (w === first ? " on" : "") + '" data-first="' + w + '">' + wk(w) + "</button>"; }).join("");
-    var grid = [1, 2, 3, 4, 5, 6].filter(function (b) { return b !== first; }).map(function (b) {
-      return '<div class="g3row"><span class="g3b">' + wk(b) + "</span>" + [1, 2, 3, 4, 5, 6].filter(function (c) { return c !== first && c !== b; }).map(function (c) {
-        var k = first + "-" + b + "-" + c, v = T[k];
-        return '<span class="g3c">' + wk(c) + '<b class="' + (keys[0] === k ? "fav" : "") + '">' + fmt(v) + "</b>" + move(v, PT[k]) + "</span>";
-      }).join("") + "</div>";
-    }).join("");
+    // 1着を決めた3連単の表(行が2着、列が3着)。この表の中で一番低いオッズは赤、2番目は青
+    var others = [1, 2, 3, 4, 5, 6].filter(function (b) { return b !== first; });
+    var fv = favs([].concat.apply([], others.map(function (b) { return others.filter(function (c) { return c !== b; }).map(function (c) { return T[first + "-" + b + "-" + c]; }); })));
+    var g3 = '<div class="scroll"><table class="odm g3t" aria-label="1着が' + first + '号艇の3連単(行が2着・列が3着)"><thead><tr><th class="g3h"><span class="g3k">' + wk(first) + '1着</span><span class="g3x">2着＼3着</span></th>' +
+      others.map(function (c) { return "<th>" + wk(c) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+      others.map(function (b) {
+        return "<tr><th>" + wk(b) + "</th>" + others.map(function (c) {
+          if (c === b) return '<td class="off"></td>';
+          var k = first + "-" + b + "-" + c, v = T[k];
+          return '<td class="num' + favCls(v, fv) + '">' + fmt(v) + move(v, PT[k]) + "</td>";
+        }).join("") + "</tr>";
+      }).join("") + "</tbody></table></div>";
     return '<div class="odsub">人気順(オッズの低い順)</div><div class="scroll"><table class="odt"><thead><tr><th class="num">人気</th><th>組</th><th class="num">オッズ</th></tr></thead><tbody>' + top + "</tbody></table></div>" +
-      '<div class="odsub">1着から見る</div><div class="chips odfirst">' + heads + '</div><div class="g3" aria-label="1着が' + first + '号艇の3連単">' + grid + "</div>";
+      '<div class="odsub">1着から見る</div><div class="chips odfirst">' + heads + "</div>" + g3;
   }
   function matrix(T, PT, sep, tri) {
-    var vals = Object.keys(T).map(function (k) { return T[k]; }).filter(function (v) { return v != null && v > 0; }), mn = vals.length ? Math.min.apply(null, vals) : null;
+    var fv = favs(Object.keys(T).map(function (k) { return T[k]; }));
     var head = '<tr><th></th>' + [1, 2, 3, 4, 5, 6].map(function (w) { return "<th>" + wk(w) + "</th>"; }).join("") + "</tr>";
     var rows = [1, 2, 3, 4, 5, 6].map(function (a) {
       return "<tr><th>" + wk(a) + "</th>" + [1, 2, 3, 4, 5, 6].map(function (b) {
         if (a === b || (tri && b < a)) return '<td class="off"></td>';
         var k = a + sep + b, v = T[k];
-        return '<td class="num' + (v != null && v === mn ? " fav" : "") + '">' + fmt(v) + move(v, PT[k]) + "</td>";
+        return '<td class="num' + favCls(v, fv) + '">' + fmt(v) + move(v, PT[k]) + "</td>";
       }).join("") + "</tr>";
     }).join("");
     return '<div class="scroll"><table class="odm"><thead>' + head + "</thead><tbody>" + rows + "</tbody></table></div>";
@@ -87,11 +99,11 @@
       '<div class="odsub">2連複</div>' + matrix(F, PF, "=", true);
   }
   function viewTf(T, PT, F) {
-    var vals = [1, 2, 3, 4, 5, 6].map(function (w) { return T[w]; }).filter(function (v) { return v != null && v > 0; }), mn = vals.length ? Math.min.apply(null, vals) : null;
-    return '<div class="scroll"><table class="odt"><thead><tr><th>艇</th><th>選手</th><th class="num">単勝</th><th class="num">複勝</th></tr></thead><tbody>' +
+    var fv = favs([1, 2, 3, 4, 5, 6].map(function (w) { return T[w]; }));
+    return '<div class="scroll"><table class="odt odtf"><thead><tr><th>艇</th><th>選手</th><th class="num">単勝</th><th class="num">複勝</th></tr></thead><tbody>' +
       [1, 2, 3, 4, 5, 6].map(function (w) {
         var f = F[w];
-        return "<tr><td>" + wk(w) + "</td><td>" + esc(names[w] || "") + '</td><td class="num od' + (T[w] != null && T[w] === mn ? " fav" : "") + '">' + fmt(T[w]) + move(T[w], PT[w]) +
+        return "<tr><td>" + wk(w) + "</td><td>" + esc(names[w] || "") + (fems[w] ? '<span class="fem">♥</span>' : "") + '</td><td class="num od' + favCls(T[w], fv) + '">' + fmt(T[w]) + move(T[w], PT[w]) +
           '</td><td class="num">' + (f && f[1] > 0 ? fmt(f[0]) + "〜" + fmt(f[1]) : "—") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }

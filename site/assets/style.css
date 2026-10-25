@@ -1,58 +1,69 @@
-/* 水面ノート: 出走表を主役にした一段組み。枠番の色(1白 2黒 3赤 4青 5黄 6緑)がそのまま目印になる */
+/* 水面ノート: 出走表を主役にした一段組み。枠番の色(1白 2黒 3赤 4青 5黄 6緑)がそのまま目印になる。
+   丸みのある文字と、タブ・見出しごとの色で、明るく見やすく */
 :root{
-  --bg:#eef2f4; --surface:#ffffff; --ink:#14212b; --muted:#5b6b77; --line:#d3dce2;
-  --accent:#0f6f8f; --accent-soft:#dcedf3; --warn:#b5541b; --good:#1f7a4a;
-  --display:"Dela Gothic One","Hiragino Sans","Noto Sans JP",sans-serif;
-  --body:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",monospace;
+  --bg:#eef5fb; --surface:#ffffff; --ink:#1d2a36; --muted:#5f6f7c; --line:#d6e0e8;
+  --accent:#1478b8; --accent-soft:#e1f0fa; --warn:#c2581d; --good:#1f8a4c;
+  --display:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;
+  --pop:"Mochiy Pop One","M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif;
+  --body:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --mono:"M PLUS Rounded 1c","Hiragino Sans",ui-monospace,monospace;
+  --rank1:#e53935; --rank2:#1e6fe0; --pink:#ff4f9a;
+  --tc-card:#1e88e5; --tc-before:#fb8c00; --tc-odds:#e53977; --tc-t1:#00a676; --tc-navi:#8e44d9; --tc-data:#0097a7;
   --b1:#ffffff; --b1t:#14212b; --b2:#1b1b1b; --b2t:#ffffff; --b3:#d7282f; --b3t:#ffffff;
   --b4:#1d5fbf; --b4t:#ffffff; --b5:#f2cf1d; --b5t:#14212b; --b6:#1f9a4b; --b6t:#ffffff;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root{
-  --bg:#0e161c; --surface:#16222b; --ink:#e4ecf1; --muted:#93a4b0; --line:#2a3a46;
-  --accent:#5cc0de; --accent-soft:#183847; --warn:#f0a06a; --good:#6fd39b; --b1:#f4f6f8; --b2:#000000; color-scheme:dark}}
+  --bg:#0e161c; --surface:#16222b; --ink:#e8eef3; --muted:#9fb0bc; --line:#2a3a46;
+  --accent:#5cc0de; --accent-soft:#183847; --warn:#f0a06a; --good:#6fd39b; --b1:#f4f6f8; --b2:#000000;
+  --rank1:#ef5350; --rank2:#4d8ff0; color-scheme:dark}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.65;
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.7;font-weight:500;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
 a{color:var(--accent)}
 .wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
 .site-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:14px 4px;flex-wrap:wrap}
-.logo{font-family:var(--display);font-size:22px;color:var(--ink);text-decoration:none;letter-spacing:.03em}
-.site-nav{display:flex;gap:14px;font-size:13px}
+.logo{font-family:var(--pop);font-size:24px;color:var(--accent);text-decoration:none;letter-spacing:.04em}
+.logo::before{content:"";display:inline-block;width:.9em;height:.9em;margin-right:.3em;vertical-align:-.08em;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#7fd3ff,#1478b8 70%);box-shadow:0 0 0 3px #d4ecfa}
+.site-nav{display:flex;gap:14px;font-size:14px;font-weight:700}
 .crumb{font-size:13px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap}
 .crumb a{color:var(--muted)}
-h1{font-family:var(--display);font-weight:400;font-size:clamp(24px,6vw,34px);line-height:1.2;margin:0;letter-spacing:.02em;text-wrap:balance}
-h2{font-family:var(--display);font-weight:400;font-size:18px;margin:0;letter-spacing:.03em}
+h1{font-family:var(--pop);font-weight:400;font-size:clamp(25px,6.4vw,34px);line-height:1.25;margin:0;letter-spacing:.02em;text-wrap:balance}
+h2{font-family:var(--display);font-weight:800;font-size:19px;margin:0;letter-spacing:.03em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+h2::before{content:"";flex:none;width:6px;height:1.05em;border-radius:3px;background:var(--pc,var(--accent))}
+h2 .h2s{font-size:12px;font-weight:700;color:var(--muted)}
 .lead{color:var(--muted);margin:0;max-width:62ch}
-section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
-.sub{color:var(--muted);font-size:13px;margin:0}
-.note{font-size:12px;color:var(--muted);margin:0}
-.tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);letter-spacing:.04em;white-space:nowrap}
+section{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0;
+  box-shadow:0 2px 0 color-mix(in srgb,var(--pc,var(--accent)) 18%,transparent),0 6px 18px rgba(30,60,90,.06)}
+.sub{color:var(--muted);font-size:13.5px;margin:0}
+.note{font-size:12.5px;color:var(--muted);margin:0}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);letter-spacing:.04em;white-space:nowrap}
 .tag.warn{background:transparent;border:1px solid var(--warn);color:var(--warn)}
 .waku{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:5px;font-family:var(--mono);font-weight:600;border:1px solid var(--line);flex:none}
 .w1{background:var(--b1);color:var(--b1t)}.w2{background:var(--b2);color:var(--b2t)}.w3{background:var(--b3);color:var(--b3t)}
 .w4{background:var(--b4);color:var(--b4t)}.w5{background:var(--b5);color:var(--b5t)}.w6{background:var(--b6);color:var(--b6t)}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
-th{font-size:11px;font-weight:500;color:var(--muted);text-align:left;padding:4px 6px 6px;white-space:nowrap;letter-spacing:.03em}
+th{font-size:12px;font-weight:700;color:var(--muted);text-align:left;padding:4px 6px 6px;white-space:nowrap;letter-spacing:.03em}
 td{padding:6px;border-top:1px solid var(--line);vertical-align:middle;white-space:nowrap}
-td.num,th.num{text-align:right;font-family:var(--mono);font-size:13px}
+td.num,th.num{text-align:right;font-family:var(--mono);font-size:14px}
 td .small{display:block;font-size:11px;color:var(--muted)}
 .hi{color:var(--accent);font-weight:600}
 /* 一覧 */
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
-.card{display:flex;flex-direction:column;gap:4px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-decoration:none;color:var(--ink);min-width:0}
+.card{display:flex;flex-direction:column;gap:4px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);text-decoration:none;color:var(--ink);min-width:0;
+  box-shadow:0 2px 0 #d4e6f4,0 6px 16px rgba(30,60,90,.06)}
 .card:hover{border-color:var(--accent)}
-.card .v{font-family:var(--display);font-size:20px}
+.card .v{font-family:var(--pop);font-size:20px}
 .card .t{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .race-list a{color:var(--ink);text-decoration:none}
 .race-list tr:hover td{background:var(--accent-soft)}
 .rno{font-family:var(--display);font-size:16px}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
-.chip{font-family:var(--mono);font-size:13px;padding:4px 9px;border:1px solid var(--line);border-radius:6px;text-decoration:none;color:var(--ink);background:var(--surface)}
+.chip{font-family:var(--mono);font-size:14px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:var(--ink);background:var(--surface)}
 .chip.on{background:var(--accent);border-color:var(--accent);color:var(--surface)}
 /* レース */
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -186,31 +197,40 @@ footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:colu
 .cand{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono)}
 .cand .waku{width:22px;height:22px;font-size:12px}
 /* タブ(出走表・直前情報・1S1M展開・データ) */
-.tabs{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);position:sticky;top:0;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.06)}
-.tabs button{border:0;border-right:1px solid var(--line);border-radius:0;background:var(--surface);padding:12px 2px;font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap}
-.tabs button:last-child{border-right:0}
-.tabs button.on{background:var(--accent);color:#fff}
+.tabs{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:5px;border-radius:16px;background:var(--surface);position:sticky;top:0;z-index:5;
+  box-shadow:0 2px 0 #cfe3f2,0 6px 14px rgba(30,60,90,.10)}
+.tabs button{--tc:var(--accent);border:0;border-radius:11px;background:color-mix(in srgb,var(--tc) 11%,var(--surface));padding:10px 2px;font-weight:800;font-size:14px;
+  color:color-mix(in srgb,var(--tc) 85%,#000);white-space:nowrap;line-height:1.35}
+.tabs button.on{background:var(--tc);color:#fff;box-shadow:0 3px 0 color-mix(in srgb,var(--tc) 70%,#000)}
+.tabs [data-tab=card]{--tc:var(--tc-card)}.tabs [data-tab=before]{--tc:var(--tc-before)}.tabs [data-tab=odds]{--tc:var(--tc-odds)}
+.tabs [data-tab=t1]{--tc:var(--tc-t1)}.tabs [data-tab=navi]{--tc:var(--tc-navi)}.tabs [data-tab=data]{--tc:var(--tc-data)}
+#pane-card{--pc:var(--tc-card)}#pane-before{--pc:var(--tc-before)}#pane-odds{--pc:var(--tc-odds)}#pane-t1{--pc:var(--tc-t1)}#pane-navi{--pc:var(--tc-navi)}#pane-data{--pc:var(--tc-data)}
 .pane{display:flex;flex-direction:column;gap:18px}
 ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 /* 縦の表(列が1〜6号艇、行が項目)。一番良い艇の枠は赤 */
-.vt-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line2);border-radius:8px}
-table.vt{border-collapse:separate;border-spacing:0;width:100%;min-width:330px;table-layout:fixed;font-size:12px;line-height:1.3}
-table.vt th,table.vt td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:5px 2px;text-align:center;vertical-align:middle;white-space:normal;word-break:break-word}
+.vt-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1.5px solid var(--line2);border-radius:12px}
+table.vt{border-collapse:separate;border-spacing:0;width:100%;min-width:300px;table-layout:fixed;font-size:clamp(11.5px,3.35vw,14px);line-height:1.3}
+table.vt th,table.vt td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px 2px;text-align:center;vertical-align:middle;white-space:normal;word-break:break-word}
 table.vt tr:last-child th,table.vt tr:last-child td{border-bottom:0}
 table.vt th:last-child,table.vt td:last-child{border-right:0}
 table.vt thead th{background:var(--head)}
-table.vt thead th:first-child{width:76px}
-table.vt thead th.bw{font-family:var(--mono);font-size:17px;font-weight:700;padding:7px 0;border-bottom:1px solid var(--line2)}
-table.vt tbody th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);background:var(--head);padding:5px 5px;letter-spacing:0;line-height:1.25}
-table.vt tbody th small{display:block;font-size:9.5px;font-weight:500}
-table.vt td{font-family:var(--mono);font-variant-numeric:tabular-nums}
-table.vt td.top{background:#e53935;color:#fff;font-weight:700}
-table.vt td.top .dim,table.vt td.top .tx{color:rgba(255,255,255,.9)}
-table.vt td.top .fon{background:#ffd400;color:#1b1b1b}
-table.vt tr.grp th{background:var(--accent-soft);color:var(--accent);text-align:left;font-size:11px;padding:4px 6px}
-table.vt .nm{font-family:var(--body);font-size:12.5px;display:block;line-height:1.25;font-weight:700}
-table.vt .tx{font-family:var(--body);font-size:11px;line-height:1.3;display:block}
-table.vt .dim{display:block;color:var(--muted);font-size:10.5px;font-family:var(--body)}
+table.vt thead th:first-child{width:62px}
+@media (max-width:400px){table.vt thead th:first-child{width:56px}table.vt tbody th{font-size:11px;padding:4px 3px}}
+table.vt td .u{font-size:.72em;margin-left:1px}
+table.vt thead th.bw{font-family:var(--mono);font-size:18px;font-weight:800;padding:6px 0;border-bottom:1.5px solid var(--line2)}
+table.vt thead th.bw .bn{display:block;line-height:1.2}
+table.vt thead th.bw .hn{display:block;font-family:var(--body);font-size:11.5px;font-weight:800;line-height:1.2;padding:3px 1px 0;letter-spacing:-.02em;word-break:keep-all;overflow-wrap:anywhere}
+table.vt tbody th{text-align:left;font-size:12px;font-weight:800;color:var(--muted);background:var(--head);padding:5px 5px;letter-spacing:0;line-height:1.25}
+table.vt tbody th small{display:block;font-size:10px;font-weight:600}
+table.vt td{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+table.vt td.top{background:var(--rank1);color:#fff;font-weight:800}
+table.vt td.top2{background:var(--rank2);color:#fff;font-weight:800}
+table.vt td.top .dim,table.vt td.top .tx,table.vt td.top2 .dim,table.vt td.top2 .tx{color:rgba(255,255,255,.92)}
+table.vt td.top .fon,table.vt td.top2 .fon{background:#ffd400;color:#1b1b1b}
+table.vt tr.grp th{background:color-mix(in srgb,var(--pc,var(--accent)) 14%,var(--surface));color:color-mix(in srgb,var(--pc,var(--accent)) 80%,#000);text-align:left;font-size:12.5px;font-weight:800;padding:5px 8px}
+table.vt .nm{font-family:var(--body);font-size:13px;display:block;line-height:1.25;font-weight:800}
+table.vt .tx{font-family:var(--body);font-size:11.5px;line-height:1.3;display:block}
+table.vt .dim{display:block;color:var(--muted);font-size:11px;font-family:var(--body);font-weight:500}
 /* フライング・失格などの印は、1位の赤い塗りと見分けられるよう、黄色地に黒字(注意の色)にする */
 table.vt .fon{display:inline-block;color:#1b1b1b;background:#ffd400;border:1px solid #1b1b1b;border-radius:3px;padding:0 3px;font-weight:700}
 table.vt .moved{color:var(--red)}
@@ -225,8 +245,9 @@ table.vt td.top .days em{border-color:rgba(255,255,255,.6)}
 .ex1 span{font-family:var(--mono)}
 table.ex1t thead th{font-family:var(--mono);font-size:13px}
 @media (max-width:480px){
-  section{padding:12px 10px}
-  .tabs button{font-size:12px;padding:11px 0;letter-spacing:-.04em}
+  section{padding:12px 8px}
+  .tabs{gap:3px;padding:4px}
+  .tabs button{font-size:12px;padding:10px 0;letter-spacing:-.05em}
 }
 table.vt thead th.w1{background:var(--b1);color:var(--b1t)}table.vt thead th.w2{background:var(--b2);color:var(--b2t)}
 table.vt thead th.w3{background:var(--b3);color:var(--b3t)}table.vt thead th.w4{background:var(--b4);color:var(--b4t)}
@@ -351,3 +372,104 @@ table.odm td.off{background:var(--bg)}
 .g3c{display:inline-flex;align-items:center;gap:3px;min-width:74px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 .g3c b{font-family:var(--mono);font-size:13px}
 @media (max-width:380px){.g3c{min-width:66px}.g3c b{font-size:12px}}
+
+/* ---- 見やすさ・かわいらしさ(2026-10) ---- */
+/* 下へ動かしても、選手の名前(表の見出し)はタブのすぐ下に残す */
+.vt-wrap.stick{overflow:visible}
+.vt-wrap.stick table.vt thead th{position:sticky;top:var(--tabsH,52px);z-index:3;box-shadow:0 2px 0 var(--line2)}
+.vt-wrap.stick table.vt thead th.corner{background:var(--head)}
+.vt-wrap.stick table.vt thead th:first-child{border-top-left-radius:11px}
+.vt-wrap.stick table.vt thead th:last-child{border-top-right-radius:11px}
+.fem{color:var(--pink);font-size:.95em;margin-left:2px;font-family:var(--body)}
+table.vt td .cls{display:inline-block;font-family:var(--mono);font-size:12.5px;font-weight:800;padding:0 6px;border-radius:999px;background:#eef3f7;color:#374955}
+table.vt td .cls.cA1{background:#ffe1e1;color:#c62828}table.vt td .cls.cA2{background:#ffeed9;color:#d35400}
+table.vt td .cls.cB1{background:#e3f0ff;color:#1565c0}table.vt td .cls.cB2{background:#eceff1;color:#546e7a}
+table.vt td.top .cls,table.vt td.top2 .cls{background:rgba(255,255,255,.25);color:#fff}
+table.vt tr.gcat th{background:color-mix(in srgb,var(--pink) 13%,var(--surface));color:#b0306c}
+.cattag{display:inline-block;margin-right:4px;padding:0 8px;border-radius:999px;background:var(--pink);color:#fff;font-size:11.5px}
+/* 区分(グレード・女子戦)のタグ */
+.tag.cat{color:#fff;font-weight:800}
+.tag.cSG{background:linear-gradient(135deg,#d4a017,#f6d365);color:#3b2a00}.tag.cG1{background:#e53935}.tag.cG2{background:#8e44d9}
+.tag.cG3{background:#1f8a4c}.tag.cIp{background:#78909c}.tag.cw{background:var(--pink)}
+/* 線で区切った表(データ・オッズ・展示タイム1位) */
+.gridt-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1.5px solid var(--line2);border-radius:12px}
+table.gridt{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums}
+table.gridt th,table.gridt td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 6px;text-align:center;white-space:nowrap}
+table.gridt th:last-child,table.gridt td:last-child{border-right:0}
+table.gridt tbody tr:last-child td,table.gridt tbody tr:last-child th{border-bottom:0}
+table.gridt thead th{background:var(--head);color:var(--ink);font-size:12.5px;font-weight:800;border-bottom:1.5px solid var(--line2)}
+table.gridt tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--head) 45%,var(--surface))}
+table.gridt td.num{text-align:center;font-weight:700}
+table.gridt td.hi{color:#fff;background:var(--rank1)!important;font-weight:800}
+table.kt td.num{font-size:13.5px}
+/* 展示タイム1位の成績 */
+.ex1sec{--pc:var(--tc-before)}
+.ex1{display:flex;flex-direction:column;gap:6px}
+.ex1 h3{margin:0;font-family:var(--display);font-weight:800;font-size:17px;display:flex;align-items:baseline;gap:8px}
+.ex1 h3 small{font-size:12px;color:var(--muted);font-weight:700}
+.ex1s{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;font-size:14px;padding:6px 10px;border-radius:10px;background:color-mix(in srgb,var(--tc-before) 9%,var(--surface))}
+.ex1s .lbl{font-weight:800;min-width:3.5em}
+.ex1s .rk b{font-family:var(--mono);font-size:17px;font-weight:800}
+.ex1s .r1 b{color:var(--rank1)}.ex1s .r2 b{color:var(--rank2)}.ex1s .r3 b{color:#1f8a4c}
+.ex1s .cnt{margin-left:auto;font-size:12.5px;color:var(--muted);font-weight:700}
+table.ex1t td b{display:block;font-family:var(--mono);font-size:15px;font-weight:800}
+table.ex1t td .dim{display:block;font-size:11.5px;color:var(--muted);font-weight:600}
+table.ex1t td.r1 b{color:var(--rank1)}table.ex1t td.r2 b{color:var(--rank2)}table.ex1t td.r3 b{color:#1f8a4c}
+table.ex1t th .cn{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-weight:800}
+table.ex1t tr.hit td,table.ex1t tr.hit th{background:color-mix(in srgb,var(--rank1) 12%,var(--surface))!important}
+table.ex1t tr.hit th .cn{background:var(--rank1);color:#fff}
+table.ex1t th .here{display:block;font-size:10px;color:var(--rank1);font-weight:800}
+/* スタートの見立て(縦の表) */
+table.vt.stv .cn{font-size:16px}
+table.vt.stv tr.out td b{font-size:15px}
+table.vt.stv .meter{display:block;width:80%;margin:3px auto 0}
+table.vt.stv td.top .meter,table.vt.stv td.top2 .meter{background:rgba(255,255,255,.35)}
+table.vt.stv td.top .meter>i,table.vt.stv td.top2 .meter>i{background:#fff}
+#stNotes{margin-top:4px}
+#stNotes li b{font-weight:800}
+/* オッズ: 1番人気は赤、2番人気は青 */
+.fav{color:var(--rank1);font-weight:800}
+.fav2{color:var(--rank2);font-weight:800}
+table.odm td.fav{background:color-mix(in srgb,var(--rank1) 14%,var(--surface))}
+table.odm td.fav2{background:color-mix(in srgb,var(--rank2) 13%,var(--surface))}
+table.odm{border-collapse:separate;border-spacing:0;border:1.5px solid var(--line2);border-radius:12px;overflow:hidden}
+table.odm th,table.odm td{border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+table.odm tr>*:last-child{border-right:0}
+table.odm tbody tr:last-child>*{border-bottom:0}
+table.odm thead th,table.odm tbody th{background:var(--head)}
+table.g3t td{min-width:52px;font-size:13.5px}
+table.g3t th.g3h{font-size:10.5px;line-height:1.25;padding:3px 4px;text-align:left}
+table.g3t .g3k{display:flex;align-items:center;gap:3px;font-weight:800;font-size:11.5px;color:var(--ink)}
+table.g3t .g3x{display:block;color:var(--muted);font-weight:700}
+table.odt{border-collapse:separate;border-spacing:0;border:1.5px solid var(--line2);border-radius:12px;overflow:hidden}
+table.odt th{background:var(--head);border-bottom:1.5px solid var(--line2);padding:6px 8px}
+table.odt td{border-top:0;border-bottom:1px solid var(--line)}
+table.odt tbody tr:last-child td{border-bottom:0}
+.odsub{font-size:13px;font-weight:800;color:color-mix(in srgb,var(--tc-odds) 80%,#000);margin-top:8px}
+/* 待ち・ボタンなど */
+.wait{border-radius:12px;border-color:color-mix(in srgb,var(--pc,var(--accent)) 40%,var(--line2));background:color-mix(in srgb,var(--pc,var(--accent)) 5%,var(--surface))}
+button{border-radius:10px;font-weight:700}
+button.primary,button.on{background:var(--pc,var(--accent));border-color:var(--pc,var(--accent))}
+.resbar{border-radius:14px;border-width:2px}
+.resbar .odds{font-weight:800}
+.crumb{font-weight:700}
+.meta .tag{font-size:12.5px}
+footer h2::before{display:none}
+.boat h3{font-weight:800}
+.scen-row .pct{font-weight:800}
+.bar>i{background:linear-gradient(90deg,var(--pc,var(--accent)),color-mix(in srgb,var(--pc,var(--accent)) 60%,#fff))}
+table.odm td.off{background:repeating-linear-gradient(135deg,var(--head) 0 4px,var(--surface) 4px 8px)}
+table.gridt td.hi2{color:#fff;background:var(--rank2)!important;font-weight:800}
+.pkt{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:10px}
+table.gridt caption{caption-side:top;text-align:left;font-size:13px;font-weight:800;padding:6px 10px;color:color-mix(in srgb,var(--pc,var(--accent)) 80%,#000);background:color-mix(in srgb,var(--pc,var(--accent)) 9%,var(--surface))}
+table.kt.kk th,table.kt.kk td{padding:6px 3px}
+table.kt.kk thead th{font-size:11.5px;line-height:1.2}
+table.kt.kk td.num{font-size:12.5px}
+.catsec{--pc:var(--pink)}
+/* 開催場のカード */
+.vcard .vrow .tag.cat{font-size:11px;padding:1px 8px}
+.vcard{border-top:4px solid var(--accent)}
+.cards .vcard:nth-child(6n+1){border-top-color:#1e88e5}.cards .vcard:nth-child(6n+2){border-top-color:#fb8c00}.cards .vcard:nth-child(6n+3){border-top-color:#e53977}
+.cards .vcard:nth-child(6n+4){border-top-color:#00a676}.cards .vcard:nth-child(6n+5){border-top-color:#8e44d9}.cards .vcard:nth-child(6n){border-top-color:#0097a7}
+.vcard .v{color:var(--ink)}
+@media (min-width:700px){table.vt thead th:first-child{width:96px}table.vt tbody th{font-size:12.5px}}
