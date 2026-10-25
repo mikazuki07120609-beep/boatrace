@@ -1,0 +1,49 @@
+name: オッズ(締切の直前のレース)
+
+# 締切の15分前から締切までのレースのオッズを、1分ごとに公式サイトから読み取って odds ブランチに上書きで置く。
+# 締切のあとは、締切時オッズ(確定)を1回だけ読んで残す。レースのページのオッズのタブが読みに来る。
+# 直前情報・結果の取り込み(live.yml)とは別に動かす(こちらで何かあっても、あちらは止まらない)。
+# 1回の実行は最長345分。終わるときに今日の分が残っていれば、自分で次の実行を起こして引き継ぐ。
+on:
+  schedule:
+    - cron: "50 22 * * *"              # 7:50(日本時間)
+    - cron: "50 23,0-11 * * *"         # 8:50〜20:50 の毎時(予約の起動が遅れた・落ちたときの備え)
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "何分まで動かすか"
+        default: "345"
+
+concurrency:
+  group: odds
+  cancel-in-progress: false
+
+jobs:
+  odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    permissions:
+      contents: write
+      actions: write          # 次の実行を起こすため
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 締切の直前のレースのオッズを読み取って odds ブランチへ送る
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/odds.py --loop "${{ github.event.inputs.minutes || '345' }}" --push
+      - name: 今日の分が残っていれば、次の実行を起こして引き継ぐ
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if python3 scripts/odds.py --need-more; then
+            gh workflow run odds.yml --ref main && echo "次の実行を起こしました"
+          else
+            echo "今日の分は終わりです"
+          fi

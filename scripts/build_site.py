@@ -372,6 +372,8 @@ RACE_NOTES = [
     "その艇がそのコースで2着になったときの動き方から付けた目安です。「全国」は、過去1年の全国のレースで同じコース・同じ決まり手だったときの、そのコースが2着・3着になった割合です。"
     "スタート展示の前は、枠なりの進入・ふだんのSTとして計算し、展示のあとに計算し直します。",
     "結果(3連単の払戻金・決まり手)は、レースの数分後に BOAT RACE オフィシャルウェブサイトから取り込みます。",
+    "オッズは、締切の15分前から締切までのレースだけ、1分ごとに BOAT RACE オフィシャルウェブサイトから取り込んでいます(公式の表示より最大で1〜2分遅れます)。"
+    "締切のあとは締切時オッズです。矢印は、ひとつ前の取り込み(約1分前)からの変化で、↓はオッズが下がった(票が集まった)組です。",
 ]
 
 
@@ -499,11 +501,18 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         data["pace"] = pace              # 推定タイム(一周・まわり足)と展示タイム1位の1着率(scripts/pace.py)
     tabs = ('<nav class="tabs" role="tablist" aria-label="このレースの情報">'
             '<button type="button" role="tab" data-tab="card">出走表</button><button type="button" role="tab" data-tab="before">直前情報</button>'
+            '<button type="button" role="tab" data-tab="odds">オッズ</button>'
             '<button type="button" role="tab" data-tab="t1">1S1M展開</button><button type="button" role="tab" data-tab="navi">展開ナビ</button>'
             '<button type="button" role="tab" data-tab="data">データ</button></nav>')
+    odds_html = ('<section class="odds" aria-labelledby="h-odds"><div class="row-head"><h2 id="h-odds">オッズ</h2><span class="sub" id="odAt"></span></div>'
+                 '<div class="chips odsel" id="odKinds" role="group" aria-label="券種">'
+                 '<button type="button" class="chip on" data-k="3t">3連単</button><button type="button" class="chip" data-k="2t">2連単・2連複</button>'
+                 '<button type="button" class="chip" data-k="tf">単勝・複勝</button></div>'
+                 '<div id="odBox"><p class="wait">締切の15分前から、1分ごとに公式サイトのオッズを表示します。</p></div></section>')
     body = (head + result_banner(res_live, result) + tabs
             + '<div class="pane" id="pane-card">' + card + "</div>"
             + '<div class="pane" id="pane-before">' + before_html + "</div>"
+            + '<div class="pane" id="pane-odds">' + odds_html + "</div>"
             + '<div class="pane" id="pane-t1">' + view + analysis + "</div>"
             + '<div class="pane" id="pane-navi">' + navi + "</div>"
             + '<div class="pane" id="pane-data">' + venue_html + res_html + "</div>")
@@ -516,7 +525,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     script = (f'<script type="application/json" id="race-data">{blob}</script>'
               f'<script src="{rel}assets/model.js"></script><script src="{rel}assets/params.js"></script>'
-              f'<script src="{rel}assets/turn1.js"></script><script src="{rel}assets/race.js"></script>')
+              f'<script src="{rel}assets/turn1.js"></script><script src="{rel}assets/race.js"></script><script src="{rel}assets/odds.js"></script>')
     write(path, page(title, desc, body, depth, path, script, RACE_NOTES))
     return path
 

@@ -186,7 +186,7 @@ footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:colu
 .cand{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono)}
 .cand .waku{width:22px;height:22px;font-size:12px}
 /* タブ(出走表・直前情報・1S1M展開・データ) */
-.tabs{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);position:sticky;top:0;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.tabs{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);position:sticky;top:0;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.06)}
 .tabs button{border:0;border-right:1px solid var(--line);border-radius:0;background:var(--surface);padding:12px 2px;font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap}
 .tabs button:last-child{border-right:0}
 .tabs button.on{background:var(--accent);color:#fff}
@@ -226,7 +226,7 @@ table.vt td.top .days em{border-color:rgba(255,255,255,.6)}
 table.ex1t thead th{font-family:var(--mono);font-size:13px}
 @media (max-width:480px){
   section{padding:12px 10px}
-  .tabs button{font-size:12.5px;padding:11px 0;letter-spacing:-.02em}
+  .tabs button{font-size:12px;padding:11px 0;letter-spacing:-.04em}
 }
 table.vt thead th.w1{background:var(--b1);color:var(--b1t)}table.vt thead th.w2{background:var(--b2);color:var(--b2t)}
 table.vt thead th.w3{background:var(--b3);color:var(--b3t)}table.vt thead th.w4{background:var(--b4);color:var(--b4t)}
@@ -327,3 +327,27 @@ ul.nvwhy li.dn{color:var(--warn)}
 .nv3 .pc{font-family:var(--mono);font-weight:600}
 .nvplay{align-self:flex-start;font-size:12.5px;border-color:var(--accent);color:var(--accent);background:var(--surface)}
 .nvrest .waku,.nvnote .waku{width:18px;height:18px;font-size:10.5px;vertical-align:-4px}
+/* オッズ */
+.odsel .chip{font-family:var(--body);cursor:pointer}
+.odsub{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em;margin-top:6px}
+table.odt{width:auto;min-width:260px}
+table.odt td{padding:4px 8px}
+table.odt td.rk{color:var(--muted);font-size:12px}
+table.odt td.cmb{display:flex;gap:2px}
+table.odt .waku,table.odm .waku,.g3 .waku,.odfirst .waku{width:22px;height:22px;font-size:12px}
+td.od,table.odm td{font-family:var(--mono);font-size:14px;font-weight:600;white-space:nowrap}
+.fav{color:var(--red)}
+.mv{font-style:normal;font-size:11px;margin-left:2px}
+.mv.dn{color:var(--red)}.mv.up{color:var(--muted)}
+table.odm{width:auto;border-collapse:collapse}
+table.odm th,table.odm td{border:1px solid var(--line);padding:4px 3px;text-align:center}
+table.odm td{font-size:12px;min-width:44px}
+table.odm .mv{margin-left:1px;font-size:10px}
+table.odm td.off{background:var(--bg)}
+.odfirst .chip{padding:3px 6px;cursor:pointer}
+.g3{display:flex;flex-direction:column;gap:4px}
+.g3row{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.g3b{width:30px;flex:none;display:flex;justify-content:center}
+.g3c{display:inline-flex;align-items:center;gap:3px;min-width:74px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.g3c b{font-family:var(--mono);font-size:13px}
+@media (max-width:380px){.g3c{min-width:66px}.g3c b{font-size:12px}}
