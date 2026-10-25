@@ -138,6 +138,9 @@
     });
   }
   function grade(z) { return z == null ? "—" : z >= 1.4 ? "S" : z >= 0.65 ? "A" : z >= 0 ? "B" : z >= -0.65 ? "C" : z >= -1.4 ? "D" : "E"; }
+  // S+: 全国で飛び抜けたモーター(motor.py の sp)。直前の展示で大きく崩れていなければ S+ のまま
+  function gradeOf(z, mg) { return mg && mg.sp && z != null && z >= 0.65 ? "S+" : grade(z); }
+  function gBadge(g) { return '<b class="g ' + (g === "S+" ? "gSp" : "g" + g) + '">' + g + "</b>"; }
 
   // 出走表
   function renderCard() {
@@ -172,15 +175,26 @@
     })));
     // このレースの区分(女子戦・SG・G1・G2・G3・一般)のときの、このコースの成績(直近1年)
     if (D.cat) {
-      var G = E.map(function (e, i) { var g = (e.csg || {})[String(C[i])]; return g && g[0] ? g : null; });
-      function gr(k) { return G.map(function (g) { return g ? p0(g[k], g[0]) : null; }); }
-      function gv(k) { return G.map(function (g) { return g && g[0] >= 3 ? p0(g[k], g[0]) : null; }); }   // 3走未満は1位・2位の色を付けない
+      var G = E.map(function (e, i) {
+        var g = (e.csg || {})[String(C[i])];
+        if (Array.isArray(g)) g = g[0] ? { n: g[0], w1: g[1], w2: g[2], w3: g[3], km: {} } : null;   // 前の形([走数, 1着, 2着, 3着])
+        return g && g.n ? g : null;
+      });
+      function gr(k) { return G.map(function (g) { return g ? p0(g["w" + k], g.n) : null; }); }
+      function gv(k) { return G.map(function (g) { return g && g.n >= 3 ? p0(g["w" + k], g.n) : null; }); }   // 3走未満は1位・2位の色を付けない
       rows.push('<tr class="grp gcat"><th colspan="7"><span class="cattag">' + esc(D.cat) + "</span>のときのこのコース(直近1年)</th></tr>");
       [1, 2, 3].forEach(function (k) { rows.push(vrow(k + "着率", gr(k).map(function (v) { return cell(v, "%"); }), gv(k), "max")); });
-      rows.push(vrow("走数", G.map(function (g) { return g ? g[0] : 0; })));
+      rows.push(vrow("ST", G.map(function (g) { return g ? st2(g.st) : "—"; }), G.map(function (g) { return g && g.n >= 3 && g.st != null ? g.st : null; }), "min"));
+      rows.push(vrow("走数", G.map(function (g) { return g ? g.n : 0; })));
+      rows.push(vrow("勝ち方", G.map(function (g, i) { return '<span class="tx">' + esc(winText(g, C[i])) + "</span>"; })));
+      rows.push(vrow("2着の時", G.map(function (g) { return '<span class="tx">' + esc(secondText(g)) + "</span>"; })));
+      rows.push(vrow("逃げ・逃がし", G.map(function (g, i) {
+        if (!g || !g.n || C[i] > 2) return "—";
+        return '<span class="dim">' + (C[i] === 1 ? "逃げ" : "逃がし") + "</span>" + p0(C[i] === 1 ? (g.km || {})["逃げ"] || 0 : g.ng || 0, g.n) + "%";
+      })));
     }
     rows.push('<tr class="grp"><th colspan="7">モーター・ボート</th></tr>');
-    rows.push(vrow("モーター評価", mz.map(function (z) { var g = grade(z); return '<b class="g g' + g + '">' + g + "</b>"; }), mz, "max", "mo"));
+    rows.push(vrow("モーター評価", mz.map(function (z, i) { return gBadge(gradeOf(z, E[i].mg)); }), mz.map(function (z, i) { return gradeOf(z, E[i].mg) === "S+" ? 99 : z; }), "max", "mo"));
     rows.push(vrow("モーター", E.map(function (e) { return '<span class="dim">' + esc(e.motor) + "号機</span>" + cell(e.motor2, "%", 1); }), E.map(function (e) { return e.motor2; }), "max"));
     rows.push(vrow("ボート", E.map(function (e) { return '<span class="dim">' + esc(e.boat) + "号艇</span>" + cell(e.boat2, "%", 1); }), E.map(function (e) { return e.boat2; }), "max"));
     rows.push('<tr class="grp"><th colspan="7">今節</th></tr>');
@@ -677,7 +691,53 @@
     var s = pats[patIdx], post = lastR.M ? lastR.M.postST(s.i) : null;
     return { sc: scenOf(patIdx), ents: entriesFor(lastR, post) };
   }
+  // ---- 1周1マークの見出し: 映像の展開を一言でまとめる(勝った艇の勝ち方・攻めた艇・止めた艇・続く艇から)。字の形と色は展開に合わせる
+  function hlName(b) { return '<b class="hb hb' + b.waku + '">' + b.waku + "号艇" + esc(String(b.name || "").replace(/[\s　]+/g, "")) + "</b>"; }
+  function headline(P) {
+    if (!P || !P.boats || !P.labels || !P.labels.order || !P.labels.order.length) return null;
+    var B = P.boats, W = P.labels.order[0], byC = {}, p = P.sc && P.sc.p != null ? +P.sc.p : null;
+    var kind = (P.labels.byCourse[W.course] || {}).kind || P.want;
+    B.forEach(function (b) { byC[b.course] = b; });
+    var b1 = byC[1], kado = B.filter(function (b) { return b.dash; }).sort(function (a, b) { return a.course - b.course; })[0];
+    var att = B.filter(function (b) { return (b.role === "makuri" || b.role === "nidan") && b !== W; }).sort(function (a, b) { return a.course - b.course; })[0];
+    var kabe = B.filter(function (b) { return b.role === "kabe"; })[0];
+    var sec = P.labels.order[1] || null, nW = hlName(W), text, theme;
+    if (W.course === 1 && (kind === "nige" || !kind)) {
+      if (att && kabe) { text = hlName(kabe) + "が" + att.waku + "号艇の攻めを止める！" + nW + "の逃げ切り"; theme = "guard"; }
+      else if (att) { text = hlName(att) + "の捲り警戒も、" + nW + (b1 && b1.role === "nigeHari" ? "が張って逃げ切り！" : "の逃げ切り！"); theme = "guard"; }
+      else if (p != null && p >= 55) { text = nW + "、楽勝の逃げ切り"; theme = "easy"; }
+      else if (sec && sec.course === 2) { text = hlName(sec) + "の差しを振り切って、" + nW + "の逃げ切り！"; theme = "nige"; }
+      else { text = nW + "が先マイ、そのまま逃げ切り！"; theme = "nige"; }
+    } else if (kind === "makuri") {
+      var F = byC[W.course + 1], fol = F && (F.role === "makurizashi" || F.role === "mark") ? F : null;
+      var head = W === kado ? "カドから攻める" + nW + "！" : W.course === 2 ? nW + "のジカ捲り！" :
+        (b1 && b1.role === "hari" ? "1号艇の張りを越えて、" + nW + "の捲り一発！" : nW + "、豪快に捲る！");
+      text = head + (fol ? (fol.role === "makurizashi" ? "それに" + hlName(fol) + "のまくり差しチャンス！" : hlName(fol) + "もついて行く！") : "");
+      theme = "makuri";
+    } else if (kind === "makurizashi") {
+      var O = (W.over || []).slice().sort(function (a, b) { return b.course - a.course; })[0];   // 前を横切った艇のうち、すぐ内の艇
+      if (att) text = hlName(att) + "の捲りに乗って、" + nW + "のまくり差し！";
+      else if (O) text = nW + "が" + O.waku + "号艇の前を横切って、まくり差し！";
+      else text = nW + "のまくり差しが決まる！";
+      theme = "mz";
+    } else {
+      if (att) text = hlName(att) + "の攻めで空いた内を、" + nW + "が差す！";
+      else if (b1 && b1 !== W && (b1.role === "hari" || b1.role === "zensoku" || b1.flowOut)) text = "1号艇が流れた内を、" + nW + "が差し切る！";
+      else text = nW + "が鋭く差し切る！";
+      theme = "sashi";
+    }
+    if (p != null && p < 8 && theme !== "easy") theme += " upset";       // 起こりにくい展開(波乱)
+    return { html: text.replace(/!/g, "！"), theme: theme };
+  }
+  function paintHead() {
+    var hl = $("#t1Head");
+    if (!hl) return;
+    var h = headline(view && view.plan ? view.plan() : null);
+    hl.hidden = !h;
+    if (h) { hl.innerHTML = h.html; hl.className = "t1hl " + h.theme.split(" ").map(function (t) { return "hl-" + t; }).join(" "); }
+  }
   function paintNote() {                                           // 展開ナビで選んだ展開を再生しているときの説明(映像の並びが選んだ並びと違えば、そう書く)
+    paintHead();
     var note = $("#t1Note");
     if (note) {
       note.hidden = !custom;
@@ -921,8 +981,8 @@
       var st2t = secondText(cs);
       if (st2t !== "—") out.push("2着の時 " + st2t);
     }
-    var z = MZ[ix], gd = grade(z);
-    if (z != null) out.push('モーター<b class="g g' + gd + '">' + gd + "</b>" + (b.motor2 != null ? "(" + fmt(b.motor2) + "%)" : ""));
+    var z = MZ[ix], gd = gradeOf(z, b.mg);
+    if (z != null) out.push("モーター" + gBadge(gd) + (b.motor2 != null ? "(" + fmt(b.motor2) + "%)" : ""));
     if (EXR[b.waku]) out.push("展示" + EXR[b.waku] + "位(" + fmt(b.ex, 2) + ")");
     if (b.stf) out.push("予想ST" + st2(b.stf.mean) + (b.stf.fp > 0 ? ' <span class="fon">F' + b.stf.fp + "</span>" : ""));
     out.push(esc(b.cls || "") + " 勝率" + fmt(b.rate, 2));

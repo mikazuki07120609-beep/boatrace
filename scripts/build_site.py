@@ -55,7 +55,7 @@ def page(title, desc, body, depth, path, scripts="", notes=None):
 <meta property="og:site_name" content="{SITE_NAME}"><meta name="twitter:card" content="summary">
 <link rel="canonical" href="{BASE_URL}{path}">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Mochiy+Pop+One&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Mochiy+Pop+One&family=Dela+Gothic+One&display=swap">
 <link rel="stylesheet" href="{rel}assets/style.css">
 </head><body><div class="wrap">
 <header class="site-head"><a class="logo" href="{rel}index.html">{SITE_NAME}</a>
@@ -356,6 +356,7 @@ RACE_NOTES = [
     "逃げ・逃がしは、1コースのときに逃げた割合と、2コースのときに1コースが逃げた割合(逃がし率。低いほど1コースを崩している)。",
     "F・Lは今期(5〜10月・11〜4月)のフライング・出遅れの回数(公式の出走表から。取れていないときは当サイトの集計)。今節は日ごとの着順で、失は失格、欠は欠場。順位は今節の着順点の平均(得点率の目安)の順位です。",
     "モーター評価(S〜E)は、直近60日の成績から乗った選手の勝率とコースの有利不利を差し引いた分、展示タイムの速さ、公式のモーター2連率を合わせて、その場のモーターの中で比べたものです。"
+    "S+は、全国の全モーターの中でも飛び抜けたもの(乗った選手の力を差し引いた成績と展示の速さが、全国の平均から4標準偏差以上で、直近60日に20走以上。数百機に1機ほどで、いないときは出ません)。"
     "展示のあとは、そのレースの展示タイムも加えて評価し直します。",
     "直前情報(展示タイム・スタート展示・チルト・部品交換・水面気象)は、締切の10〜15分前ごろに BOAT RACE オフィシャルウェブサイトから自動で取り込みます。",
     "桐生・浜名湖・三国・びわこ・尼崎・鳴門・徳山・若松は、場が出している展示航走の計測タイム(オリジナル展示データ: 一周または半周・まわり足・直線)をそのまま出しています。"
@@ -444,7 +445,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         "c": code, "no": race["no"], "nm": race["name"], "dl": race.get("deadline"), "ds": race.get("distance"),
         "al": {k: v for k, v in (alerts or {}).items() if v},
         "e": [{"w": x["waku"], "t": x["toban"], "n": x["name"], "k": x.get("cls"), "f": x.get("fp") or 0, "fm": x.get("fem") or 0,
-               "g": (x.get("mg") or {}).get("grade"), "z": (x.get("mg") or {}).get("z")} for x in ents]})
+               "g": (x.get("mg") or {}).get("grade"), "z": (x.get("mg") or {}).get("z"), "sp": (x.get("mg") or {}).get("sp") or 0} for x in ents]})
     rel = "../" * depth
     names = "".join(f'<li><span class="waku w{x["waku"]}">{x["waku"]}</span> {e(x["name"])}{"<span class=\"fem\">♥</span>" if x.get("fem") else ""} <span class="small">{e(x["cls"])} {e(x["branch"])}</span></li>' for x in ents)
     card = ('<section><h2>出走表</h2><div id="cardBox"><ul class="plain">' + names + "</ul></div>"
@@ -457,6 +458,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                    '<div id="stBox"></div><ul class="points" id="stNotes"></ul></div></section>')
     view = ('<section class="t1" aria-labelledby="h-t1"><div class="row-head"><h2 id="h-t1">1周1マーク展開シミュレーション</h2></div>'
             '<p class="wait" id="t1Wait">スタート展示の進入とSTが出たら、それをもとに作ります。</p>'
+            '<h3 class="t1hl" id="t1Head" hidden aria-live="polite"></h3>'
             '<div id="t1Body" hidden><canvas id="t1view" role="img" aria-label="スタートから全艇が1周1マークを回り切るまでを上空から見たシミュレーション"></canvas>'
             '<div class="ctrl"><button class="primary" id="t1Replay" type="button">もう一度再生</button>'
             '<button id="t1Pause" type="button">一時停止</button>'

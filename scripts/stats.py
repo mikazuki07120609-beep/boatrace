@@ -149,11 +149,9 @@ class Acc:
                         cs = self.cats.setdefault(cat, {"races": 0, "c": {}})
                         cs["races"] += sign
                         _course_table(cs, ents, kim, sign)
-                        for e in ents:                    # 選手の区分ごとのコース成績 [走数, 1着, 2着, 3着]
-                            g = self.racers[e["toban"]].setdefault("g", {}).setdefault(cat, {}).setdefault(str(e["course"]), [0, 0, 0, 0])
-                            g[0] += sign
-                            if e.get("rank") in (1, 2, 3):
-                                g[e["rank"]] += sign
+                        for e in ents:                    # 選手の区分ごとのコース成績(走数・着順・ST・勝ち方・2着の時・逃がし。コース成績と同じ形)
+                            gc = self.racers[e["toban"]].setdefault("g", {}).setdefault(cat, {})
+                            _cs_add(gc.setdefault(str(e["course"]), _cs_new()), e, kim, sign, ctx)
 
     def racer(self, toban: str) -> dict:
         return self.racers.get(toban, {})
@@ -171,20 +169,39 @@ def _course_table(vs: dict, ents, kim, sign):
             vc["km"][kim] = vc["km"].get(kim, 0) + sign
 
 
+def _cs_new() -> dict:
+    return {"n": 0, "w1": 0, "w2": 0, "w3": 0, "st_sum": 0.0, "st_n": 0, "km": {}}
+
+
+def _cs_add(cs: dict, e: dict, kim, sign: int, ctx: dict) -> None:
+    """コースごとの成績(走数・1〜3着・勝ったときの決まり手・1コースで負けたときの決まり手・2着の時・逃がし・ST)に1走分を足し引きする。"""
+    c, rank = str(e["course"]), e.get("rank")
+    if c == "2" and ctx.get("w") == 1 and kim == "逃げ":                  # 2コースのときに1コースを逃がした回数
+        cs["ng"] = cs.get("ng", 0) + sign
+    if rank == 2 and ctx.get("w"):                                        # 2着になったときの展開
+        s2 = cs.setdefault("s2", {})
+        k2 = second_kind(e["course"], ctx, kim)
+        s2[k2] = s2.get(k2, 0) + sign
+    cs["n"] += sign
+    if rank in (1, 2, 3):
+        cs[f"w{rank}"] += sign
+    if rank == 1 and kim in KIMARITE:
+        cs["km"][kim] = cs["km"].get(kim, 0) + sign                       # このコースで勝ったときの決まり手
+    elif c == "1" and kim in KIMARITE:
+        ls = cs.setdefault("ls", {})                                      # 1コースで負けたときの決まり手(差され・捲られなど)
+        ls[kim] = ls.get(kim, 0) + sign
+    if valid_st(e):
+        cs["st_sum"] += sign * e["st"]
+        cs["st_n"] += sign
+
+
 def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict | None = None, vcode: str | None = None):
     c = str(e["course"])
     rank = e.get("rank")
     r = racers.setdefault(e["toban"], {"name": e.get("name", ""), "c": {}, "pts": [0, 0], "stx": [0, 0.0, 0.0],
                                        "rst": [0, 0.0, 0.0], "f": [], "rs": [], "cb": [0, 0], "nk": [0, 0]})
     ctx = ctx or {}
-    # 2コースのときに1コースを逃がした回数・2着になったときの展開
-    cs0 = r["c"].setdefault(c, {"n": 0, "w1": 0, "w2": 0, "w3": 0, "st_sum": 0.0, "st_n": 0, "km": {}})
-    if c == "2" and ctx.get("w") == 1 and kim == "逃げ":
-        cs0["ng"] = cs0.get("ng", 0) + sign
-    if rank == 2 and ctx.get("w"):
-        s2 = cs0.setdefault("s2", {})
-        k2 = second_kind(e["course"], ctx, kim)
-        s2[k2] = s2.get(k2, 0) + sign
+    _cs_add(r["c"].setdefault(c, _cs_new()), e, kim, sign, ctx)
     # 道中: ゴールで僅差だった相手との勝ち負け(競り合い)、抜きで勝った・抜かれて2着
     t_me = race_time(e.get("time")) if rank else None
     if t_me is not None:
@@ -198,15 +215,6 @@ def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict |
         r.setdefault("nk", [0, 0])[rank - 1] += sign
     if e.get("name"):
         r["name"] = e["name"]
-    cs = r["c"].setdefault(c, {"n": 0, "w1": 0, "w2": 0, "w3": 0, "st_sum": 0.0, "st_n": 0, "km": {}})
-    cs["n"] += sign
-    if rank in (1, 2, 3):
-        cs[f"w{rank}"] += sign
-    if rank == 1 and kim in KIMARITE:
-        cs["km"][kim] = cs["km"].get(kim, 0) + sign             # このコースで勝ったときの決まり手
-    elif c == "1" and kim in KIMARITE:
-        ls = cs.setdefault("ls", {})                             # 1コースで負けたときの決まり手(差され・捲られなど)
-        ls[kim] = ls.get(kim, 0) + sign
     # 着順点(勝率と同じ数え方。失格・フライングなどは0点で1走)
     if rank in POINTS or e.get("status") in ("F", "L0", "L1", "S0", "S1", "S2", "K1"):
         r["pts"][0] += sign * POINTS.get(rank, 0)
@@ -217,8 +225,6 @@ def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict |
             lv[1] += sign
     if valid_st(e):
         st = e["st"]
-        cs["st_sum"] += sign * st
-        cs["st_n"] += sign
         r["stx"][0] += sign; r["stx"][1] += sign * st; r["stx"][2] += sign * st * st
         if sign > 0:                                             # 直近のST(今節の調子を見る。古い日を引くときは触らない)
             rs = r.setdefault("rs", [])
@@ -242,27 +248,33 @@ def finish(racers: dict) -> dict:
     for t, r in racers.items():
         if not any(cs["n"] for cs in r["c"].values()):
             continue
-        cc = {}
-        for c, cs in r["c"].items():
-            if cs["n"] <= 0:
-                continue
-            x = {k: cs[k] for k in ("n", "w1", "w2", "w3")}
-            x["km"] = {k: v for k, v in cs["km"].items() if v > 0}
-            if cs.get("ls"):
-                x["ls"] = {k: v for k, v in cs["ls"].items() if v > 0}
-            if cs.get("s2"):
-                x["s2"] = {k: v for k, v in cs["s2"].items() if v > 0}
-            if cs.get("ng"):
-                x["ng"] = cs["ng"]
-            x["st"] = round(cs["st_sum"] / cs["st_n"], 2) if cs["st_n"] > 0 else None
-            cc[c] = x
+        cc = _cs_out(r["c"])
         out[t] = {"name": r["name"], "c": cc, "pts": list(r["pts"]), "stx": [r["stx"][0], round(r["stx"][1], 4), round(r["stx"][2], 5)],
                   "rst": [r["rst"][0], round(r["rst"][1], 4), round(r["rst"][2], 5)], "f": sorted(r["f"]),
                   "r8": [round(x, 2) for x in r.get("rs", [])[-RECENT_N:]],
                   "cb": list(r.get("cb", [0, 0])), "nk": list(r.get("nk", [0, 0])),
                   "v": {k: list(a) for k, a in r.get("v", {}).items() if a[1] > 0},
-                  "g": {k: {c: list(a) for c, a in v.items() if a[0] > 0} for k, v in r.get("g", {}).items() if any(a[0] > 0 for a in v.values())}}
+                  "g": {k: g for k, g in ((k, _cs_out(v)) for k, v in r.get("g", {}).items()) if g}}
     return out
+
+
+def _cs_out(cmap: dict) -> dict:
+    """コースごとの成績を、表示用の形(率は出さず回数のまま。平均STだけ計算)にする。"""
+    cc = {}
+    for c, cs in cmap.items():
+        if cs["n"] <= 0:
+            continue
+        x = {k: cs[k] for k in ("n", "w1", "w2", "w3")}
+        x["km"] = {k: v for k, v in cs["km"].items() if v > 0}
+        if cs.get("ls"):
+            x["ls"] = {k: v for k, v in cs["ls"].items() if v > 0}
+        if cs.get("s2"):
+            x["s2"] = {k: v for k, v in cs["s2"].items() if v > 0}
+        if cs.get("ng"):
+            x["ng"] = cs["ng"]
+        x["st"] = round(cs["st_sum"] / cs["st_n"], 2) if cs["st_n"] > 0 else None
+        cc[c] = x
+    return cc
 
 
 def collect(until: dt.date, cache: dict | None = None, cats=None, out_cats: dict | None = None):

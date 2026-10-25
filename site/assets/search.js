@@ -93,6 +93,7 @@
       if (e.z == null) return e.g || null;
       var z = e.z;
       if (m != null && ex[i] != null) { var zt = Math.max(-3, Math.min(3, (m - ex[i]) / 0.047)); z = (0.55 * z + 0.45 * zt) / Math.sqrt(0.55 * 0.55 + 0.45 * 0.45); }
+      if (e.sp && z >= 0.65) return "S+";                                   // 全国で飛び抜けたモーター(展示で大きく崩れていなければ)
       return z >= 1.4 ? "S" : z >= 0.65 ? "A" : z >= 0 ? "B" : z >= -0.65 ? "C" : z >= -1.4 ? "D" : "E";
     });
   }
@@ -137,9 +138,9 @@
         return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + (e.fm ? '<span class="fem">♥</span>' : "") + ' <span class="fon">F' + e.f + "</span>"; }) : null; } }
     ]],
     ["モーター・直前情報", [
-      { id: "motorS", label: "モーター評価S", test: function (r) {
-        var g = motorGrades(r), hit = r.e.filter(function (e, i) { return g[i] === "S"; });
-        return hit.length ? hit.map(function (e) { return waku(e.w) + ' <b class="g gS">S</b>'; }) : null; } },
+      { id: "motorS", label: "モーター評価S以上", test: function (r) {
+        var g = motorGrades(r), hit = r.e.map(function (e, i) { return [e, g[i]]; }).filter(function (x) { return x[1] === "S" || x[1] === "S+"; });
+        return hit.length ? hit.map(function (x) { return waku(x[0].w) + ' <b class="g ' + (x[1] === "S+" ? "gSp" : "gS") + '">' + x[1] + "</b>"; }) : null; } },
       { id: "tilt", label: "チルトを跳ねた選手", live: true, test: function (r) {
         var bi = beforeOf(r); if (!bi || !bi.tilt) return null;
         var hit = r.e.filter(function (e) { var v = bi.tilt[String(e.w)]; return v != null && v >= 0.5; });

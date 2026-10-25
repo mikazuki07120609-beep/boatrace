@@ -473,3 +473,23 @@ table.kt.kk td.num{font-size:12.5px}
 .cards .vcard:nth-child(6n+4){border-top-color:#00a676}.cards .vcard:nth-child(6n+5){border-top-color:#8e44d9}.cards .vcard:nth-child(6n){border-top-color:#0097a7}
 .vcard .v{color:var(--ink)}
 @media (min-width:700px){table.vt thead th:first-child{width:96px}table.vt tbody th{font-size:12.5px}}
+/* モーター評価 S+(全国で飛び抜けた「おばけモーター」) */
+.g.gSp{background:linear-gradient(135deg,#ff3d77,#ffb300 45%,#ffe066 60%,#ff3d77);color:#fff;font-size:12.5px!important;letter-spacing:-.06em;
+  box-shadow:0 0 0 2px #fff,0 0 0 3.5px #ff3d77;text-shadow:0 1px 0 rgba(120,0,40,.45)}
+table.vt td.top .g.gSp{box-shadow:0 0 0 2px #ffd400}
+/* 1周1マークの見出し(展開の一言まとめ)。展開ごとに字の形と色を変える */
+.t1hl{margin:0;font-size:clamp(18px,4.9vw,24px);line-height:1.4;letter-spacing:.01em;text-wrap:balance;padding:10px 14px;border-radius:12px;
+  --hc:#1559b7;color:var(--hc);background:color-mix(in srgb,var(--hc) 9%,var(--surface));border-left:6px solid var(--hc);font-family:var(--pop);font-weight:400}
+.t1hl .hb{font-weight:inherit;padding:0 2px;border-radius:3px;background:linear-gradient(transparent 58%,var(--hbc,#ffe08a) 58%);color:var(--ink)}
+.t1hl .hb1{--hbc:#dfe5ea}.t1hl .hb2{--hbc:#cfcfcf}.t1hl .hb3{--hbc:#ffb8b8}.t1hl .hb4{--hbc:#b8cdff}.t1hl .hb5{--hbc:#ffe57a}.t1hl .hb6{--hbc:#b6e8c6}
+.t1hl.hl-easy{--hc:#0b8193;font-family:var(--display);font-weight:800}
+.t1hl.hl-nige{--hc:#1559b7}
+.t1hl.hl-guard{--hc:#d9480f}
+.t1hl.hl-makuri{--hc:#d62828;font-family:"Dela Gothic One",var(--pop);letter-spacing:.02em;text-shadow:2px 2px 0 color-mix(in srgb,var(--hc) 18%,transparent)}
+.t1hl.hl-sashi{--hc:#0a8f5f;font-family:"Dela Gothic One",var(--pop);letter-spacing:.02em}
+.t1hl.hl-mz{--hc:#8e2fc7}
+.t1hl.hl-upset{border-left-color:#ff4f9a;background:linear-gradient(100deg,color-mix(in srgb,#ff4f9a 10%,var(--surface)),color-mix(in srgb,#ffb300 10%,var(--surface)),color-mix(in srgb,#00b4d8 10%,var(--surface)))}
+.t1hl.hl-upset::before{content:"波乱";display:inline-block;margin-right:6px;padding:0 8px;border-radius:999px;background:#ff4f9a;color:#fff;font-size:.62em;vertical-align:.2em;font-family:var(--display);font-weight:800}
+@media (prefers-color-scheme: dark){.t1hl{color:color-mix(in srgb,var(--hc) 55%,#fff)}.t1hl .hb{color:#fff;background:linear-gradient(transparent 58%,color-mix(in srgb,var(--hbc) 45%,transparent) 58%)}}
+@media (prefers-reduced-motion:no-preference){.t1hl:not([hidden]){animation:hlin .45s ease-out}@keyframes hlin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}}
+.t1hl .hb{white-space:nowrap}

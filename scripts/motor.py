@@ -21,6 +21,11 @@ W_BASE = (0.45, 0.30, 0.25)       # 成績の上ぶれ・展示の速さ・公�
 W_LIVE = 0.45                      # 直前の展示タイムの重み(残りはここまでの評価)
 EX_SD = 0.047                      # 同じレースの中での展示タイムの差のばらつき(秒)
 GRADES = [(1.4, "S"), (0.65, "A"), (0.0, "B"), (-0.65, "C"), (-1.4, "D")]
+# S+: 全国のモーターの中でも飛び抜けたもの(乗れば新人でも勝負になるくらいの「おばけモーター」)。
+# 場の中の比べ方(S〜E)とは別に、全国の全モーターで「成績の上ぶれ」と「展示の速さ」を合わせ、平均から SP_Z 標準偏差以上で、走数も十分なもの。
+# 数百機に1機くらい。いなければ出さない
+SP_Z, SP_N = 4.0, 20
+_NAT: dict = {}
 
 
 def grade(z: float) -> str:
@@ -104,8 +109,20 @@ def _z(vals: dict) -> dict:
     return {k: (0.0 if v is None else (v - m) / s) for k, v in vals.items()}
 
 
+def national(raw: dict) -> tuple:
+    """全国の全モーターの、成績の上ぶれ・展示の速さの平均と標準偏差(S+ を決めるのに使う)。"""
+    key = id(raw)
+    if key not in _NAT:
+        res = [a[0] / (a[1] + K_RES) for v in raw.values() for a in v.values()]
+        exd = [a[2] / (a[3] + K_EX) for v in raw.values() for a in v.values()]
+        _NAT.clear()
+        _NAT[key] = ((statistics.mean(res), statistics.pstdev(res) or 1.0, statistics.mean(exd), statistics.pstdev(exd) or 1.0)
+                     if len(res) >= 50 else None)
+    return _NAT[key]
+
+
 def venue_grades(code: str, vprog: dict, raw: dict) -> dict:
-    """その日の番組表に出てくるモーターの評価 {番号: {z, grade, n, res, ex}}。"""
+    """その日の番組表に出てくるモーターの評価 {番号: {z, grade, n, res, ex, sp}}。sp は S+(全国で飛び抜けたモーター)。"""
     m2 = {}
     for race in vprog.get("races", []):
         for x in race["entries"]:
@@ -117,11 +134,17 @@ def venue_grades(code: str, vprog: dict, raw: dict) -> dict:
     zr, ze, zm = _z(res), _z(exd), _z(m2)
     base = {k: W_BASE[0] * zr[k] + W_BASE[1] * ze[k] + W_BASE[2] * zm[k] for k in m2}
     zb = _z(base)
+    nat = national(raw)
     out = {}
     for k in m2:
         n = rv[k][1] if k in rv else 0
-        out[k] = {"z": round(zb[k], 3), "grade": grade(zb[k]), "n": n,
-                  "res": round(res[k], 2), "ex": round(exd[k], 3)}
+        zn = (((W_BASE[0] * (res[k] - nat[0]) / nat[1] + W_BASE[1] * (exd[k] - nat[2]) / nat[3]) / math.hypot(W_BASE[0], W_BASE[1]))
+              if nat else 0.0)
+        sp = zn >= SP_Z and n >= SP_N
+        out[k] = {"z": round(zb[k], 3), "grade": "S+" if sp else grade(zb[k]), "n": n,
+                  "res": round(res[k], 2), "ex": round(exd[k], 3), "zn": round(zn, 2)}
+        if sp:
+            out[k]["sp"] = 1
     return out
 
 
