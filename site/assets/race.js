@@ -107,22 +107,26 @@
   function cell(v, suf, d) { return v == null || !isFinite(v) ? "—" : (d != null ? Number(v).toFixed(d) : v) + (suf || ""); }
   var SM = { "S": "失", "F": "F", "L": "L", "K": "欠" };
 
+  // モーター評価(艇ごと、D.entries の順): 展示タイムが4艇以上そろったら、レースの平均との差を加える(重みは scripts/motor.py と同じ)
+  function motorZs() {
+    var E = D.entries, exs = E.map(function (e) { return exOf(e.waku); }), okx = exs.filter(function (x) { return x != null && x > 6 && x < 7.6; });
+    var exMean = okx.length >= 4 ? avg(okx) : null;
+    return E.map(function (e, i) {
+      if (!e.mg) return null;
+      var z = e.mg.z;
+      if (exMean != null && exs[i] != null) { var zt = Math.max(-3, Math.min(3, (exMean - exs[i]) / 0.047)); z = (0.55 * z + 0.45 * zt) / Math.sqrt(0.55 * 0.55 + 0.45 * 0.45); }
+      return z;
+    });
+  }
+  function grade(z) { return z == null ? "—" : z >= 1.4 ? "S" : z >= 0.65 ? "A" : z >= 0 ? "B" : z >= -0.65 ? "C" : z >= -1.4 ? "D" : "E"; }
+
   // 出走表
   function renderCard() {
     var box = $("#cardBox");
     if (!box) return;
     var E = D.entries, C = E.map(function (e) { return courseOf(e.waku); }), moved = E.some(function (e, i) { return C[i] !== e.waku; });
     var CS = E.map(function (e, i) { return (e.cs || {})[String(C[i])] || null; });
-    // モーター評価: 展示タイムが4艇以上そろったら、レースの平均との差を加える(重みは scripts/motor.py と同じ)
-    var exs = E.map(function (e) { return exOf(e.waku); }), okx = exs.filter(function (x) { return x != null && x > 6 && x < 7.6; });
-    var exMean = okx.length >= 4 ? avg(okx) : null;
-    var mz = E.map(function (e, i) {
-      if (!e.mg) return null;
-      var z = e.mg.z;
-      if (exMean != null && exs[i] != null) { var zt = Math.max(-3, Math.min(3, (exMean - exs[i]) / 0.047)); z = (0.55 * z + 0.45 * zt) / Math.sqrt(0.55 * 0.55 + 0.45 * 0.45); }
-      return z;
-    });
-    function grade(z) { return z == null ? "—" : z >= 1.4 ? "S" : z >= 0.65 ? "A" : z >= 0 ? "B" : z >= -0.65 ? "C" : z >= -1.4 ? "D" : "E"; }
+    var mz = motorZs();
     var rows = [];
     rows.push(vrow("選手", E.map(function (e) { return '<b class="nm">' + esc(e.name) + '</b><span class="dim">' + esc(e.toban) + " " + esc(e.cls) + "</span>"; }), null, null, "who"));
     rows.push(vrow("支部・年齢", E.map(function (e) { return '<span class="dim">' + esc(e.branch || "") + "<br>" + esc(e.age) + "歳 " + (e.weight ? e.weight + "kg" : "") + "</span>"; })));
@@ -468,8 +472,9 @@
     renderBefore();
     var on = ready();
     setGated(on);
-    if (!on) return;
+    if (!on) { navi(null); return; }                                  // 展開ナビは展示の前でも出す(枠なり・ふだんのST)
     var R = analyze(), B = R.B, scen = R.scen;
+    navi(R);
     renderAlerts(R);
     function byCourse(c) { return B.filter(function (b) { return b.course === c; })[0]; }
     var p1 = V.place[0][0], t = tier(p1);
@@ -608,15 +613,48 @@
     var s = pats[i];
     return { course: s.b.course, kim: s.kim, p: s.p, order: s.ord ? s.ord.order : null };
   }
+  var custom = null;                 // 展開ナビで選んだ展開 {w: 軸の枠, k: 決まり手, a: 2着の枠, b: 3着の枠}。上の決着パターンを押すと戻る
+  function customScen(R) {
+    if (!custom || !R || !R.M) return null;
+    var bw = nvBoat(R, custom.w), ba = nvBoat(R, custom.a), bb = custom.b ? nvBoat(R, custom.b) : null;
+    var i = bw ? nvClass(bw.course, custom.k) : null;
+    if (i == null || !ba) return null;
+    var o = R.M.order(i);
+    if (!o) return null;
+    var head = [bw.course, ba.course].concat(bb ? [bb.course] : []);
+    return { i: i, sc: { course: bw.course, kim: custom.k, p: nvP(R, i), chosen: true, order: head.concat(o.order.slice(1).filter(function (c) { return head.indexOf(c) < 0; })) } };
+  }
   function current() {
+    var cs = customScen(lastR);
+    if (cs) return { sc: cs.sc, ents: entriesFor(lastR, lastR.M.postST(cs.i)) };
+    custom = null;
     var s = pats[patIdx], post = lastR.M ? lastR.M.postST(s.i) : null;
     return { sc: scenOf(patIdx), ents: entriesFor(lastR, post) };
+  }
+  function paintNote() {                                           // 展開ナビで選んだ展開を再生しているときの説明(映像の並びが選んだ並びと違えば、そう書く)
+    var note = $("#t1Note");
+    if (note) {
+      note.hidden = !custom;
+      if (custom) {
+        var got = "", P = view && view.plan ? view.plan() : null;
+        if (P && P.order && lastR) {
+          var wOf = function (c) { var b = lastR.B.filter(function (x) { return x.course === c; })[0]; return b ? b.waku : c; };
+          var g1 = wOf(P.order[0]), g2 = wOf(P.order[1]), g3 = wOf(P.order[2]);
+          if (g1 !== custom.w) got = "(この形の映像は作れず、映像では1着が" + wk(g1) + "になっています)";
+          else if (g2 !== custom.a) got = "(この位置関係では選んだ並びに合わせきれず、映像では2着" + wk(g2) + "・3着" + wk(g3) + "になっています)";
+          else if (custom.b && g3 !== custom.b) got = "(3着までは合わせきれず、映像では3着が" + wk(g3) + "になっています)";
+        }
+        note.innerHTML = "展開ナビで選んだ展開を再生しています: " + wk(custom.w) + "の" + esc(custom.k) + "、2着" + wk(custom.a) + (custom.b ? "、3着" + wk(custom.b) : "") + "。" + got +
+          "下の決着パターンを押すと、見立ての上位に戻ります。";
+      }
+    }
   }
   function drawPats() {
     var box = $("#t1Pats");
     if (!box) return;
+    paintNote();
     box.innerHTML = pats.map(function (s, i) {
-      var on = i === patIdx;
+      var on = !custom && i === patIdx;
       return '<button type="button" class="pat' + (on ? " on" : "") + '" data-i="' + i + '" aria-pressed="' + on + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + "</span>" +
         '<span class="pn">' + s.b.course + "コース " + s.kim + "</span>" +
         '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
@@ -651,16 +689,17 @@
       view = Turn1.mount(canvas, { entries: cur.ents, scen: cur.sc, title: viewTitle(), kimarite: V.kimarite, brand: "水面ノート", fixedST: !!cur.fixed,
                                    onEnd: function () { var b = $("#t1Pause"); if (b) b.textContent = "再生"; } });
       watch(canvas);
+      paintNote();
     } else {
       clearTimeout(viewTimer);
-      viewTimer = setTimeout(function () { view.setScenario(cur.sc, cur.ents, viewTitle(), !!cur.fixed); $("#t1Pause").textContent = "一時停止"; }, 700);
+      viewTimer = setTimeout(function () { view.setScenario(cur.sc, cur.ents, viewTitle(), !!cur.fixed); paintNote(); $("#t1Pause").textContent = "一時停止"; }, 700);
     }
   }
   function showNow() {
     var cur = current();
     viewSig = JSON.stringify([cur.sc.course, cur.sc.kim, cur.sc.order, cur.ents.map(function (e) { return [e.waku, e.course, e.st, e.ex]; })]);
     drawPats();
-    view.setScenario(cur.sc, cur.ents, viewTitle(), !!cur.fixed); started = true; $("#t1Pause").textContent = "一時停止";
+    view.setScenario(cur.sc, cur.ents, viewTitle(), !!cur.fixed); paintNote(); started = true; $("#t1Pause").textContent = "一時停止";
   }
   // 画面に見えたら再生し、見えなくなったら止める(電池と動作の重さのため)
   function watch(canvas) {
@@ -687,7 +726,7 @@
       var b = e.target.closest("button[data-i]");
       if (!b || !view) return;
       var k = b.getAttribute("data-i");
-      patIdx = +k;
+      patIdx = +k; custom = null;
       showNow();
     });
     $("#t1Replay").addEventListener("click", function () { if (view) { view.replay(); started = true; pause.textContent = "一時停止"; } });
@@ -720,6 +759,285 @@
       }).catch(function () {
         msg.textContent = "このブラウザでは動画を作れませんでした。iPhoneのSafariか、パソコンのChromeでお試しください。";
       }).then(function () { save.disabled = false; pause.textContent = view.isPlaying() ? "一時停止" : "再生"; });
+    });
+  }
+
+  // ---- 展開ナビ: 軸艇と戦術(決まり手)を選ぶと、そのときの2着・3着の考えられる展開を、言葉・確率・データで並べる
+  //      確率は見立てのモデル(model.js)の、その決着パターンになったときの着順の見立て。全国の過去1年の割合も並べる
+  var NV = { w: null, k: null }, naviR = null, naviPending = false;
+  var NV_KS = ["逃げ", "差し", "捲り", "捲り差し", "抜き"];
+  var NV_DESC = {
+    "逃げ": "1コースが先にターンして、そのまま先頭に立つ",
+    "差し": "内の艇がターンした、その内側を突いて先頭に立つ",
+    "捲り": "内の艇より先に出て、外から内の艇を叩いて先頭に立つ",
+    "捲り差し": "捲りに行った艇の内側から、さらに内の艇との間を突いて先頭に立つ",
+    "抜き": "1マークは先頭でなくても、2マーク以降の道中で逆転する"
+  };
+  var NV_LS = { "差し": "差され", "捲り": "捲られ", "捲り差し": "捲り差され" };
+  function nvBoat(R, waku) { return R ? R.B.filter(function (b) { return b.waku === waku; })[0] || null : null; }
+  function nvClass(c, k) { var i = MODEL && MODEL.CI ? MODEL.CI[c + k] : null; return i == null ? null : i; }
+  function nvP(R, i) { var s = R.scen.filter(function (x) { return x.i === i; })[0]; return s ? s.p : 0; }        // %(このレースの決着全体の中で)
+  function pTxt(p) { return p < 1 ? "1%未満" : Math.round(p) + "%"; }
+  function wk(w) { return '<span class="waku w' + w + '">' + w + "</span>"; }
+  function surname(n) { return String(n || "").split(/[ 　]/)[0]; }
+  function lean(b, c, a, x) {                       // このコースで、a の動き(2着の時・勝った時)の方が x より多いか(a・x は決まり手の並び)
+    var cs = (b.cs || {})[String(c)] || {}, s2 = cs.s2 || {}, km = cs.km || {};
+    function n(ks) { return ks.reduce(function (s, k) { return s + (s2[k] || 0) + (km[k] || 0); }, 0); }
+    return n(a) > n(x);
+  }
+  // 2着・3着の艇の動きを言葉にする(1着の艇のコース w・決まり手 k と、その艇のコース c の位置関係から)
+  function nvPhrase(k, w, c, b, rank) {
+    var d = c - w, pos = rank === 3 ? "3番手" : "2番手";
+    if (k === "逃げ") {
+      if (c === 2) return "差して内から" + pos + "に続く";
+      if (c === 3) return (lean(b, 3, ["捲り差し"], ["捲り"]) ? "捲り差しで" : "外から攻めて") + pos + "に";
+      if (c === 4) return "カドから攻めて" + pos + "に";
+      return "外から展開を突いて" + pos + "に";
+    }
+    if (k === "差し") {
+      if (c === 1) return "差されたが、しっかり回って残す";
+      if (d < 0) return "内で粘って残す";
+      if (d === 1) return "捲って外から" + pos + "に";
+      if (d === 2) return "さらに内を差して" + pos + "に";
+      return "外から展開を突いて" + pos + "に";
+    }
+    if (k === "捲り") {
+      if (c === 1) return "捲られながらも残す";
+      if (d === -1 && c === 2) return "内を差して残す";
+      if (d === -1) return "絞られてターンが苦しいが、粘って残す";
+      if (d < -1) return "内を差して残す";
+      if (d === 1) return lean(b, c, ["捲り差し", "差し"], ["捲り"]) ? "捲り差しで内に切り込んで" + pos + "に" : "捲りについて行って(マーク)" + pos + "に";
+      if (d === 2) return "内の艇が流れて空いた最内を差して" + pos + "に";
+      return "大外から展開を突いて" + pos + "に";
+    }
+    if (k === "捲り差し") {
+      if (c === 1) return "内で回って残す";
+      if (d === -1) return "捲りに行った艇が外から残す";
+      if (d < -1) return "内で回って残す";
+      if (d === 1) return "続いて差して" + pos + "に";
+      return "外から展開を突いて" + pos + "に";
+    }
+    if (w !== 1 && c === 1) return "1マークは先頭も、道中で抜かれる";
+    return "道中の競り合いで" + pos + "に";
+  }
+  // スタートの形: その決着パターンになるときのST(平均)から
+  function nvStartText(k, w, post) {
+    if (!post) return "";
+    var t = function (c) { return post[c - 1]; }, s = function (c) { return st2(t(c)); };
+    var inner = [], j;
+    for (j = 1; j < w; j++) inner.push(t(j));
+    var minIn = inner.length ? Math.min.apply(null, inner) : null;
+    if (k === "逃げ") {
+      var g = Math.min(t(2), t(3)) - t(1);
+      return "1コースのSTが" + s(1) + "。" + (g >= 0.01 ? "2・3コースより" + g.toFixed(2).replace(/^0/, "") + "秒早く出て、先にターンする形。" : g <= -0.01 ? "2・3コースに少し遅れても、内から先に回って押し切る形。" : "2・3コースとほぼ並んで出て、内から先にターンする形。");
+    }
+    if (k === "捲り") {
+      var gm = minIn - t(w);
+      return w + "コースのSTが" + s(w) + "で、内の艇より" + (gm > 0 ? gm.toFixed(2).replace(/^0/, "") + "秒早く" : "遅れずに") + "出て、内を叩きに行く形。";
+    }
+    if (k === "差し") {
+      if (w >= 3) {
+        var in2 = Math.min.apply(null, inner.slice(0, w - 2));
+        if (t(w - 1) <= in2 - 0.015) return "内の" + (w - 1) + "コース(" + s(w - 1) + ")が先に出て攻め、空いた内を差す形。";
+      }
+      if (w <= 5 && t(w + 1) <= Math.min(minIn, t(w)) - 0.015) return "外の" + (w + 1) + "コース(" + s(w + 1) + ")が攻めて、その内を差す形。";
+      return "そろったスタート(" + w + "コース" + s(w) + ")から、内の艇のターンの内側を差す形。";
+    }
+    if (k === "捲り差し") {
+      if (w >= 3 && t(w - 1) <= Math.min(t(w - 2), t(w)) - 0.015) return "内の" + (w - 1) + "コース(" + s(w - 1) + ")が先に出て捲りに行き、その内を突く形。";
+      return w + "コース(" + s(w) + ")が内へ切り込み、内の艇の間を突く形。";
+    }
+    return "1マークでは決まらず、2マーク以降で逆転する形。";
+  }
+  // 2着・3着の艇の総評: 着順の見立ての項目ごとの点数を、分かる言葉にまとめる(大きいものから)
+  function nvTags(pt) {
+    if (!pt) return "";
+    var g = { "スタート": (pt.st || 0) + (pt.st_mk || 0) + (pt.st_sa || 0) + (pt.st_ms || 0) + (pt.st_p1 || 0) + (pt.st_p1mk || 0),
+              "力": pt.str || 0, "展示": pt.ex || 0, "モーター": pt.mot || 0, "このコースの成績": (pt.c2 || 0) + (pt.top3 || 0),
+              "当地": pt.loc || 0, "前づけでダッシュ有利": pt.mz_dash || 0 };
+    var xs = Object.keys(g).filter(function (n) { return Math.abs(g[n]) >= 0.08; }).sort(function (a, b) { return Math.abs(g[b]) - Math.abs(g[a]); }).slice(0, 3);
+    return xs.map(function (n) { return '<span class="nvtag ' + (g[n] > 0 ? "up" : "dn") + '">' + (g[n] > 0 ? "▲" : "▼") + esc(n) + "</span>"; }).join("");
+  }
+  // 艇のデータ(腕・モーター・癖)
+  function nvChips(R, b, role, MZ, EXR) {
+    var c = b.course, cs = (b.cs || {})[String(c)] || {}, out = [], ix = D.entries.map(function (e) { return e.waku; }).indexOf(b.waku);
+    if (cs.n) {
+      if (role === "axis") out.push(c + "コース1着" + pct(cs.w1, cs.n) + "%(" + cs.n + "走)");
+      else out.push(c + "コース2連対" + pct((cs.w1 || 0) + (cs.w2 || 0), cs.n) + "%・3連対" + pct((cs.w1 || 0) + (cs.w2 || 0) + (cs.w3 || 0), cs.n) + "%(" + cs.n + "走)");
+    } else out.push(c + "コースの記録なし");
+    if (role === "axis") {
+      var tt = tacType(cs);
+      if (c >= 2 && tt.text) out.push("勝ち方 " + tt.text + (tt.type ? "(" + tt.type + ")" : ""));
+    } else if (c === 1) {
+      var ls = cs.ls || {}, lt = ["差し", "捲り", "捲り差し"].filter(function (x) { return ls[x]; }).map(function (x) { return NV_LS[x] + ls[x]; }).join("・");
+      if (lt) out.push("負けた時 " + lt);
+    } else {
+      var st2t = secondText(cs);
+      if (st2t !== "—") out.push("2着の時 " + st2t);
+    }
+    var z = MZ[ix], gd = grade(z);
+    if (z != null) out.push('モーター<b class="g g' + gd + '">' + gd + "</b>" + (b.motor2 != null ? "(" + fmt(b.motor2) + "%)" : ""));
+    if (EXR[b.waku]) out.push("展示" + EXR[b.waku] + "位(" + fmt(b.ex, 2) + ")");
+    if (b.stf) out.push("予想ST" + st2(b.stf.mean) + (b.stf.fp > 0 ? ' <span class="fon">F' + b.stf.fp + "</span>" : ""));
+    out.push(esc(b.cls || "") + " 勝率" + fmt(b.rate, 2));
+    var dw = dochu(b);
+    if (dw.n >= 8 && (dw.rate >= 0.58 || dw.rate <= 0.42)) out.push("競り合い" + dw.w + "勝" + (dw.n - dw.w) + "敗");
+    return out.map(function (x) { return '<span class="nvd">' + x + "</span>"; }).join("");
+  }
+  // その決着パターンになりやすい理由(見立てのモデルの、STに関係しない点数から)
+  function nvWhy(R, i, b, k) {
+    var p = ((R.M.staticU || {}).parts || [])[i];
+    if (!p) return [];
+    var c = b.course, cs = (b.cs || {})[String(c)] || {}, b1 = R.B.filter(function (x) { return x.course === 1; })[0] || null;
+    var items = [];
+    function add(v, pos, neg) { if (Math.abs(v || 0) >= 0.05) items.push({ v: v, t: v > 0 ? pos : neg }); }
+    add(p.rec, c + "コースで1着が多い(" + (cs.w1 || 0) + "/" + (cs.n || 0) + "走)", c + "コースでの1着が少ない(" + (cs.w1 || 0) + "/" + (cs.n || 0) + "走)");
+    if (c >= 2 && k !== "抜き") {
+      var tt = tacType(cs).text;
+      add(p.tac, c + "コースで勝つときは" + k + "が多い" + (tt ? "(" + tt + ")" : ""), c + "コースで" + k + "で勝つことは少ない" + (tt ? "(" + tt + ")" : ""));
+      var ls1 = (((b1 && b1.cs) || {})["1"] || {}).ls || {};
+      if (b1 && NV_LS[k]) add(p.ls, "1コースの" + surname(b1.name) + "は" + NV_LS[k] + "やすい(1コースで負けた時 " + NV_LS[k] + (ls1[k] || 0) + ")",
+                             "1コースの" + surname(b1.name) + "は" + NV_LS[k] + "にくい(1コースで負けた時 " + NV_LS[k] + (ls1[k] || 0) + ")");
+      if (c >= 3) add(p.nb, "内の" + (c - 1) + "コースが捲りに行くことが多く、" + k + "の展開が生まれやすい", "内の" + (c - 1) + "コースは捲りに行くことが少なく、" + k + "の展開は生まれにくい");
+    }
+    add(p.mot, "モーターが上位", "モーターが下位");
+    add(p.ex, "展示タイムが良い", "展示タイムが悪い");
+    add(p.str, "このメンバーでは力が上位", "このメンバーでは力が下位");
+    add(p.loc, "この場が得意", "この場が苦手寄り");
+    items.sort(function (a, b2) { return Math.abs(b2.v) - Math.abs(a.v); });
+    return items.slice(0, 5);
+  }
+  function nvValid(c, k) { return nvClass(c, k) != null; }
+  function nvBestK(R, b) {
+    var best = null;
+    NV_KS.forEach(function (k) { var i = nvClass(b.course, k); if (i != null && (!best || nvP(R, i) > best.p)) best = { k: k, p: nvP(R, i) }; });
+    return best ? best.k : null;
+  }
+  function renderNavi(R) {
+    var boxB = $("#nvBoats"), boxT = $("#nvTacs"), out = $("#nvOut"), state = $("#nvState");
+    if (!boxB || !out) return;
+    if (!R || !R.M) {
+      boxB.innerHTML = ""; boxT.innerHTML = "";
+      out.innerHTML = '<p class="wait">' + (D.entries.length < 6 ? "6艇そろっていないレースは、展開ナビを出せません。" : "見立てのモデルを読み込めませんでした。時間をおいて開き直してください。") + "</p>";
+      return;
+    }
+    state.textContent = ready() ? (finished() ? "結果が出たレース(展示の進入・STで計算)" : "展示の進入・STを入れて計算") : "展示の前(枠なり・ふだんのSTで計算)";
+    // 選択: はじめは本線(一番起こりやすい決着)
+    var axis = NV.w != null ? nvBoat(R, NV.w) : null;
+    if (!axis) { axis = R.scen[0] ? R.scen[0].b : R.B[0]; NV.w = axis.waku; NV.k = R.scen[0] ? R.scen[0].kim : null; }
+    if (!NV.k || !nvValid(axis.course, NV.k)) NV.k = nvBestK(R, axis);
+    var c = axis.course, k = NV.k, i = nvClass(c, k);
+    boxB.innerHTML = R.B.slice().sort(function (a, b) { return a.waku - b.waku; }).map(function (b) {
+      var on = b.waku === axis.waku;
+      return '<button type="button" class="nvb' + (on ? " on" : "") + '" data-w="' + b.waku + '" aria-pressed="' + on + '">' + wk(b.waku) +
+        '<span class="nm">' + esc(surname(b.name)) + (b.course !== b.waku ? '<small>' + b.course + "コース</small>" : "") + "</span>" +
+        '<span class="p">1着' + pTxt(b.share || 0) + "</span></button>";
+    }).join("");
+    boxT.innerHTML = NV_KS.map(function (kk) {
+      var ii = nvClass(c, kk), ok = ii != null, on = kk === k;
+      return '<button type="button" class="nvt' + (on ? " on" : "") + '" data-k="' + kk + '" aria-pressed="' + on + '"' + (ok ? "" : " disabled") + ">" + kk +
+        '<span class="p">' + (ok ? pTxt(nvP(R, ii)) : "—") + "</span></button>";
+    }).join("") + '<p class="note nvdesc">' + esc(k + ": " + NV_DESC[k]) + (c === 1 ? "。1コースは逃げと抜きだけ" : "。逃げは1コースだけ") + "</p>";
+    var P = nvP(R, i), o = R.M.order(i), post = R.M.postST(i), MZ = motorZs(), EXR = {};
+    var exs = R.B.filter(function (b) { return b.ex != null && b.ex > 6 && b.ex < 7.6; }).sort(function (a, b) { return a.ex - b.ex; });
+    if (exs.length >= 4) exs.forEach(function (b, r) { EXR[b.waku] = 1 + exs.filter(function (x) { return x.ex < b.ex - 1e-9; }).length; });
+    var byC = {};
+    R.B.forEach(function (b) { byC[b.course] = b; });
+    var rank = 1 + R.scen.filter(function (s) { return s.p > P + 1e-9; }).length, share = axis.share ? P / axis.share * 100 : 0;
+    var pr = ((PARAMS || {}).pairs || {})[c + k] || null;
+    // 1) 選んだ展開のまとめ
+    var why = nvWhy(R, i, axis, k);
+    var stCells = [1, 2, 3, 4, 5, 6].map(function (cc) {
+      var b = byC[cc], m = b && b.stf ? b.stf.mean : null, x = post ? post[cc - 1] : null, dd = x != null && m != null ? x - m : 0;
+      return '<div class="' + (cc === c ? "cur" : "") + '">' + wk(b ? b.waku : cc) + "<b>" + st2(x) + "</b>" +
+        '<span class="sd' + (dd <= -0.008 ? " up" : dd >= 0.008 ? " dn" : "") + '">' + (Math.abs(dd) >= 0.008 ? (dd < 0 ? "予想より早め" : "予想より遅め") : "予想並") + "</span></div>";
+    }).join("");
+    var html = '<div class="nvsum"><div class="nvhead">' + wk(axis.waku) + "<b>" + esc(axis.name) + "</b>の<b>" + esc(k) + "</b>" +
+      (c !== axis.waku ? '<span class="tag">' + c + "コース</span>" : "") + "</div>" +
+      '<p class="nvp">このレースで起こる見込み <b>' + pTxt(P) + "</b>(決着パターンの" + rank + "番目)" +
+      (axis.share >= 1 ? "。" + axis.waku + "号艇が勝つときの" + Math.round(share) + "%がこの形" : "") + "</p>" +
+      (P < 3 ? '<p class="nvwarn">このレースでは起こりにくい展開です。</p>' : "") +
+      '<div class="nvsub">スタートの形(この展開になるときの各コースのST)</div><p class="nvtx">' + esc(nvStartText(k, c, post)) + '</p><div class="courses nvst" aria-label="この展開になるときのST(平均)">' + stCells + "</div>" +
+      (why.length ? '<div class="nvsub">この展開になりやすい点・なりにくい点</div><ul class="nvwhy">' + why.map(function (x) {
+        return '<li class="' + (x.v > 0 ? "up" : "dn") + '">' + (x.v > 0 ? "▲ " : "▼ ") + esc(x.t) + "</li>"; }).join("") + "</ul>" : "") +
+      '<div class="nvsub">' + axis.waku + "号艇のデータ</div><div class=\"nvds\">" + nvChips(R, axis, "axis", MZ, EXR) + "</div></div>";
+    // 2) 2着の展開(と、それぞれの3着)
+    if (o) {
+      var lam1 = (o.lam || [1, 1])[1], cand = Object.keys(o.p2).map(Number).sort(function (a, b) { return o.p2[b] - o.p2[a]; });
+      var shown = cand.filter(function (cc, j) { return j < 4 && (o.p2[cc] >= 0.03 || j < 2); }), rest = cand.filter(function (cc) { return shown.indexOf(cc) < 0; });
+      var natN = pr ? pr.n : 0, nat2 = function (cc) { return pr && natN >= 30 ? Math.round(pr.s2[cc - 1] / natN * 100) : null; };
+      var canPlay = ready() && k !== "抜き";
+      html += '<div class="nvsec"><h3>2着の展開</h3><p class="sub">' + axis.waku + "号艇の" + esc(k) + "になったとき、2着になりそうな艇と、その動き。" +
+        (natN >= 30 ? "「全国」は、過去1年の全国のレースで" + c + "コースの" + esc(k) + "だったとき(" + natN.toLocaleString() + "レース)の、そのコースの2着の割合です。" : "") + "</p>";
+      html += shown.map(function (cc) {
+        var b = byC[cc], q2 = o.p2[cc] * 100, n2 = nat2(cc);
+        // 3着: この艇が2着だったときの、残りの艇の見立て
+        var others = Object.keys(o.u).map(Number).filter(function (x) { return x !== cc; });
+        var mx = Math.max.apply(null, others.map(function (x) { return lam1 * o.u[x]; })), q = {}, s = 0;
+        others.forEach(function (x) { q[x] = Math.exp(lam1 * o.u[x] - mx); s += q[x]; });
+        var t3 = others.sort(function (a, b2) { return q[b2] - q[a]; }).slice(0, 3);
+        var s23 = pr ? pr.s23[cc - 1] : null, n23 = s23 ? s23.reduce(function (a, x) { return a + x; }, 0) : 0;
+        var thirds = t3.map(function (x) {
+          var bx = byC[x], nat = n23 >= 30 ? Math.round(s23[x - 1] / n23 * 100) : null;
+          return '<li>' + wk(bx.waku) + '<span class="ph">' + esc(nvPhrase(k, c, x, bx, 3)) + '</span><span class="pc">' + pTxt(q[x] / s * 100) + "</span>" +
+            (nat != null ? '<span class="nat">全国' + nat + "%</span>" : "") + "</li>";
+        }).join("");
+        return '<div class="nvc"><div class="nvch">' + wk(b.waku) + '<div class="nvcm"><div><b>' + esc(surname(b.name)) + "</b> " + esc(nvPhrase(k, c, cc, b, 2)) + "</div>" +
+          '<div class="bar"><i style="width:' + Math.min(100, q2).toFixed(1) + '%"></i></div></div><span class="pct">' + pTxt(q2) + "</span>" +
+          (n2 != null ? '<span class="nat">全国' + n2 + "%</span>" : "") + "</div>" +
+          '<div class="nvtags">' + nvTags(o.parts && o.parts[cc]) + "</div>" +
+          '<div class="nvds">' + nvChips(R, b, "cand", MZ, EXR) + "</div>" +
+          '<div class="nv3"><span class="lbl">3着は</span><ul>' + thirds + "</ul></div>" +
+          (canPlay ? '<button type="button" class="nvplay" data-a="' + b.waku + '" data-b="' + (byC[t3[0]] ? byC[t3[0]].waku : "") + '">この展開を1S1Mの映像で見る</button>' : "") + "</div>";
+      }).join("");
+      if (rest.length) html += '<p class="sub nvrest">そのほか: ' + rest.map(function (cc) { return wk(byC[cc].waku) + " " + pTxt(o.p2[cc] * 100); }).join("・") + "</p>";
+      if (!canPlay) html += '<p class="note">' + (k === "抜き" ? "抜きは2マーク以降の逆転なので、1周1マークの映像はありません。" : "1周1マークの映像は、スタート展示のあとに見られます。") + "</p>";
+      html += "</div>";
+    }
+    out.innerHTML = html;
+  }
+  function navi(R) {                                  // 展開ナビのタブが開いているときだけ作る(開いたときに作り直す)
+    naviR = R;
+    var pane = $("#pane-navi");
+    if (!pane) return;
+    if (pane.hidden) { naviPending = true; return; }
+    naviPending = false;
+    renderNavi(naviR || (naviR = analyze()));
+  }
+  function setupNavi() {
+    var boxB = $("#nvBoats"), boxT = $("#nvTacs"), out = $("#nvOut");
+    if (!boxB) return;
+    boxB.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-w]");
+      if (!b) return;
+      NV.w = +b.getAttribute("data-w"); NV.k = null;
+      var R = naviR || (naviR = analyze()), axis = nvBoat(R, NV.w);
+      if (axis) NV.k = nvBestK(R, axis);
+      renderNavi(R);
+    });
+    boxT.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-k]");
+      if (!b || b.disabled) return;
+      NV.k = b.getAttribute("data-k");
+      renderNavi(naviR || (naviR = analyze()));
+    });
+    out.addEventListener("click", function (e) {
+      var b = e.target.closest("button.nvplay");
+      if (!b || !ready()) return;
+      custom = { w: NV.w, k: NV.k, a: +b.getAttribute("data-a"), b: +b.getAttribute("data-b") || null };
+      showTab("t1", true);
+      if (view && !pendingR && lastR) {                       // 映像を作るあいだ(選んだ並びに合わせるので少し時間がかかる)、その旨を出しておく
+        view.pause();
+        var cv0 = $("#t1view"), g = cv0 && cv0.getContext("2d");
+        if (g) {
+          g.fillStyle = "rgba(6,40,54,0.72)"; g.fillRect(0, 0, cv0.width, cv0.height);
+          g.fillStyle = "rgba(255,255,255,0.9)"; g.font = Math.round(cv0.width / 26) + "px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+          g.fillText("選んだ展開の映像を作っています…", cv0.width / 2, cv0.height / 2);
+        }
+        setTimeout(showNow, 40);
+      }
+      var cv = $("#t1view");
+      if (cv && cv.scrollIntoView) setTimeout(function () { cv.scrollIntoView({ behavior: "smooth", block: "center" }); }, 60);
     });
   }
 
@@ -764,9 +1082,11 @@
       else sel();
     });
   }
-  // タブ(出走表・直前情報・1S1M展開・データ)。選んだタブはアドレスの # に残し、ほかのレースへ移っても同じタブを開く
+  // タブ(出走表・直前情報・1S1M展開・展開ナビ・データ)。選んだタブはアドレスの # に残し、ほかのレースへ移っても同じタブを開く
+  var showTab = function () {};
   function setupTabs() {
     var tabs = $$(".tabs [data-tab]"), names = tabs.map(function (b) { return b.getAttribute("data-tab"); });
+    showTab = show;
     function show(name, keep) {
       tabs.forEach(function (b) { var on = b.getAttribute("data-tab") === name; b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false"); });
       $$(".pane").forEach(function (pn) { pn.hidden = pn.id !== "pane-" + name; });
@@ -779,6 +1099,7 @@
           setTimeout(function () { if (pendingR === R1) updateView(R1); window.dispatchEvent(new Event("resize")); }, 40);
         } else window.dispatchEvent(new Event("resize"));
       }
+      if (name === "navi" && naviPending) setTimeout(function () { navi(naviR); }, 20);
     }
     tabs.forEach(function (b) { b.addEventListener("click", function () { show(b.getAttribute("data-tab"), true); }); });
     var h = (location.hash || "").slice(1);
@@ -788,6 +1109,7 @@
   copyBtn("#btnCopy", "#post", "#copyMsg");
   copyBtn("#btnCopyR", "#review", "#copyMsgR");
   setupViewControls();
+  setupNavi();
   render();
   if (!(finished() && LR)) poll();
   schedule();

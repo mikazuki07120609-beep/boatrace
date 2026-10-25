@@ -186,7 +186,7 @@ footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:colu
 .cand{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono)}
 .cand .waku{width:22px;height:22px;font-size:12px}
 /* タブ(出走表・直前情報・1S1M展開・データ) */
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);position:sticky;top:0;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);position:sticky;top:0;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.06)}
 .tabs button{border:0;border-right:1px solid var(--line);border-radius:0;background:var(--surface);padding:12px 2px;font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap}
 .tabs button:last-child{border-right:0}
 .tabs button.on{background:var(--accent);color:#fff}
@@ -226,7 +226,7 @@ table.vt td.top .days em{border-color:rgba(255,255,255,.6)}
 table.ex1t thead th{font-family:var(--mono);font-size:13px}
 @media (max-width:480px){
   section{padding:12px 10px}
-  .tabs button{font-size:13px;padding:11px 1px}
+  .tabs button{font-size:12.5px;padding:11px 0;letter-spacing:-.02em}
 }
 table.vt thead th.w1{background:var(--b1);color:var(--b1t)}table.vt thead th.w2{background:var(--b2);color:var(--b2t)}
 table.vt thead th.w3{background:var(--b3);color:var(--b3t)}table.vt thead th.w4{background:var(--b4);color:var(--b4t)}
@@ -270,3 +270,60 @@ table.vt thead th.w5{background:var(--b5);color:var(--b5t)}table.vt thead th.w6{
 .swhy .fon{color:#1b1b1b;background:#ffd400;border:1px solid #1b1b1b;border-radius:3px;padding:0 3px;font-weight:700;font-family:var(--mono);font-size:11px}
 .sjump{position:fixed;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom,0px));z-index:6;border-radius:999px;padding:10px 18px;
   background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.18);white-space:nowrap}
+/* 展開ナビ */
+.nvsel{display:flex;flex-direction:column;gap:6px}
+.nvl{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em}
+.nvboats{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+@media (max-width:560px){.nvboats{grid-template-columns:repeat(3,1fr)}}
+.nvb{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:6px;align-items:center;text-align:left;padding:6px 8px;background:var(--surface);min-width:0}
+.nvb .waku{grid-row:span 2;width:24px;height:24px}
+.nvb .nm{font-weight:700;font-size:13px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.nvb .nm small{font-weight:500;font-size:10px;color:var(--muted);margin-left:4px}
+.nvb .p{font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.2}
+.nvb.on,.nvt.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent)}
+.nvb.on .p,.nvt.on .p{color:var(--accent)}
+.nvtacs{display:flex;flex-wrap:wrap;gap:6px}
+.nvt{display:inline-flex;flex-direction:column;align-items:center;gap:0;padding:6px 10px;min-width:64px;background:var(--surface);font-weight:700;line-height:1.3}
+.nvt .p{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--muted)}
+.nvt:disabled{opacity:.35}
+.nvdesc{flex-basis:100%;margin-top:2px}
+.nvsum{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line2);border-radius:8px;padding:12px;background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface))}
+.nvhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:16px}
+.nvhead b{font-family:var(--display);font-weight:400;font-size:17px}
+.nvp{margin:0;font-size:13.5px}
+.nvp b{font-family:var(--mono);font-size:17px;color:var(--accent)}
+.nvwarn{margin:0;font-size:12.5px;color:var(--warn);font-weight:700}
+.nvsub{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em;margin-top:4px}
+.nvtx{margin:0;font-size:13.5px}
+.courses.nvst div{padding:4px 0;display:flex;flex-direction:column;align-items:center;gap:1px}
+.courses.nvst .waku{width:18px;height:18px;font-size:10.5px}
+.courses.nvst b{font-size:13px}
+.courses.nvst .sd{font-size:9.5px;line-height:1.2;color:var(--muted);font-family:var(--body);padding:0 2px}
+.courses.nvst .sd.up{color:var(--good);font-weight:700}
+.courses.nvst .sd.dn{color:var(--warn);font-weight:700}
+ul.nvwhy{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:13px}
+ul.nvwhy li.up{color:var(--good)}
+ul.nvwhy li.dn{color:var(--warn)}
+.nvds{display:flex;flex-wrap:wrap;gap:4px}
+.nvd{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;line-height:1.3;padding:2px 7px;border:1px solid var(--line);border-radius:999px;background:var(--surface);white-space:nowrap}
+.nvd .g{width:18px;height:18px;font-size:11px}
+.nvd .fon{color:#1b1b1b;background:#ffd400;border:1px solid #1b1b1b;border-radius:3px;padding:0 3px;font-weight:700;font-size:10.5px}
+.nvsec{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.nvsec h3{margin:0;font-family:var(--display);font-weight:400;font-size:16px}
+.nvc{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:7px}
+.nvch{display:grid;grid-template-columns:26px minmax(0,1fr) auto auto;gap:8px;align-items:center}
+.nvcm{font-size:13.5px;line-height:1.4;min-width:0}
+.nvch .pct{font-size:16px;font-weight:600}
+.nat{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.nvtags{display:flex;gap:6px;flex-wrap:wrap}
+.nvtags:empty{display:none}
+.nvtag{font-size:11.5px;font-weight:700}
+.nvtag.up{color:var(--good)}.nvtag.dn{color:var(--warn)}
+.nv3{display:flex;gap:8px;align-items:flex-start;font-size:12.5px}
+.nv3 .lbl{color:var(--muted);white-space:nowrap;padding-top:2px}
+.nv3 ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.nv3 li{display:grid;grid-template-columns:20px minmax(0,1fr) auto auto;gap:6px;align-items:center}
+.nv3 .waku{width:20px;height:20px;font-size:11px}
+.nv3 .pc{font-family:var(--mono);font-weight:600}
+.nvplay{align-self:flex-start;font-size:12.5px;border-color:var(--accent);color:var(--accent);background:var(--surface)}
+.nvrest .waku,.nvnote .waku{width:18px;height:18px;font-size:10.5px;vertical-align:-4px}

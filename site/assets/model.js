@@ -273,7 +273,7 @@
     var mmean = mm.length ? mm.reduce(function (s, x) { return s + x; }, 0) / mm.length : null;
     var LK = K.LOC_K || 8, locd = B.map(function (b, i) { var lv = b.lv || [0, 0]; return (lv[0] + LK * pts[i]) / (lv[1] + LK) - pts[i]; });
     var mloc = locd.reduce(function (s, x) { return s + x; }, 0) / 6;
-    var u = {};
+    var u = {}, parts = {};                       // parts: 艇ごとの、項目ごとの点数(展開ナビが理由の説明に使う)
     B.forEach(function (b, i) {
       var c = i + 1;
       if (c === cw) return;
@@ -289,9 +289,9 @@
       x.st_mk = k === "捲り" ? x.st : 0; x.st_sa = k === "差し" ? x.st : 0; x.st_ms = k === "捲り差し" ? x.st : 0;   // 決まり手ごとのSTの効き方の上乗せ
       x.st_p1 = c === cw + 1 ? x.st : 0; x.st_p1mk = c === cw + 1 && k === "捲り" ? x.st : 0;           // 1着のすぐ外の艇(捲りについて行く)
       x.mz_dash = mz && c >= 4 ? 1 : 0;                                                                  // 前づけのときのダッシュ勢
-      var d = c - cw, v = alpha[d < 0 ? d + 5 : d + 4];
-      Object.keys(beta).forEach(function (n) { v += beta[n] * (x[n] || 0); });
-      u[c] = v;
+      var d = c - cw, v = alpha[d < 0 ? d + 5 : d + 4], pt = { pos: v };
+      Object.keys(beta).forEach(function (n) { var y = beta[n] * (x[n] || 0); v += y; pt[n] = y; });
+      u[c] = v; parts[c] = pt;
     });
     var rest = Object.keys(u).map(Number), order = rest.slice().sort(function (a, b) { return u[b] - u[a]; });
     function soft(set, lam) { var m = -1e9, s = 0, o = {}; set.forEach(function (c) { m = Math.max(m, lam * u[c]); }); set.forEach(function (c) { o[c] = Math.exp(lam * u[c] - m); s += o[c]; }); set.forEach(function (c) { o[c] /= s; }); return o; }
@@ -301,7 +301,7 @@
       var q = soft(rest.filter(function (c) { return c !== a; }), O.lam[1]);
       Object.keys(q).forEach(function (c) { p3[c] += p2[a] * q[c]; });
     });
-    return { order: [cw].concat(order), p2: p2, p3: p3, u: u };
+    return { order: [cw].concat(order), p2: p2, p3: p3, u: u, parts: parts, lam: O.lam };
   }
 
   var api = { predict: predict, orderFor: orderFor, CLASSES: CLASSES, CI: CI, prior: prior, startMeans: startMeans, startParts: startParts, racerScale: racerScale,

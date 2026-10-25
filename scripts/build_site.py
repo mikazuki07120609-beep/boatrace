@@ -368,6 +368,9 @@ RACE_NOTES = [
     "映像は、決着パターンごとに一番ありそうな着順になるように、各艇の伸びと回り方を合わせています。",
     "終わったレースの映像も、スタート展示のあとに出した見立てのままです(各艇が実際にどう回ったかは公式の記録にないため、レースの再現はしていません)。",
     "道中の競り合いは、ゴールで0.6秒差以内だった相手との勝ち負けから見ています。",
+    "展開ナビは、選んだ艇がその決まり手で1着になったとして、2着・3着の起こりやすさを本線の2着・3着と同じ式で出しています。動きの言葉(捲りについて行く・最内を差すなど)は、1着の艇との位置関係と、"
+    "その艇がそのコースで2着になったときの動き方から付けた目安です。「全国」は、過去1年の全国のレースで同じコース・同じ決まり手だったときの、そのコースが2着・3着になった割合です。"
+    "スタート展示の前は、枠なりの進入・ふだんのSTとして計算し、展示のあとに計算し直します。",
     "結果(3連単の払戻金・決まり手)は、レースの数分後に BOAT RACE オフィシャルウェブサイトから取り込みます。",
 ]
 
@@ -416,7 +419,13 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
             '<button id="t1Slow" type="button" aria-pressed="false">ゆっくり再生</button>'
             '<button id="t1Save" type="button">動画を保存</button></div>'
             '<div class="ctrl" id="t1Out" hidden></div><p class="note" id="t1Msg" aria-live="polite"></p>'
+            '<p class="sub nvnote" id="t1Note" hidden></p>'
             '<div class="pats" id="t1Pats" role="group" aria-label="決着パターン"></div></div></section>')
+    navi = ('<section class="navi" aria-labelledby="h-navi"><div class="row-head"><h2 id="h-navi">展開ナビ</h2><span class="sub" id="nvState"></span></div>'
+            '<p class="sub">軸にする艇と、その艇の勝ち方(戦術)を選ぶと、2着・3着に考えられる展開を、起こりやすさとデータと一緒に並べます。</p>'
+            '<div class="nvsel"><div class="nvl">軸艇</div><div class="nvboats" id="nvBoats" role="group" aria-label="軸艇"></div>'
+            '<div class="nvl">戦術</div><div class="nvtacs" id="nvTacs" role="group" aria-label="戦術"></div></div>'
+            '<div id="nvOut"><p class="wait">計算しています…</p></div></section>')
     analysis = ('<section class="gated"><h2>スタートの見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
                 '<div class="scroll"><table class="stt"><thead><tr><th>コース</th><th>選手</th><th class="num">予想ST</th>'
                 '<th class="num">出る</th><th class="num">凹む</th><th>出たときの展開</th></tr></thead><tbody id="stRows"></tbody></table></div>'
@@ -490,11 +499,13 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         data["pace"] = pace              # 推定タイム(一周・まわり足)と展示タイム1位の1着率(scripts/pace.py)
     tabs = ('<nav class="tabs" role="tablist" aria-label="このレースの情報">'
             '<button type="button" role="tab" data-tab="card">出走表</button><button type="button" role="tab" data-tab="before">直前情報</button>'
-            '<button type="button" role="tab" data-tab="t1">1S1M展開</button><button type="button" role="tab" data-tab="data">データ</button></nav>')
+            '<button type="button" role="tab" data-tab="t1">1S1M展開</button><button type="button" role="tab" data-tab="navi">展開ナビ</button>'
+            '<button type="button" role="tab" data-tab="data">データ</button></nav>')
     body = (head + result_banner(res_live, result) + tabs
             + '<div class="pane" id="pane-card">' + card + "</div>"
             + '<div class="pane" id="pane-before">' + before_html + "</div>"
             + '<div class="pane" id="pane-t1">' + view + analysis + "</div>"
+            + '<div class="pane" id="pane-navi">' + navi + "</div>"
             + '<div class="pane" id="pane-data">' + venue_html + res_html + "</div>")
     first = ents[0]
     c1 = first["cs"].get("1")

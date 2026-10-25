@@ -193,7 +193,11 @@
       if (cw === 2) {
         // 2コースの差しが決まるのは、1コースが全速で流れるか、外の捲りに張って2艇とも流れたとき
         var cand = [byC[3], byC[4]].filter(Boolean).sort(function (a, b) { return margin(b) - margin(a); })[0];
-        if (cand && margin(cand) >= -0.03) { A = cand; force(A, inner(A), 0.025); set(A, "makuri", b1); set(b1, "hari"); A.flowOut = true; }
+        // 選んだ並び(展開ナビ)で1コースが3・4コースより後ろなら、3コースの捲りに1コースが張って2艇とも流れた形
+        // (捲った3コースが外から、さらに内を差した4コースが内から、1コースより前に残る)
+        var pass1 = !!(opt.chosen && tgt && byC[3] && [byC[3], byC[4]].some(function (o) { return o && tpos(o.course) < tpos(1); }));
+        if (pass1) cand = byC[3];
+        if (cand && (margin(cand) >= -0.03 || pass1)) { A = cand; force(A, inner(A), 0.025); set(A, "makuri", b1); set(b1, "hari"); A.flowOut = true; }
         else set(b1, "zensoku");
         set(W, "sashi", b1);
       } else {
@@ -1163,7 +1167,7 @@
         lab = labels(boats, rel, iEnd);
       };
       var best = miss(), bestSt = save(), st0 = bestSt, moved = false, tries = {}, fullOk = false, noBoost = {};
-      for (var it = 0; it < (opt.orderIters || 10) && best > 0 && best < 1000; it++) {
+      for (var it = 0; it < (opt.orderIters || (opt.chosen ? 20 : 10)) && best > 0 && best < 1000; it++) {
         var cur = lab.order.map(function (b) { return b.course; }), k2 = -1;
         for (var q = 1; q < 5; q++) if (cur[q] !== tgt[q]) { k2 = q; break; }
         if (k2 < 0) break;
@@ -1174,6 +1178,7 @@
         if (tries[key] === 1) {
           // 1回目は動き方を変える: 捲られた1コースは張って流れる、外を回す艇は前の艇について行く、差し・まくり差しの艇は待つ
           if (dn.course === 1 && dn.role === "nokoshi" && up.course > 1) dn.role = "hari";
+          if (opt.chosen && dn.course === 1 && dn.role === "zensoku" && up.course > 1) dn.flowExtra = Math.min(0.2, (dn.flowExtra || 0) + 0.05);   // 全速で回った1コースが、もっと流れる
           if ((up.role === "soto" || up.role === "zen" || (up.role === "sashi" && dn.course < up.course)) && k2 <= 3 && ahead && ahead.course < up.course && !ahead.win) { up.role = "mark"; up.ref = ahead; }
           if (dn.role === "sashi" || dn.role === "makurizashi" || dn.role === "mark") dn.wait = Math.min(1.5, (dn.wait || 0) + 0.6);
           if (up.wait) up.wait = Math.max(0, up.wait - 0.4);                  // 前に出したい艇は、待ちを短く
@@ -1201,10 +1206,10 @@
         dn.flowExtra = Math.min(0.18, (dn.flowExtra || 0) + (soft ? 0.06 : 0.045));   // 出口で流れる(引き波に沈む)
         hold(dn, soft ? 0.94 : 0.96);
         if (dn.course !== 1) drift(dn, soft ? 0.6 : 0.4);
-        runOnce(true);
+        runOnce(!opt.chosen);                                              // 選んだ並びを再生するときは、毎回、引き波も含めて計算する
         moved = true;
         var m2 = miss();
-        if (m2 < best) { runOnce(false); m2 = miss(); }                    // 良くなったら、引き波も含めて確かめる
+        if (m2 < best && !opt.chosen) { runOnce(false); m2 = miss(); }     // 良くなったら、引き波も含めて確かめる
         if (m2 < best) { best = m2; bestSt = save(); fullOk = true; }
         else if (m2 >= 1000) { restore(bestSt); noBoost[key] = true; fullOk = false; }   // 先頭・決まり手が崩れたら戻して、別のやり方で
       }
@@ -1529,7 +1534,7 @@
 
   function mount(canvas, opt) {
     var ctx = canvas.getContext("2d");
-    var P = plan(opt.entries, opt.scen, opt.kimarite, { fixedST: !!opt.fixedST });
+    var P = plan(opt.entries, opt.scen, opt.kimarite, { fixedST: !!opt.fixedST, chosen: !!(opt.scen && opt.scen.chosen) });
     var t = T0, playing = false, last = null, speed = 1, raf = null, fixed = null;
     function end() { return P.tEnd + 1.6; }
     function size() {
@@ -1559,7 +1564,7 @@
         if (entries) opt.entries = entries;
         if (title) opt.title = title;
         opt.fixedST = !!fixedST;
-        opt.scen = sc; P = plan(opt.entries, sc, opt.kimarite, { fixedST: opt.fixedST }); api.replay();
+        opt.scen = sc; P = plan(opt.entries, sc, opt.kimarite, { fixedST: opt.fixedST, chosen: !!(sc && sc.chosen) }); api.replay();
       },
       plan: function () { return P; },
       render: render,

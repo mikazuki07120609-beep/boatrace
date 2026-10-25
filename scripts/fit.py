@@ -728,6 +728,29 @@ def order_eval(th, data):
     return {"races": int(len(G)), "hit2": round(hit2 * 100, 1), "hit23": round(hit23 * 100, 1), "ll2": round(ll2, 4)}
 
 
+def pair_table(recs, days: int = 365) -> dict:
+    """決着パターン(1着のコース×決まり手)ごとの、2着・3着のコースの回数(全国・直近1年)。
+    展開ナビ(race.js)が、そのレースの見立てと並べて「全国ではこうなることが多い」として出す。
+    {"2差し": {"n": レース数, "s2": [2着のコースごとの回数], "s23": [[2着がa・3着がbの回数](6×6)]}}"""
+    if not recs:
+        return {}
+    lo = max(r["d"] for r in recs) - dt.timedelta(days=days - 1)
+    out: dict = {}
+    for r in recs:
+        if r["y"] is None or r["d"] < lo:
+            continue
+        rk = {b["c"]: b.get("rank") for b in r["b"]}
+        c2 = next((c for c, k in rk.items() if k == 2), None)
+        c3 = next((c for c, k in rk.items() if k == 3), None)
+        t = out.setdefault("%d%s" % CLASSES[r["y"]], {"n": 0, "s2": [0] * 6, "s23": [[0] * 6 for _ in range(6)]})
+        t["n"] += 1
+        if c2:
+            t["s2"][c2 - 1] += 1
+            if c3:
+                t["s23"][c2 - 1][c3 - 1] += 1
+    return out
+
+
 def order_model(th, base):
     a, b, lam = order_unpack(th)
     return {"alpha": {k: [round(float(x), 4) for x in a[g]] for k, g in KG.items()},
@@ -863,6 +886,7 @@ def main() -> int:
              "start": sm, "cond_st": conditional_st(th, sm, recs)}
     if th_ord is not None:
         model["order"] = order_model(th_ord, base2)
+    model["pairs"] = pair_table(recs)
     save_json(DATA / "model.json", model)
     if ev:
         hist = load_json(DATA / "eval.json", {}) or {}
