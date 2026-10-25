@@ -17,9 +17,9 @@
     var n = nowJst(), a = (D.race.deadline || "0:0").split(":"), dl = +a[0] * 60 + +a[1];
     return n.iso === D.race.date ? dl - n.min : (n.iso < D.race.date ? 1e4 : -1e4);
   }
-  function fmt(v) { return v == null ? "—" : v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1); }
+  function fmt(v) { return v == null || !(v > 0) ? "—" : v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1); }   // 0.0(票がない)は出さない
   function move(cur, prev) {                     // ひとつ前からの変化(5%以上)
-    if (cur == null || prev == null || !isFinite(cur) || !isFinite(prev) || prev <= 0) return "";
+    if (cur == null || prev == null || !isFinite(cur) || !isFinite(prev) || prev <= 0 || cur <= 0) return "";
     var r = cur / prev;
     if (r <= 0.95) return '<i class="mv dn" title="' + fmt(prev) + "→" + fmt(cur) + '">↓</i>';
     if (r >= 1.05) return '<i class="mv up" title="' + fmt(prev) + "→" + fmt(cur) + '">↑</i>';
@@ -54,7 +54,7 @@
     else box.innerHTML = viewTf(O.tan || {}, P.tan || {}, O.fuku || {});
   }
   function view3t(T, PT) {
-    var keys = Object.keys(T).filter(function (k) { return T[k] != null; }).sort(function (a, b) { return T[a] - T[b]; });
+    var keys = Object.keys(T).filter(function (k) { return T[k] != null && T[k] > 0; }).sort(function (a, b) { return T[a] - T[b]; });
     if (!keys.length) return '<p class="wait">3連単のオッズがまだありません。</p>';
     var top = keys.slice(0, 20).map(function (k, i) {
       var c = k.split("-");
@@ -71,7 +71,7 @@
       '<div class="odsub">1着から見る</div><div class="chips odfirst">' + heads + '</div><div class="g3" aria-label="1着が' + first + '号艇の3連単">' + grid + "</div>";
   }
   function matrix(T, PT, sep, tri) {
-    var vals = Object.keys(T).map(function (k) { return T[k]; }).filter(function (v) { return v != null; }), mn = vals.length ? Math.min.apply(null, vals) : null;
+    var vals = Object.keys(T).map(function (k) { return T[k]; }).filter(function (v) { return v != null && v > 0; }), mn = vals.length ? Math.min.apply(null, vals) : null;
     var head = '<tr><th></th>' + [1, 2, 3, 4, 5, 6].map(function (w) { return "<th>" + wk(w) + "</th>"; }).join("") + "</tr>";
     var rows = [1, 2, 3, 4, 5, 6].map(function (a) {
       return "<tr><th>" + wk(a) + "</th>" + [1, 2, 3, 4, 5, 6].map(function (b) {
@@ -87,12 +87,12 @@
       '<div class="odsub">2連複</div>' + matrix(F, PF, "=", true);
   }
   function viewTf(T, PT, F) {
-    var vals = [1, 2, 3, 4, 5, 6].map(function (w) { return T[w]; }).filter(function (v) { return v != null; }), mn = vals.length ? Math.min.apply(null, vals) : null;
+    var vals = [1, 2, 3, 4, 5, 6].map(function (w) { return T[w]; }).filter(function (v) { return v != null && v > 0; }), mn = vals.length ? Math.min.apply(null, vals) : null;
     return '<div class="scroll"><table class="odt"><thead><tr><th>艇</th><th>選手</th><th class="num">単勝</th><th class="num">複勝</th></tr></thead><tbody>' +
       [1, 2, 3, 4, 5, 6].map(function (w) {
         var f = F[w];
         return "<tr><td>" + wk(w) + "</td><td>" + esc(names[w] || "") + '</td><td class="num od' + (T[w] != null && T[w] === mn ? " fav" : "") + '">' + fmt(T[w]) + move(T[w], PT[w]) +
-          '</td><td class="num">' + (f ? fmt(f[0]) + "〜" + fmt(f[1]) : "—") + "</td></tr>";
+          '</td><td class="num">' + (f && f[1] > 0 ? fmt(f[0]) + "〜" + fmt(f[1]) : "—") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }
 
