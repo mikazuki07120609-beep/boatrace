@@ -26,6 +26,7 @@ BACKFILL_FIRST = 30      # 成績データがほとんどないときに、1回�
 LIVE_KEEP_DAYS = 90      # 取り込んだ直前情報・結果(data/live)と答え合わせの記録(data/learn)を残す日数
 BACKFILL_PER_RUN = int(os.environ.get("BACKFILL_PER_RUN") or 10)   # ふだんの1回で取り込む過去の日数
 REFETCH_PER_RUN = int(os.environ.get("REFETCH_PER_RUN") or 12)     # 風・展示タイムを残していなかった古い縮めた成績を、取り直す日数(1回あたり)
+GRADE_PER_RUN = int(os.environ.get("GRADE_PER_RUN") or 20)         # 開催のグレードを取り込む過去の日数(1回あたり。今日・明日は毎回)
 STATE = DATA / "fetch_state.json"
 
 
@@ -158,6 +159,15 @@ def main() -> int:
             continue
         if p.parent.name == "pred" or age > LIVE_KEEP_DAYS:
             shutil.rmtree(p) if p.is_dir() else p.unlink()
+
+    # 開催のグレード(女子戦の印)と女子レーサー(出走表の区分ごとのコース成績・女子レーサーの印に使う)
+    if not a.offline:
+        try:
+            import grades
+            grades.update_fem(today, log)
+            grades.update_grades(today, GRADE_PER_RUN, log)
+        except Exception as ex:  # noqa: BLE001  取れなくても、サイトの更新は続ける
+            log.append(f"グレード・女子レーサーの取り込みをとばしました: {ex}")
 
     print("\n".join(log))
     # 見立ての学習と答え合わせ(numpy・scipy が必要。ない環境では前回の学習結果をそのまま使う)

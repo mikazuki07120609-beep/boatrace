@@ -8,7 +8,7 @@
 """
 import datetime as dt
 
-from common import RESULTS, KIMARITE, load_json, parse_ymd
+from common import DATA, RESULTS, KIMARITE, load_json, parse_ymd
 
 RACER_DAYS = 365
 VENUE_DAYS = 365      # 1年分そろってから、場の傾向も1年で見る方が当たる(直近30日の答え合わせで確かめた)
@@ -89,13 +89,38 @@ def valid_st(e) -> bool:
             and e.get("status") in (None, "S0", "S1", "S2"))
 
 
-class Acc:
-    """選手・場・全国の集計。add(日付, その日の成績, +1/-1) で1日分を足し引きする。"""
+CATS = ("女子戦", "SG", "G1", "G2", "G3", "一般")   # レースの区分(開催のグレードと女子戦)
 
-    def __init__(self):
+
+def category_resolver():
+    """レースの区分を返す関数 f(日付, 場コード, 出走表の艇) -> 区分 or None を作る。
+    開催のグレード(data/grades.json)と女子レーサー(data/fem.json)から。オールレディース・ヴィーナスシリーズと、
+    6艇とも女子レーサーのレースは「女子戦」。グレードが分からない日は None(集計に入れない)。"""
+    G = load_json(DATA / "grades.json", {}) or {}
+    fem = set((load_json(DATA / "fem.json", {}) or {}).get("fem", []))
+
+    def cat(d: dt.date, vcode: str, ents: list):
+        g = (G.get(f"{d:%Y%m%d}") or {}).get(vcode)
+        if not g:
+            return None
+        if "lady" in g or "venus" in g or (fem and len(ents) >= 6 and all(e.get("toban") in fem for e in ents)):
+            return "女子戦"
+        return g[0]
+    cat.fem = fem
+    cat.grades = G
+    return cat
+
+
+class Acc:
+    """選手・場・全国の集計。add(日付, その日の成績, +1/-1) で1日分を足し引きする。
+    cat_of(レースの区分を返す関数)を渡すと、区分ごとの全国のコース成績と、選手の区分ごとのコース成績も数える。"""
+
+    def __init__(self, cat_of=None):
         self.racers: dict = {}
         self.venues: dict = {}
         self.nat = {"races": 0, "c": {}}          # 全国(選手の集計と同じ期間)
+        self.cat_of = cat_of
+        self.cats: dict = {}                       # 区分ごとの全国(女子戦・SG・G1・G2・G3・一般)
 
     def add(self, d: dt.date, day: dict, sign: int = 1, racers: bool = True, venues: bool = True):
         for vcode, v in day.get("venues", {}).items():
@@ -119,6 +144,16 @@ class Acc:
                            "fin": [(e, race_time(e.get("time"))) for e in ents if e.get("rank") and race_time(e.get("time"))]}
                     for e in ents:
                         _racer(self.racers, e, kim, rmean, d, sign, ctx, vcode)
+                    cat = self.cat_of(d, vcode, race.get("entries", [])) if self.cat_of else None
+                    if cat:
+                        cs = self.cats.setdefault(cat, {"races": 0, "c": {}})
+                        cs["races"] += sign
+                        _course_table(cs, ents, kim, sign)
+                        for e in ents:                    # 選手の区分ごとのコース成績 [走数, 1着, 2着, 3着]
+                            g = self.racers[e["toban"]].setdefault("g", {}).setdefault(cat, {}).setdefault(str(e["course"]), [0, 0, 0, 0])
+                            g[0] += sign
+                            if e.get("rank") in (1, 2, 3):
+                                g[e["rank"]] += sign
 
     def racer(self, toban: str) -> dict:
         return self.racers.get(toban, {})
@@ -225,13 +260,15 @@ def finish(racers: dict) -> dict:
                   "rst": [r["rst"][0], round(r["rst"][1], 4), round(r["rst"][2], 5)], "f": sorted(r["f"]),
                   "r8": [round(x, 2) for x in r.get("rs", [])[-RECENT_N:]],
                   "cb": list(r.get("cb", [0, 0])), "nk": list(r.get("nk", [0, 0])),
-                  "v": {k: list(a) for k, a in r.get("v", {}).items() if a[1] > 0}}
+                  "v": {k: list(a) for k, a in r.get("v", {}).items() if a[1] > 0},
+                  "g": {k: {c: list(a) for c, a in v.items() if a[0] > 0} for k, v in r.get("g", {}).items() if any(a[0] > 0 for a in v.values())}}
     return out
 
 
-def collect(until: dt.date, cache: dict | None = None):
-    """until(その日を含まない)までの成績から、選手別・場別の集計を返す。戻り値: (選手, 場, 全国)"""
-    acc = Acc()
+def collect(until: dt.date, cache: dict | None = None, cats=None, out_cats: dict | None = None):
+    """until(その日を含まない)までの成績から、選手別・場別の集計を返す。戻り値: (選手, 場, 全国)
+    cats(category_resolver の関数)を渡すと、区分ごとの全国の集計を out_cats に入れる。"""
+    acc = Acc(cats)
     rstart = until - dt.timedelta(days=RACER_DAYS)
     vstart = until - dt.timedelta(days=VENUE_DAYS)
     for d, p in _result_files(rstart, until):
@@ -241,6 +278,9 @@ def collect(until: dt.date, cache: dict | None = None):
             if cache is not None:
                 cache[p.stem] = day
         acc.add(d, day, 1, racers=True, venues=d >= vstart)
+    if out_cats is not None:
+        out_cats.clear()
+        out_cats.update(acc.cats)
     return finish(acc.racers), acc.venues, acc.nat
 
 

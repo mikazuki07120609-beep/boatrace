@@ -15,6 +15,9 @@ on:
       refetch:
         description: "1回で取り直す古い成績の日数"
         default: "12"
+      grades:
+        description: "1回で取り込む過去の開催グレードの日数"
+        default: "20"
   push:
     branches: [main]
     paths: ["scripts/**", "site/**", "data/stadiums.json", ".github/workflows/update.yml"]
@@ -46,6 +49,7 @@ jobs:
         env:
           BACKFILL_PER_RUN: ${{ github.event.inputs.backfill || '10' }}
           REFETCH_PER_RUN: ${{ github.event.inputs.refetch || '12' }}
+          GRADE_PER_RUN: ${{ github.event.inputs.grades || '20' }}
         run: python3 scripts/update.py
       - name: 取り込んだデータを保存する
         run: |

@@ -6,7 +6,8 @@
   - 展示タイムが同じレースの平均より速いと、どれだけペースが速いか(β)も同じデータから求める
   - 一周(推定) = その場の標準の一周 + モーターと選手のずれ ÷ 3 + β × 展示タイムの差 ÷ 3
   - まわり足(推定) = モーターと選手のずれのうち、展示タイム(直線の速さ)では説明できない分 ÷ 3(旋回の速さの目安)
-展示タイム1位の1着率: 6艇とも展示タイムがあるレースで、一番速かった艇(同タイムは全部)が1着になった割合(全国・場・コース別)。
+展示タイム1位の成績: 6艇とも展示タイムがあるレースで、一番速かった艇(同タイムは全部)の回数と、1着・2着・3着になった回数(全国・場・コース別)。
+  [回数, 1着, 2着, 3着] の形。
 """
 import datetime as dt
 import statistics
@@ -28,7 +29,7 @@ def build(day: dt.date) -> dict:
     # 1) 着順ごとの平均の差(レースの平均からのずれ)
     gap: dict = {}
     races = []
-    ex1 = {"nat": [0, 0], "ven": {}, "course": {}, "vcourse": {}}
+    ex1 = {"nat": [0, 0, 0, 0], "ven": {}, "course": {}, "vcourse": {}}
     for d, res in rows:
         for code, v in res.get("venues", {}).items():
             for race in races_of(v):
@@ -38,12 +39,13 @@ def build(day: dt.date) -> dict:
                     mn = min(exs)
                     for e in ents:
                         if e["ex"] == mn and e.get("course"):
-                            won = 1 if e.get("rank") == 1 else 0
+                            rk = e.get("rank")
                             c = str(e["course"])
-                            for slot in (ex1["nat"], ex1["ven"].setdefault(code, [0, 0]), ex1["course"].setdefault(c, [0, 0]),
-                                         ex1["vcourse"].setdefault(code, {}).setdefault(c, [0, 0])):
+                            for slot in (ex1["nat"], ex1["ven"].setdefault(code, [0, 0, 0, 0]), ex1["course"].setdefault(c, [0, 0, 0, 0]),
+                                         ex1["vcourse"].setdefault(code, {}).setdefault(c, [0, 0, 0, 0])):
                                 slot[0] += 1
-                                slot[1] += won
+                                if rk in (1, 2, 3):
+                                    slot[rk] += 1
                 fin = [(e, race_time(e.get("time"))) for e in ents if e.get("rank")]
                 fin = [(e, t) for e, t in fin if t and 90 < t < 140]
                 if len(fin) < 4:
@@ -99,7 +101,7 @@ def for_race(P: dict, code: str, ents: list) -> dict:
     """ページに埋め込む分: 場の標準の一周・β・展示1位の1着率と、艇ごとのモーター・選手のずれ。"""
     mv = P["motor"].get(code, {})
     out = {"lap": P["venue_lap"].get(code, P["nat_lap"]), "beta": P["beta"], "races": P["races"],
-           "ex1": {"nat": P["ex1"]["nat"], "ven": P["ex1"]["ven"].get(code, [0, 0]), "course": P["ex1"]["course"],
+           "ex1": {"nat": P["ex1"]["nat"], "ven": P["ex1"]["ven"].get(code, [0, 0, 0, 0]), "course": P["ex1"]["course"],
                    "vcourse": P["ex1"]["vcourse"].get(code, {})},
            "boats": {}}
     for x in ents:
