@@ -50,14 +50,15 @@
     var boats = entries.map(function (e) {
       return { waku: e.waku, course: e.course || e.waku, name: e.name || (e.waku + "号艇"),
                st: e.st == null ? 0.16 : clamp(e.st, 0.01, 0.35), st0: e.st == null ? 0.16 : clamp(e.st, 0.01, 0.35),
-               motor2: e.motor2, ex: e.ex, cls: e.cls, km: e.km || {}, ls: e.ls || {}, n: e.n || 0, w1: e.w1 || 0 };
+               motor2: e.motor2, ex: e.ex, cls: e.cls, km: e.km || {}, ls: e.ls || {}, n: e.n || 0, w1: e.w1 || 0, dashIn: e.dash };
     }).sort(function (a, b) { return a.course - b.course; });
     var am = avg(boats.map(function (b) { return b.motor2; })), ae = avg(boats.map(function (b) { return b.ex; }));
     // 前づけ(3〜6号艇が枠より内のコースへ)があると、起こしが前になって(助走が短く)スロー勢の伸びが落ち、ダッシュ勢が有利になりやすい。
     // そのときはスローが4艇(1〜4コース)・ダッシュが2艇になりやすい
     var mz = boats.some(function (b) { return b.waku > b.course && b.waku >= 3; });
     boats.forEach(function (b) {
-      var dash = b.course >= (mz ? 5 : 4);       // ふだんは4〜6コースがダッシュ、1〜3コースがスロー
+      var dash = b.dashIn != null ? !!b.dashIn : b.course >= (mz ? 5 : 4);   // ふだんは4〜6コースがダッシュ、1〜3コースがスロー(隊形が分かっていればそれに従う)
+      b.dash = dash;
       b.vline = dash ? 21.6 : (mz ? 17.2 : 18.0);   // スタートラインを越えるときの速さ(m/秒)。前づけで起こしが深いと、スロー勢は遅い
       b.apre = dash ? 1.3 : 2.6;                 // スタート前の加速
       var vm = 22.0;                             // 直線の最高速(モーターと展示タイムで上下)
@@ -131,6 +132,7 @@
       b.tac = tacShares(b, vkim);
     });
     var b1 = byC[1], W = byC[cw] || boats[0], A = null;
+    var kado = boats.filter(function (b) { return b.dash; }).sort(function (a, b) { return a.course - b.course; })[0] || null;   // カド(ダッシュの一番内)
     var avgV = avg(boats.map(function (b) { return b.vmax0; }));
     var Q = project(boats, 95, true), P = null;
     function reproject() { P = project(boats, 95, false); }
@@ -141,7 +143,7 @@
     function leadIn(a) { var m = Infinity; inner(a).forEach(function (o) { m = Math.min(m, lead(a, o)); }); return m === Infinity ? 0 : m; }
     // 捲りに行くのに必要な、内の艇より前に出ている量(秒)。捲り型の選手ほど小さい
     function thr(b) {
-      var base = { 2: 0.065, 3: 0.05, 4: 0.04, 5: 0.05, 6: 0.07 }[b.course] || 0.06;
+      var base = b === kado ? 0.04 : ({ 2: 0.065, 3: 0.05, 4: 0.05, 5: 0.05, 6: 0.07 }[b.course] || 0.06);   // カドの艇が一番捲りに行きやすい
       return clamp(base - 0.06 * (b.tac["捲り"] - b.tac.prior["捲り"]), 0.025, 0.09);
     }
     function margin(b) { return leadIn(b) - thr(b); }
@@ -182,7 +184,19 @@
       A = natural();
       if (A && A.course === 2 && margin(A) < 0.03) A = null;                // 2コースは少し出ても差しに回ることが多い
       if (A && tgt && tpos(A.course) <= 1) A = null;                        // 2着に残る艇は、捲りに行って止められた形ではない(差し・ついて回る)
-      if (A) { set(A, "makuri", b1); A.fail = true; set(b1, strong1() >= 0.45 ? "nigeHari" : "nige"); }  // 張り気味に先に回って止める
+      if (!A && kado && kado.course >= 3 && kado.course <= 5) {
+        // はっきり前に出ていなくても、カドの艇が内の隣の艇より前に出ていて、1コースからも大きく遅れていなければ捲りに行く(1コースは張って止める)。
+        // ただし見立てで2着になる艇が、2コースとカドの間の艇(捲りに行かれて絞られる艇)のときは、その形ではない
+        var t2 = tgt ? tgt[1] : null;
+        if (!(tgt && tpos(kado.course) <= 1) && !(t2 && t2 > 2 && t2 < kado.course) &&
+            lead(kado, byC[kado.course - 1]) >= 0.02 && lead(kado, b1) >= -0.25 && kado.tac["捲り"] + kado.tac["捲り差し"] >= 0.5) A = kado;
+      }
+      if (A) {
+        set(A, "makuri", b1); A.fail = true; set(b1, strong1() >= 0.45 ? "nigeHari" : "nige");   // 1コースは張り気味に先に回って止める
+        // 止められた捲りの外の艇は、捲りについて行かず、流れた捲りの内へ切り替えて差す
+        //(すぐ外はブイ際へ、その外は内の差しと捲りの間へ、遠い艇は内の差しの後ろ)
+        boats.forEach(function (o) { if (o.course > A.course) set(o, "sashi", A); });
+      }
       else set(b1, byC[2] && byC[2].tac["差し"] >= 0.72 ? "kotsu" : "nige");
     } else if (k === "捲り") {
       A = W;
@@ -370,7 +384,7 @@
     var ref = b.ref && b.ref.sp ? b.ref : null, rs = ref ? ref.sp : s1;
     switch (b.role) {
       case "nige": sp = { yi: 6.0, dz: 4.2, yo: -11.0, rho: 1.3 }; break;
-      case "nigeHari": sp = { yi: 7.6, dz: 4.9, yo: -12.2, rho: 1.25, late: true }; break;          // 張り気味に先に回る
+      case "nigeHari": sp = { yi: 8.0, dz: 5.9, yo: -12.8, rho: 1.25, late: true }; break;          // 張り気味に先に回る(ターンマークを少し外すので、内に差す隙間ができる)
       case "kotsu": sp = { yi: 5.6, dz: 3.8, yo: -9.6, rho: 1.25 }; break;                          // 小回り(差しの余地をなくす)
       case "zensoku": sp = { yi: 6.4, dz: 6.2, yo: -15.5, rho: 1.35 }; break;                       // 全速で回って膨らむ
       case "hari": sp = { yi: L + 3.2, dz: 7.6, yo: -18.0, rho: 1.3, late: true }; break;           // 外へ張って止めに行く
@@ -1298,7 +1312,7 @@
           if (opt.chosen && dn.course === 1 && dn.role === "zensoku" && up.course > 1) dn.flowExtra = Math.min(0.2, (dn.flowExtra || 0) + 0.05);   // 全速で回った1コースが、もっと流れる
           // (前の艇の後ろについて回らせると縦に並んでしまうので、ついて行かせるのは捲った艇の後ろだけ)
           if ((up.role === "soto" || up.role === "zen" || (up.role === "sashi" && dn.course < up.course)) && k2 <= 3 && ahead && ahead.course < up.course && !ahead.win &&
-              (ahead.role === "makuri" || ahead.role === "nidan")) { up.role = "mark"; up.ref = ahead; }
+              (ahead.role === "makuri" || ahead.role === "nidan") && !ahead.fail) { up.role = "mark"; up.ref = ahead; }
           if (dn.role === "sashi" || dn.role === "makurizashi" || dn.role === "mark") dn.wait = Math.min(1.5, (dn.wait || 0) + 0.6);
           if (up.wait) up.wait = Math.max(0, up.wait - 0.4);                  // 前に出したい艇は、待ちを短く
           // 捲られて大きく後ろへ下がる艇(見立てで2つ以上後ろ)は、最初から引き波に沈む形にする
@@ -1308,7 +1322,7 @@
           }
         }
         if (tries[key] === 2 && ahead && (ahead.win || ahead.course < up.course) && ["sashi", "makurizashi", "soto", "zen"].indexOf(up.role) >= 0 &&
-            (ahead.role === "makuri" || ahead.role === "nidan")) {
+            (ahead.role === "makuri" || ahead.role === "nidan") && !ahead.fail) {   // (止められて流れた捲りにはついて行かない)
           up.role = "mark"; up.ref = ahead; up.wait = 0;                    // 2回目も抜けないときは、捲った艇の外について回る
         }
         var soft = !!noBoost[key];                                          // 前の艇を抜いて先頭が崩れた組は、後ろの艇を下げるだけにする
