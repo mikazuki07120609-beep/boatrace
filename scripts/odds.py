@@ -166,6 +166,24 @@ def read_race(jcd: str, no: int, ymd: str) -> dict | None:
     return rec
 
 
+# ---------------------------------------------------------------- 動きの記録(Actions のときだけ)
+_LAST_REPORT = [0.0]
+
+
+def report(state: str, desc: str, force: bool = False) -> None:
+    """動いているか・失敗したかを、取り込みを始めたコミットの状態(commit status "odds")として残す。
+    実行の記録(ログ)を見られないときでも、GitHub の API で確かめられる。成功の記録は5分に1回まで。"""
+    import os
+    sha, repo = os.environ.get("GITHUB_SHA"), os.environ.get("GITHUB_REPOSITORY")
+    if not sha or not repo or not shutil.which("gh") or not os.environ.get("GH_TOKEN"):
+        return
+    if state == "success" and not force and time.time() - _LAST_REPORT[0] < 300:
+        return
+    _LAST_REPORT[0] = time.time()
+    subprocess.run(["gh", "api", f"repos/{repo}/statuses/{sha}", "-f", f"state={state}", "-f", "context=odds",
+                    "-f", f"description={desc[:139]}"], capture_output=True, text=True)
+
+
 # ---------------------------------------------------------------- 置き場所(odds ブランチ)
 def git(*a, cwd=None, check=False):
     return subprocess.run(["git", *a], cwd=cwd or ROOT, capture_output=True, text=True, check=check)
@@ -204,18 +222,26 @@ def cleanup(base: Path, today: dt.date) -> None:
 
 
 def publish(base: Path, msg: str) -> bool:
-    """odds ブランチを、コミット1つだけにして上書きで送る。"""
+    """odds ブランチを、コミット1つだけにして上書きで送る。
+    送るのはリポジトリの本体から(作業場所は本体とコミットを共有している。Actions の認証は本体の設定にあるため)。"""
     git("add", "-A", cwd=base)
     has_head = git("rev-parse", "--verify", "-q", "HEAD", cwd=base).returncode == 0
     r = git("commit", "-q", "--amend", "-m", msg, cwd=base) if has_head else git("commit", "-q", "-m", msg, cwd=base)
     if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
         print("記録できませんでした:", r.stderr.strip(), flush=True)
+    sha = git("rev-parse", "HEAD", cwd=base).stdout.strip()
+    if not sha:
+        return False
+    err = ""
     for _ in range(3):
-        p = git("push", "-q", "-f", "origin", f"HEAD:{BRANCH}", cwd=base)
+        p = git("push", "-q", "-f", "origin", f"{sha}:refs/heads/{BRANCH}")
         if p.returncode == 0:
+            report("success", f"{msg} を送りました")
             return True
-        print("送れませんでした:", p.stderr.strip(), flush=True)
+        err = p.stderr.strip()
+        print("送れませんでした:", err, flush=True)
         time.sleep(3)
+    report("failure", "送れませんでした: " + err, force=True)
     return False
 
 
@@ -309,7 +335,11 @@ def remaining(day: dt.date, now: dt.datetime, base: Path | None = None) -> bool:
 
 def loop(minutes: float, push: bool) -> None:
     end = time.time() + minutes * 60
-    base = setup_worktree()
+    try:
+        base = setup_worktree()
+    except Exception as ex:  # noqa: BLE001
+        report("failure", f"odds ブランチを用意できませんでした: {ex}", force=True)
+        raise
     day = dt.datetime.now(JST).date()
     cleanup(base, day)
     state = {"last": {}, "tries": {}}
@@ -328,6 +358,7 @@ def loop(minutes: float, push: bool) -> None:
             n = cycle(base, day, state, now)
         except Exception as ex:  # noqa: BLE001  1回りの失敗で止めない
             print("1回りに失敗:", ex, flush=True)
+            report("error", f"1回りに失敗: {ex}", force=True)
             n = 0
         if n and push:
             publish(base, f"オッズ {now:%Y-%m-%d %H:%M}")

@@ -25,6 +25,7 @@ jobs:
     permissions:
       contents: write
       actions: write          # 次の実行を起こすため
+      statuses: write         # 動いているか・失敗したかを残すため(commit status "odds")
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,6 +34,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: 締切の直前のレースのオッズを読み取って odds ブランチへ送る
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
