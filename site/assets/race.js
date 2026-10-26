@@ -219,7 +219,7 @@
       var left = minsLeft();
       box.innerHTML = '<p class="wait">' + (left < -5 || finished() ? "このレースの直前情報は取り込めませんでした。" : "展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。") + "</p>";
       if (at) at.textContent = "";
-      if (exb) exb.innerHTML = ex1Text(null);
+      if (exb) exb.innerHTML = ex1Text([]);
       return;
     }
     var E = D.entries, exs = E.map(function (e) { return exOf(e.waku); });
@@ -277,35 +277,36 @@
     if (at) at.textContent = has ? (BI.fetched ? BI.fetched + " 取り込み" : "") : "";
     // 展示タイム1位の艇の1着率
     var best = exMean != null ? Math.min.apply(null, okx) : null, bi = best != null ? exs.indexOf(best) : -1;
-    if (exb) exb.innerHTML = ex1Text(bi >= 0 ? { e: E[bi], c: courseOf(E[bi].waku) } : null);
+    var ex1b = best == null ? [] : E.filter(function (e, i) { return exs[i] === best; }).map(function (e) { return { e: e, c: courseOf(e.waku) }; });
+    if (exb) exb.innerHTML = ex1Text(ex1b);
   }
-  // 展示タイム1位の艇の成績(直近半年): 回数と、1着・2着・3着の割合。全国と当地、コース別
-  function ex1Text(b) {
-    var X = D.pace && D.pace.ex1;
-    if (!X || !X.nat || !X.nat[0]) return "";
-    function r(a, k) { return a && a[0] >= 20 && a.length > k ? Math.round(a[k] / a[0] * 100) : null; }
+  // 展示タイム1位の選手の成績: その選手が展示タイム1位だったとき(直近1年)の、コース別の回数と1着・2着・3着の割合。
+  // 各マスの下に、全国(全選手)で展示タイム1位の艇の割合を小さく添える。同タイムで1位が2艇以上なら、それぞれ出す
+  function ex1Text(bs) {
+    var X = (D.pace && D.pace.ex1) || {}, RX = (D.pace && D.pace.ex1r) || {};
+    var head = '<h3>展示タイム1位の選手の成績<small>展示1位だったとき・直近1年</small></h3>';
+    if (!bs || !bs.length) return '<div class="ex1">' + head + '<p class="wait">展示航走のあと、展示タイム1位になった選手の、これまで展示1位だったときのコース別の成績を出します。</p></div>';
+    function r(a, k) { return a && a[0] > 0 && a.length > k ? Math.round(a[k] / a[0] * 100) : null; }
     function rt(a, k) { var v = r(a, k); return v == null ? "—" : v + "%"; }
-    function n(a) { return a && a[0] ? Number(a[0]).toLocaleString() : "0"; }
-    var has3 = X.nat.length >= 4, ks = has3 ? [1, 2, 3] : [1];
-    function sum(lbl, a, cls) {
-      return '<div class="ex1s ' + cls + '"><span class="lbl">' + esc(lbl) + "</span>" + ks.map(function (k) { return '<span class="rk r' + k + '">' + k + "着 <b>" + rt(a, k) + "</b></span>"; }).join("") +
-        '<span class="cnt">' + n(a) + "回</span></div>";
-    }
-    var lines = ['<div class="ex1"><h3>展示タイム1位の艇の成績<small>直近半年</small></h3>' + sum("全国", X.nat, "nat") + sum(V.name, X.ven, "ven") + "</div>"];
-    var vals = {};
-    ks.forEach(function (k) { vals[k] = [1, 2, 3, 4, 5, 6].map(function (c) { return r((X.course || {})[String(c)], k); }); });
-    var rows = [1, 2, 3, 4, 5, 6].map(function (c) {
-      var A = (X.course || {})[String(c)], Vc = (X.vcourse || {})[String(c)], hit = b && b.c === c;
-      return '<tr class="' + (hit ? "hit" : "") + '"><th scope="row"><span class="cn">' + c + "</span>" + (hit ? '<span class="here">このレース</span>' : "") + "</th>" +
-        '<td><b>' + n(A) + '</b><span class="dim">' + n(Vc) + "</span></td>" +
-        ks.map(function (k) { return '<td class="r' + k + '"><b>' + rt(A, k) + '</b><span class="dim">' + rt(Vc, k) + "</span></td>"; }).join("") + "</tr>";
-    }).join("");
-    lines.push('<div class="gridt-wrap"><table class="gridt ex1t"><thead><tr><th>コース</th><th>展示1位の回数</th>' + ks.map(function (k) { return "<th>" + k + "着率</th>"; }).join("") +
-      "</tr></thead><tbody>" + rows + "</tbody></table></div>");
-    lines.push('<p class="sub">各マスの上が全国、下が' + esc(V.name) + "の数字です。" + (b ? "このレースの展示タイム1位は " + b.e.waku + "号艇 " + esc(b.e.name) + "(" + b.c + "コース)。色の付いた行が、そのコースです。" : "") + "</p>");
-    return lines.join("");
+    function nat(a, k) { return a && a[0] >= 20 && a.length > k ? "全国" + Math.round(a[k] / a[0] * 100) + "%" : ""; }
+    return '<div class="ex1">' + head + bs.map(function (b) {
+      var m = RX[String(b.e.waku)] || {}, tot = [0, 0, 0, 0];
+      Object.keys(m).forEach(function (c) { for (var k = 0; k < 4; k++) tot[k] += m[c][k] || 0; });
+      var who = '<div class="ex1who"><span class="waku w' + b.e.waku + '">' + b.e.waku + "</span><b>" + esc(b.e.name) + "</b>" + femMark(b.e) +
+        '<span class="sub">今日は' + b.c + "コース</span></div>";
+      if (!tot[0]) return who + '<p class="sub">この選手は、直近1年で展示タイム1位になったレースがありません。</p>';
+      var sum = '<div class="ex1s"><span class="lbl">全コース</span>' + [1, 2, 3].map(function (k) { return '<span class="rk r' + k + '">' + k + "着 <b>" + rt(tot, k) + "</b></span>"; }).join("") +
+        '<span class="cnt">' + tot[0] + "回</span></div>";
+      var rows = [1, 2, 3, 4, 5, 6].map(function (c) {
+        var A = m[String(c)], N = (X.course || {})[String(c)], hit = b.c === c;
+        return '<tr class="' + (hit ? "hit" : "") + (A && A[0] ? "" : " none") + '"><th scope="row"><span class="cn">' + c + "</span>" + (hit ? '<span class="here">今日</span>' : "") + "</th>" +
+          "<td><b>" + (A ? A[0] : 0) + "</b></td>" +
+          [1, 2, 3].map(function (k) { return '<td class="r' + k + '"><b>' + rt(A, k) + '</b><span class="dim">' + nat(N, k) + "</span></td>"; }).join("") + "</tr>";
+      }).join("");
+      return who + sum + '<div class="gridt-wrap"><table class="gridt ex1t"><thead><tr><th>コース</th><th>展示1位の回数</th><th>1着率</th><th>2着率</th><th>3着率</th></tr></thead><tbody>' +
+        rows + "</tbody></table></div>";
+    }).join("") + '<p class="sub">各マスの上がこの選手の数字、下の小さい数字は全国(全選手)で展示タイム1位だった艇の割合です。色の付いた行が、今日のコースです。</p></div>';
   }
-
   function topThree(order) {
     var fin = (order || []).filter(function (x) { return x.rank; }).sort(function (a, b) { return a.rank - b.rank; });
     return fin.length >= 3 ? fin.slice(0, 3).map(function (x) { return x.waku; }) : null;

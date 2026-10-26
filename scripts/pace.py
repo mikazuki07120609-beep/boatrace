@@ -6,8 +6,8 @@
   - 展示タイムが同じレースの平均より速いと、どれだけペースが速いか(β)も同じデータから求める
   - 一周(推定) = その場の標準の一周 + モーターと選手のずれ ÷ 3 + β × 展示タイムの差 ÷ 3
   - まわり足(推定) = モーターと選手のずれのうち、展示タイム(直線の速さ)では説明できない分 ÷ 3(旋回の速さの目安)
-展示タイム1位の成績: 6艇とも展示タイムがあるレースで、一番速かった艇(同タイムは全部)の回数と、1着・2着・3着になった回数(全国・場・コース別)。
-  [回数, 1着, 2着, 3着] の形。
+展示タイム1位の成績: 6艇とも展示タイムがあるレースで、一番速かった艇(同タイムは全部)の回数と、1着・2着・3着になった回数。
+  [回数, 1着, 2着, 3着] の形。全国・コース別(直近半年)と、選手ごと・コース別(直近1年。そのレースの展示タイム1位の選手の成績に使う)。
 """
 import datetime as dt
 import statistics
@@ -16,21 +16,29 @@ from common import RESULTS, load_json, parse_ymd
 from stats import races_of, race_time
 
 DAYS = 180
+EX1_DAYS = 365             # 選手ごとの「展示タイム1位のときの成績」を数える期間
 MOTOR_DAYS = 60
 K_M, K_R = 10, 15          # モーター・選手のずれを0に寄せる強さ(走数)
 
 
+def _ex1_add(slot: list, rk) -> None:
+    slot[0] += 1
+    if rk in (1, 2, 3):
+        slot[rk] += 1
+
+
 def build(day: dt.date) -> dict:
-    rows = []
+    rows, ex1r = [], {}
+    ex1 = {"nat": [0, 0, 0, 0], "course": {}}
     for p in sorted(RESULTS.glob("*.json")):
         d = parse_ymd(p.stem)
-        if day - dt.timedelta(days=DAYS) <= d < day:
-            rows.append((d, load_json(p, {}) or {}))
-    # 1) 着順ごとの平均の差(レースの平均からのずれ)
-    gap: dict = {}
-    races = []
-    ex1 = {"nat": [0, 0, 0, 0], "ven": {}, "course": {}, "vcourse": {}}
-    for d, res in rows:
+        if not (day - dt.timedelta(days=EX1_DAYS) <= d < day):
+            continue
+        res = load_json(p, {}) or {}
+        recent = d >= day - dt.timedelta(days=DAYS)
+        if recent:
+            rows.append((d, res))
+        # 展示タイム1位だった艇の [回数, 1着, 2着, 3着]: 選手ごと・コース別(直近1年)と、全国・コース別(直近半年)
         for code, v in res.get("venues", {}).items():
             for race in races_of(v):
                 ents = race["entries"]
@@ -39,13 +47,18 @@ def build(day: dt.date) -> dict:
                     mn = min(exs)
                     for e in ents:
                         if e["ex"] == mn and e.get("course"):
-                            rk = e.get("rank")
-                            c = str(e["course"])
-                            for slot in (ex1["nat"], ex1["ven"].setdefault(code, [0, 0, 0, 0]), ex1["course"].setdefault(c, [0, 0, 0, 0]),
-                                         ex1["vcourse"].setdefault(code, {}).setdefault(c, [0, 0, 0, 0])):
-                                slot[0] += 1
-                                if rk in (1, 2, 3):
-                                    slot[rk] += 1
+                            c, rk = str(e["course"]), e.get("rank")
+                            _ex1_add(ex1r.setdefault(e["toban"], {}).setdefault(c, [0, 0, 0, 0]), rk)
+                            if recent:
+                                _ex1_add(ex1["nat"], rk)
+                                _ex1_add(ex1["course"].setdefault(c, [0, 0, 0, 0]), rk)
+    # 1) 着順ごとの平均の差(レースの平均からのずれ)
+    gap: dict = {}
+    races = []
+    for d, res in rows:
+        for code, v in res.get("venues", {}).items():
+            for race in races_of(v):
+                ents = race["entries"]
                 fin = [(e, race_time(e.get("time"))) for e in ents if e.get("rank")]
                 fin = [(e, t) for e, t in fin if t and 90 < t < 140]
                 if len(fin) < 4:
@@ -94,15 +107,15 @@ def build(day: dt.date) -> dict:
     return {"beta": round(beta, 3), "nat_lap": round(nat_lap, 3), "venue_lap": venue_lap,
             "motor": {c: {k: [round(a[0] / (a[2] + K_M), 3), round(a[1] / (a[2] + K_M), 3), a[2]] for k, a in v.items()} for c, v in motor.items()},
             "racer": {k: [round(a[0] / (a[2] + K_R), 3), round(a[1] / (a[2] + K_R), 3), a[2]] for k, a in racer.items()},
-            "ex1": ex1, "races": len(races)}
+            "ex1": ex1, "ex1r": ex1r, "races": len(races)}
 
 
 def for_race(P: dict, code: str, ents: list) -> dict:
-    """ページに埋め込む分: 場の標準の一周・β・展示1位の1着率と、艇ごとのモーター・選手のずれ。"""
+    """ページに埋め込む分: 場の標準の一周・β・展示1位の成績(全国のコース別と、出走する選手ごとのコース別)と、艇ごとのモーター・選手のずれ。"""
     mv = P["motor"].get(code, {})
     out = {"lap": P["venue_lap"].get(code, P["nat_lap"]), "beta": P["beta"], "races": P["races"],
-           "ex1": {"nat": P["ex1"]["nat"], "ven": P["ex1"]["ven"].get(code, [0, 0, 0, 0]), "course": P["ex1"]["course"],
-                   "vcourse": P["ex1"]["vcourse"].get(code, {})},
+           "ex1": P["ex1"],
+           "ex1r": {str(x["waku"]): P.get("ex1r", {}).get(x["toban"], {}) for x in ents},
            "boats": {}}
     for x in ents:
         m = mv.get(str(x.get("motor")), [0.0, 0.0, 0])
