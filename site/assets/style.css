@@ -498,3 +498,11 @@ table.vt td.top .g.gSp{box-shadow:0 0 0 2px #ffd400}
 @media (prefers-color-scheme: dark){.t1hl{color:color-mix(in srgb,var(--hc) 55%,#fff)}.t1hl .hb{color:#fff;background:linear-gradient(transparent 58%,color-mix(in srgb,var(--hbc) 45%,transparent) 58%)}}
 @media (prefers-reduced-motion:no-preference){.t1hl:not([hidden]){animation:hlin .45s ease-out}@keyframes hlin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}}
 .t1hl .hb{white-space:nowrap}
+
+/* 欠場の艇と、締切の変更(レースの遅れ) */
+.abs{display:inline-block;margin:2px auto 0;padding:1px 6px;border-radius:6px;background:#5b6472;color:#fff;font-size:11px;font-weight:800;line-height:1.4;letter-spacing:.04em}
+table.vt thead th.absent{background:repeating-linear-gradient(135deg,var(--head),var(--head) 6px,color-mix(in srgb,#5b6472 14%,var(--head)) 6px,color-mix(in srgb,#5b6472 14%,var(--head)) 12px)}
+table.vt thead th.absent .hn{opacity:.7;text-decoration:line-through;text-decoration-thickness:1.5px}
+.wait.absent-note{border-style:solid;border-color:color-mix(in srgb,#5b6472 45%,var(--line2));color:var(--ink);font-weight:700}
+.race-list .dl.moved{color:var(--rank1);font-weight:800}
+#dlTag[title]:not([title=""]){border-color:var(--rank1);color:var(--rank1)}

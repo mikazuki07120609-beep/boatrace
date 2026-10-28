@@ -2,6 +2,7 @@
 import datetime as dt
 import json
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -55,3 +56,50 @@ def zen2han(s: str) -> str:
         else:
             out.append(ch)
     return "".join(out)
+
+
+def _hm(t: str) -> str:
+    h, m = t.split(":")
+    return f"{int(h):02d}:{m}"
+
+
+def _mins(t: str) -> int:
+    h, m = t.split(":")
+    return int(h) * 60 + int(m)
+
+
+def parse_deadlines(page: str) -> dict:
+    """公式サイトのレースのページ(出走表・直前情報・オッズ・結果)の上にある「締切予定時刻」の表から {"レース番号": "HH:MM"}。
+    レースが遅れたときは、公式サイトがこの時刻を新しい締切に変える。読めなければ空。"""
+    i = page.find("締切予定時刻")
+    if i < 0:
+        return {}
+    t0, t1 = page.rfind("<table", 0, i), page.find("</table>", i)
+    if t0 < 0 or t1 < 0:
+        return {}
+    j = i - t0
+    tbl = page[t0:t1]
+    nos = [int(x) for x in re.findall(r"rno=(\d+)", tbl[:j])]
+    r0, r1 = tbl.rfind("<tr", 0, j), tbl.find("</tr>", j)
+    times = re.findall(r"<td[^>]*>\s*(\d{1,2}:\d{2})\s*</td>", tbl[r0:r1] if r0 >= 0 and r1 > 0 else "")
+    if not times or len(times) > 12:
+        return {}
+    if len(nos) != len(times):
+        nos = list(range(1, len(times) + 1))
+    return {str(n): _hm(t) for n, t in zip(nos, times)}
+
+
+def merge_deadlines(prog_races: list, got: dict) -> dict:
+    """読み取った締切 got のうち、番組表の締切と比べてありえる範囲(30分早い〜4時間遅い)のものだけ {"レース番号": "HH:MM"}。"""
+    out = {}
+    for r in prog_races:
+        k, dl = str(r["no"]), r.get("deadline")
+        t = got.get(k)
+        if t and dl and -30 <= _mins(t) - _mins(dl) <= 240:
+            out[k] = t
+    return out
+
+
+def deadline_of(race: dict, lv: dict | None) -> str | None:
+    """そのレースの今の締切(公式サイトで変わっていればそちら。なければ番組表の締切)。"""
+    return ((lv or {}).get("dl") or {}).get(str(race["no"])) or race.get("deadline")

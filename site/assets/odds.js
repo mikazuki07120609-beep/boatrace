@@ -113,7 +113,10 @@
     lastFetch = Date.now();
     return fetch(URL0 + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) { if (j && (!O || JSON.stringify(j) !== JSON.stringify(O))) { O = j; render(); } else if (!O) render(); })
+      .then(function (j) {
+        if (j && j.dl && /^\d{1,2}:\d{2}$/.test(j.dl)) D.race.deadline = j.dl;          // 公式の今の締切(レースが遅れると変わる)
+        if (j && (!O || JSON.stringify(j) !== JSON.stringify(O))) { O = j; render(); } else if (!O) render();
+      })
       .catch(function () { if (!O) render(); });
   }
   function want() {                                   // 読みに行く時間帯か
@@ -140,6 +143,7 @@
     if (f) { first = +f.getAttribute("data-first"); render(); }
   });
   document.addEventListener("visibilitychange", function () { if (visible() && want()) load(); });
+  document.addEventListener("suimen:deadline", function (e) { if (e.detail) { D.race.deadline = e.detail; if (!O) render(); } });   // race.js が読んだ公式の締切
   if (visible()) load(); else render();
   tick();
 })();

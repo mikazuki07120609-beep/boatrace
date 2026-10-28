@@ -116,10 +116,24 @@
       cells.map(function (c, i) { return '<td class="' + (t ? rkClass(t[i]) : "") + '">' + c + "</td>"; }).join("") + "</tr>";
   }
   function femMark(e) { return e && e.fem ? '<span class="fem" title="女子レーサー" aria-label="女子レーサー">♥</span>' : ""; }
+  // 欠場: 直前情報で欠場の印がある艇・スタート展示に出ず展示タイムもない艇、結果で「欠」の艇
+  function absentWakus() {
+    return D.entries.map(function (e) { return e.waku; }).filter(function (w) {
+      var k = String(w);
+      if (BI && BI.absent && BI.absent.indexOf(w) >= 0) return true;
+      if (BI && BI.ready && BI.course && BI.course.length && BI.course.indexOf(w) < 0 && (!BI.ex || BI.ex[k] == null)) return true;
+      var o = LR && LR.order ? LR.order.filter(function (x) { return x.waku === w; })[0] : null;
+      if (o && o.status && /^欠/.test(o.status)) return true;
+      var r = resEntry(w);
+      return !!(r && r.status && /^K/.test(r.status));
+    });
+  }
+  function absMark(e) { return e && absentWakus().indexOf(e.waku) >= 0 ? '<span class="abs">欠場</span>' : ""; }
   // 表の見出し(枠番)。names を付けると、選手名も見出しに入れる(下へ動かしても上に残る)
   function vhead(names) {
     return '<thead><tr><th class="corner"></th>' + D.entries.map(function (e) {
-      return '<th class="bw w' + e.waku + '"><span class="bn">' + e.waku + "</span>" + (names ? '<span class="hn">' + esc(e.name) + femMark(e) + "</span>" : "") + "</th>";
+      var ab = absMark(e);
+      return '<th class="bw w' + e.waku + (ab ? " absent" : "") + '"><span class="bn">' + e.waku + "</span>" + (names ? '<span class="hn">' + esc(e.name) + femMark(e) + "</span>" : "") + ab + "</th>";
     }).join("") + "</tr></thead>";
   }
   function p0(a, b) { return b ? Math.round(a / b * 100) : null; }
@@ -326,12 +340,43 @@
   function renderDeadline() {
     var t = $("#dlTag");
     if (!t) return;
-    var left = minsLeft(), s = "締切 " + D.race.deadline;
+    var left = minsLeft(), s = "締切 " + D.race.deadline + (D.race.deadline0 ? "(変更)" : "");
+    t.title = D.race.deadline0 ? "レースが遅れたため、公式の締切が" + D.race.deadline0 + "から" + D.race.deadline + "に変わりました" : "";
     if (finished()) s += "(終了)";
     else if (left > 0 && left < 600) s += "(あと" + Math.floor(left) + "分)";
     else if (left <= 0 && left > -600) s += "(締切済み)";
     t.textContent = s;
     t.classList.toggle("soon", !finished() && left > 0 && left <= 10);
+  }
+  // 欠場があるレース: 見立て・1周1マークの映像・展開ナビは6艇そろったレースだけで計算しているので、出せないことを説明する
+  function absentText(ab) {
+    return ab.map(function (w) { var e = D.entries.filter(function (x) { return x.waku === w; })[0]; return w + "号艇" + (e ? " " + e.name : ""); }).join("・") + "が欠場";
+  }
+  function showAbsent(ab) {
+    var who = absentText(ab);
+    setGated(false);
+    $$(".gated").forEach(function (sec) {
+      var w = sec.querySelector(".wait");
+      if (!sec.querySelector("#stBox")) { sec.hidden = true; sec.setAttribute("data-abshide", "1"); return; }   // 展開の見立て・道中・解説文は、映像の説明だけにする
+      if (!w) return;
+      if (w.getAttribute("data-orig") == null) w.setAttribute("data-orig", w.textContent);
+      w.textContent = who + "のため、このレースはスタートの見立てを出せません(見立ては6艇そろったレースだけで計算しています)。";
+      w.classList.add("absent-note");
+    });
+    var tw = $("#t1Wait");
+    if (tw) {
+      if (tw.getAttribute("data-orig") == null) tw.setAttribute("data-orig", tw.textContent);
+      tw.textContent = who + "のため、このレースは1周1マークの展開予想ができません(展開の見立て・映像は、6艇そろったレースだけで計算しています)。";
+      tw.classList.add("absent-note");
+    }
+    var hl = $("#t1Head");
+    if (hl) hl.hidden = true;
+    var al = $("#alerts");
+    if (al) al.innerHTML = "";
+  }
+  function restoreWait() {                                         // 欠場の説明を出したあとで、6艇そろっていたと分かったとき
+    $$("[data-orig]").forEach(function (w) { w.textContent = w.getAttribute("data-orig"); w.removeAttribute("data-orig"); w.classList.remove("absent-note"); });
+    $$("[data-abshide]").forEach(function (sec) { sec.hidden = false; sec.removeAttribute("data-abshide"); });
   }
   function setGated(on) {
     $$(".gated").forEach(function (sec) {
@@ -531,6 +576,9 @@
     renderResult();
     renderCard();
     renderBefore();
+    var ab = absentWakus();
+    if (ab.length) { showAbsent(ab); navi(null); return; }
+    restoreWait();
     var on = ready();
     setGated(on);
     if (!on) { navi(null); return; }                                  // 展開ナビは展示の前でも出す(枠なり・ふだんのST)
@@ -1023,6 +1071,12 @@
   function renderNavi(R) {
     var boxB = $("#nvBoats"), boxT = $("#nvTacs"), out = $("#nvOut"), state = $("#nvState");
     if (!boxB || !out) return;
+    var ab = absentWakus();
+    if (ab.length) {
+      boxB.innerHTML = ""; boxT.innerHTML = ""; state.textContent = "";
+      out.innerHTML = '<p class="wait absent-note">' + esc(absentText(ab)) + "のため、このレースは展開ナビ(展開予想)を出せません。</p>";
+      return;
+    }
     if (!R || !R.M) {
       boxB.innerHTML = ""; boxT.innerHTML = "";
       out.innerHTML = '<p class="wait">' + (D.entries.length < 6 ? "6艇そろっていないレースは、展開ナビを出せません。" : "見立てのモデルを読み込めませんでした。時間をおいて開き直してください。") + "</p>";
@@ -1109,7 +1163,7 @@
     if (!pane) return;
     if (pane.hidden) { naviPending = true; return; }
     naviPending = false;
-    renderNavi(naviR || (naviR = analyze()));
+    renderNavi(absentWakus().length ? null : naviR || (naviR = analyze()));
   }
   function setupNavi() {
     var boxB = $("#nvBoats"), boxT = $("#nvTacs"), out = $("#nvOut");
@@ -1156,6 +1210,13 @@
     fetch(LIVE_URL + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (!j) return;
       var nb = (j.before || {})[NO], nr = (j.result || {})[NO], no = (j.orig || {})[NO], ch = false;
+      var nd = (j.dl || {})[NO];                                    // 公式の今の締切(レースが遅れると変わる)
+      if (nd && nd !== D.race.deadline) {
+        if (!D.race.deadline0) D.race.deadline0 = D.race.deadline;
+        D.race.deadline = nd; ch = true;
+        if (D.race.deadline0 === nd) delete D.race.deadline0;
+        try { document.dispatchEvent(new CustomEvent("suimen:deadline", { detail: nd })); } catch (e) {}
+      }
       if (no && JSON.stringify(no) !== JSON.stringify(OG)) { OG = no; ch = true; }
       if (nb && JSON.stringify(nb) !== JSON.stringify(BI)) { BI = nb; ch = true; }
       if (nr && JSON.stringify(nr) !== JSON.stringify(LR)) { LR = nr; ch = true; }

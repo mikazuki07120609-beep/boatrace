@@ -84,7 +84,36 @@
       .catch(function () {})
       .then(function () { resBusy = false; });
   }
-  function tick() { cards(); raceList(); fillResults(); }
+  // 公式の締切が変わったレース(遅れ): 取り込んだ dl.json を読んで、カードとレース一覧の締切を合わせ直す(今日のページだけ、1分ごと)
+  var dlBusy = false, dlAt = 0;
+  function syncDeadlines() {
+    var el = document.querySelector("[data-dlurl]");
+    if (!el || dlBusy || Date.now() - dlAt < 55000) return;
+    if (el.getAttribute("data-date") !== nowJst().iso) return;
+    dlBusy = true; dlAt = Date.now();
+    fetch(el.getAttribute("data-dlurl") + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var M = (j && j.dl) || {}, moved = false;
+        [].slice.call(document.querySelectorAll(".vcard[data-code]")).forEach(function (c) {
+          var m = M[c.getAttribute("data-code")];
+          if (!m) return;
+          var nv = (c.getAttribute("data-dl") || "").split(",").filter(Boolean).map(function (x) { var p = x.split("-"); return p[0] + "-" + (m[p[0]] || p[1]); }).join(",");
+          if (nv !== c.getAttribute("data-dl")) { c.setAttribute("data-dl", nv); moved = true; }
+        });
+        var tbl = document.querySelector(".race-list[data-code]"), m2 = tbl ? M[tbl.getAttribute("data-code")] : null;
+        if (m2) [].slice.call(tbl.querySelectorAll("tr[data-deadline]")).forEach(function (tr) {
+          var nd = m2[tr.getAttribute("data-no")], sp = tr.querySelector(".dl");
+          if (!nd || nd === tr.getAttribute("data-deadline")) return;
+          tr.setAttribute("data-deadline", nd); moved = true;
+          if (sp) { sp.textContent = nd; sp.classList.add("moved"); sp.title = "レースが遅れたため、公式の締切が変わりました"; }
+        });
+        if (moved) { cards(); raceList(); }
+      })
+      .catch(function () {})
+      .then(function () { dlBusy = false; });
+  }
+  function tick() { cards(); raceList(); fillResults(); syncDeadlines(); }
   tick();
   setInterval(tick, 30000);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) tick(); });

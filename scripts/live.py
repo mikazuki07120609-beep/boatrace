@@ -7,7 +7,9 @@
   - 直前情報: 締切の20分前から締切の3分後までのレースだけ、出るまで2分おきに読む(1レース多くても十数回)
   - 結果: 締切の3分後から、出るまで2分おきに読む(1レース1回で取れることが多い)
   - 読むたびに数秒あける
+締切の時刻は、読んだページの上にある公式の「締切予定時刻」(レースが遅れると変わる)に合わせ、番組表の時刻は使わない。
 読み取った内容は data/live/YYYYMMDD/{場コード}.json に入れ、すぐにリポジトリへ送る。
+公式の締切が番組表と違うレースは、data/live/YYYYMMDD/dl.json にもまとめる(開催一覧のページが読む)。
 レースのページは、このファイルを開くたびに読みに来る(サイトを作り直さなくても、展示と結果が出る)。
 
   python3 scripts/live.py --loop 350          # 350分まで(その日の最終レースの結果が出たら終わる)
@@ -25,7 +27,7 @@ import sys
 import time
 import urllib.request
 
-from common import DATA, JST, PROGRAM, ROOT, load_json, save_json, zen2han
+from common import DATA, JST, PROGRAM, ROOT, deadline_of, load_json, merge_deadlines, parse_deadlines, save_json, zen2han
 
 LIVE = DATA / "live"
 URL = "https://www.boatrace.jp/owpc/pc/race/{page}?rno={no}&jcd={jcd}&hd={ymd}"
@@ -90,6 +92,8 @@ def parse_before(page: str) -> dict | None:
         if len(tds) < 8:
             continue
         w = m.group(1)
+        if "欠場" in _text(tb):                          # 欠場の艇(スタート展示にも出ない)
+            out.setdefault("absent", []).append(int(w))
         out["weight"][w] = _num(tds[3])
         out["ex"][w] = _num(tds[4])
         out["tilt"][w] = _num(tds[5])
@@ -306,7 +310,7 @@ def tasks(prog: dict, venues: dict, state: dict, now: dt.datetime) -> list:
     for code, v in prog.get("venues", {}).items():
         lv = venues.get(code, {})
         for race in v.get("races", []):
-            dl = race.get("deadline")
+            dl = deadline_of(race, lv)                  # 公式の今の締切(遅れていればそちら)
             if not dl:
                 continue
             hh, mm = map(int, dl.split(":"))
@@ -349,6 +353,14 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
         if not page:
             continue
         v = venues.setdefault(code, {"date": day.isoformat(), "code": code})
+        if kind in ("b", "r", "l"):                     # 公式の締切予定時刻(レースが遅れると変わる)
+            try:
+                got = merge_deadlines(prog["venues"][code]["races"], parse_deadlines(page))
+            except Exception:  # noqa: BLE001
+                got = {}
+            if got and any((v.get("dl") or {}).get(k) != t for k, t in got.items()):
+                v["dl"] = {**(v.get("dl") or {}), **got}
+                changed.add(code)
         if kind in ("l", "b") and "span" not in v:      # 節の初日と最終日(1度読めればよい)
             try:
                 sp = parse_span(page, day)
@@ -392,23 +404,40 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
         changed.add(code)
     if n:
         save_day(day, venues, state, changed)
+        if any((venues.get(c) or {}).get("dl") for c in changed):
+            save_delays(day, prog, venues)
     print(f"{now:%H:%M} {n}ページを読み、{len(changed)}場が更新", flush=True)
     return changed
+
+
+def save_delays(day: dt.date, prog: dict, venues: dict) -> None:
+    """公式の締切が番組表と違うレースを、日ごとの1つのファイル(dl.json)にまとめる。開催一覧のページが読みに来る。"""
+    out = {}
+    for code, v in prog.get("venues", {}).items():
+        dl = (venues.get(code) or {}).get("dl") or {}
+        d = {str(r["no"]): dl[str(r["no"])] for r in v.get("races", []) if dl.get(str(r["no"])) and dl[str(r["no"])] != r.get("deadline")}
+        if d:
+            out[code] = d
+    path = day_dir(day) / "dl.json"
+    old = load_json(path, None)
+    if out != ((old or {}).get("dl") or {}) and (out or old):
+        save_json(path, {"dl": out, "updated": dt.datetime.now(JST).strftime("%H:%M")})
 
 
 def remaining(day: dt.date, now: dt.datetime) -> bool:
     """まだ読みに行くものがあるか(最終レースの結果まで)。"""
     prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None) or {}
+    venues, _ = load_day(day)
     last = None
-    for v in prog.get("venues", {}).values():
+    for code, v in prog.get("venues", {}).items():
         for race in v.get("races", []):
-            if race.get("deadline"):
-                hh, mm = map(int, race["deadline"].split(":"))
+            dl = deadline_of(race, venues.get(code))   # 公式の今の締切(遅れていればそちら)
+            if dl:
+                hh, mm = map(int, dl.split(":"))
                 t = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
                 last = t if last is None or t > last else last
     if last is None:
         return False
-    venues, _ = load_day(day)
     done = all((venues.get(c, {}).get("result") or {}).get(str(r["no"]))
                for c, v in prog.get("venues", {}).items() for r in v.get("races", []))
     return not done and now <= last + dt.timedelta(minutes=RESULT_GIVEUP)

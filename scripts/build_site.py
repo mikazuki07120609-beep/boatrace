@@ -7,7 +7,7 @@ import math
 import shutil
 import subprocess
 
-from common import DATA, OUT, PROGRAM, RESULTS, ROOT, SITE, VENUES, KIMARITE, load_json, parse_ymd, today_jst
+from common import DATA, OUT, PROGRAM, RESULTS, ROOT, SITE, VENUES, KIMARITE, deadline_of, load_json, parse_ymd, today_jst
 from alerts import badges, race_alerts
 from motor import motor_rates, raw_scores, venue_grades
 import pace as pacemod
@@ -426,6 +426,8 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     no = str(race["no"])
     before = (vlive.get("before") or {}).get(no)
     res_live = (vlive.get("result") or {}).get(no)
+    dl_prog = race.get("deadline")
+    dl_now = deadline_of(race, vlive)                 # 公式の今の締切(レースが遅れて変わっていればそちら)
     ents = [racer_view(x, racers, code) for x in race["entries"]]
     ps = period_start(d)
     for x in ents:
@@ -445,7 +447,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         if cat:
             x["csg"] = ((racers.get(x["toban"]) or {}).get("g") or {}).get(cat) or {}   # このレースの区分(女子戦・SG など)での、コースごとの[走数, 1着, 2着, 3着]
     SEARCH.setdefault(ymd, {"venues": {}, "races": []})["races"].append({
-        "c": code, "no": race["no"], "nm": race["name"], "dl": race.get("deadline"), "ds": race.get("distance"),
+        "c": code, "no": race["no"], "nm": race["name"], "dl": dl_now, "ds": race.get("distance"),
         "al": {k: v for k, v in (alerts or {}).items() if v},
         "e": [{"w": x["waku"], "t": x["toban"], "n": x["name"], "k": x.get("cls"), "f": x.get("fp") or 0, "fm": x.get("fem") or 0,
                "g": (x.get("mg") or {}).get("grade"), "z": (x.get("mg") or {}).get("z"), "sp": (x.get("mg") or {}).get("sp") or 0} for x in ents]})
@@ -489,7 +491,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
         sts = [x["st"] for x in result["entries"] if x.get("st") is not None and not x.get("flying")]
         top_st = min(sts) if sts else None
         trs = "".join(
-            f'<tr><td class="num">{x["rank"] or e(x["status"])}</td><td><span class="waku w{x["waku"]}">{x["waku"]}</span></td>'
+            f'<tr><td class="num">{x["rank"] or ("欠場" if str(x.get("status") or "").startswith("K") else e(x["status"]))}</td><td><span class="waku w{x["waku"]}">{x["waku"]}</span></td>'
             f'<td>{e(x["name"])}{"<span class=\"fem\">♥</span>" if fem and x.get("toban") in fem else ""}</td><td class="num">{x["course"] or "—"}</td>'
             f'<td class="num{" hi" if x.get("st") is not None and x["st"] == top_st and not x.get("flying") else ""}">'
             f'{("F" if x.get("flying") else "") + f1(x.get("st"), 2)}</td><td class="num">{f1(x.get("ex"), 2)}</td>'
@@ -516,12 +518,13 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     head = (f'<nav class="crumb"><a href="{rel}index.html">今日のレース</a>›<a href="{rel}{ymd}/index.html">{jdate(d)}</a>›'
             f'<a href="index.html">{e(vname)}</a></nav>'
             f'<h1>{e(vname)} {race["no"]}R {e(race["name"])}</h1>'
-            f'<div class="meta"><span class="tag" id="dlTag">締切 {e(race["deadline"])}</span><span class="tag">{race["distance"]}m</span>'
+            f'<div class="meta"><span class="tag" id="dlTag">締切 {e(dl_now)}{"(変更)" if dl_now != dl_prog else ""}</span><span class="tag">{race["distance"]}m</span>'
             + cat_tag(cat) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="sub">{e(vprog.get("title", ""))}</span></div>'
             f'<div class="alerts" id="alerts">{badges(alerts or {})}</div><div class="chips">{chips}</div>')
     data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")}, "alerts": alerts or {}, "cat": cat,
-            "race": {"date": d.isoformat(), "ymd": ymd, "no": race["no"], "name": race["name"], "deadline": race.get("deadline")}, "entries": ents,
+            "race": {"date": d.isoformat(), "ymd": ymd, "no": race["no"], "name": race["name"], "deadline": dl_now,
+                     **({"deadline0": dl_prog} if dl_now != dl_prog else {})}, "entries": ents,
             "vt": tables[0], "nt": tables[1]}
     if result:
         data["result"] = {"kimarite": result.get("kimarite"), "wind": result.get("wind"), "wind_dir": result.get("wind_dir"),
@@ -583,8 +586,9 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
             tri = [y["waku"] for y in fin[:3]] if len(fin) >= 3 else None
         restxt = ('<span class="tri small-tri">' + "-".join(f'<span class="waku w{w}">{w}</span>' for w in tri) + "</span>"
                   + (f'<span class="small">{lr["pay"] / 100:.1f}倍</span>' if lr and lr.get("pay") else "")) if tri else ""
-        rows.append(f'<tr data-deadline="{e(race["deadline"])}" data-no="{race["no"]}"><td><a class="rno" href="{race["no"]:02d}.html">{race["no"]}R</a></td>'
-                    f'<td class="num"><span class="dl">{e(race["deadline"])}</span><span class="small cd"></span></td>'
+        dl_now = deadline_of(race, vlive)
+        rows.append(f'<tr data-deadline="{e(dl_now)}" data-no="{race["no"]}"><td><a class="rno" href="{race["no"]:02d}.html">{race["no"]}R</a></td>'
+                    f'<td class="num"><span class="dl{" moved" if dl_now != race["deadline"] else ""}">{e(dl_now)}</span><span class="small cd"></span></td>'
                     f'<td><a href="{race["no"]:02d}.html">{e(race["name"])}</a>' + (f'<span class="small">{race["distance"]}m</span>' if race["distance"] != 1800 else "")
                     + (f'<span class="alrow">{badges((al_map or {}).get(race["no"]), True)}</span>' if (al_map or {}).get(race["no"]) and any((al_map or {}).get(race["no"]).values()) else "")
                     + f'</td><td class="res">{restxt}</td><td><span class="waku w1">1</span> {e(x["name"])} <span class="small">{e(x["cls"])}</span></td>'
@@ -593,7 +597,7 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
     body = (f'<nav class="crumb"><a href="../../index.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + cat_tag(venue_cat(ymd, code)) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
-            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{e(LIVE_BASE)}{ymd}/{code}.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
+            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{e(LIVE_BASE)}{ymd}/{code}.json" data-code="{code}" data-dlurl="{e(LIVE_BASE)}{ymd}/dl.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
             '<th>結果</th><th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
             + "</tbody></table></div></section>")
     title = f"{vname} {jdate(d)} 出走表・レース一覧 | {SITE_NAME}"
@@ -613,13 +617,15 @@ def venue_cat(ymd: str, code: str):
     return "女子戦" if ("lady" in g or "venus" in g) else g[0]
 
 
-def day_cards(d, prog, depth_prefix, alerts=None):
-    """開催場のカード。締切の時刻を持たせておき、ページを開いたときに次のレースが近い順に並べ替える(day.js)。"""
+def day_cards(d, prog, depth_prefix, alerts=None, live=None):
+    """開催場のカード。締切の時刻を持たせておき、ページを開いたときに次のレースが近い順に並べ替える(day.js)。
+    締切は公式の今の時刻(遅れて変わっていればそちら)。ページを開いている間は、day.js が dl.json を読んで合わせ直す。"""
     ymd = d.strftime("%Y%m%d")
     items = []
     for code, v in prog["venues"].items():
+        lv = (live or {}).get(code)
         first, last = v["races"][0]["deadline"], v["races"][-1]["deadline"]
-        dls = ",".join(f'{r["no"]}-{r["deadline"]}' for r in v["races"] if r.get("deadline"))
+        dls = ",".join(f'{r["no"]}-{deadline_of(r, lv)}' for r in v["races"] if deadline_of(r, lv))
         am = (alerts or {}).get(code, {})
         als = ",".join(f"{no}:{k}{lv}" for no, a in sorted(am.items()) for k, lv in a.items() if lv)
         items.append((first, f'<a class="card vcard" href="{depth_prefix}{ymd}/{code}/index.html" data-dl="{dls}" data-al="{als}" data-code="{code}">'
@@ -628,7 +634,7 @@ def day_cards(d, prog, depth_prefix, alerts=None):
                              f'<span class="t">{e(v.get("title", ""))}</span><span class="sub">'
                              + (f'第{v["day"]}日 ・ ' if v.get("day") else "") + f'{len(v["races"])}R ・ 締切 {e(first)}〜{e(last)}</span></a>'))
     items.sort()
-    return f'<div class="cards" data-date="{d.isoformat()}">' + "".join(x[1] for x in items) + "</div>"
+    return f'<div class="cards" data-date="{d.isoformat()}" data-dlurl="{e(LIVE_BASE)}{ymd}/dl.json">' + "".join(x[1] for x in items) + "</div>"
 
 
 DAY_NOTES = ["開催場は、次のレースの締切が近い順に並べています(この端末の時計で数え、開いている間は1分ごとに並べ直します)。締切まで10分を切ったレースは赤で示します。",
@@ -637,11 +643,11 @@ DAY_NOTES = ["開催場は、次のレースの締切が近い順に並べてい
              "展示の前の、枠なりの進入での計算です(レースのページでは、スタート展示のあとに計算し直します)。"]
 
 
-def build_day(d, prog, dates, alerts=None):
+def build_day(d, prog, dates, alerts=None, live=None):
     ymd = d.strftime("%Y%m%d")
     nav = " ".join(f'<a class="chip{" on" if x == d else ""}" href="../{x:%Y%m%d}/index.html">{x.month}/{x.day}</a>' for x in dates)
     body = (f'<nav class="crumb"><a href="../index.html">今日のレース</a></nav><h1>{jdate(d)}の開催</h1>'
-            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(d, prog, "../", alerts)}</section>')
+            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(d, prog, "../", alerts, live)}</section>')
     write(f"{ymd}/index.html", page(f"{jdate(d)}のボートレース開催一覧 | {SITE_NAME}",
                                     f"{jdate(d)}に開催のボートレース全場の出走表と展開の見立て。", body, 1, f"{ymd}/",
                                     '<script src="../assets/day.js"></script>', DAY_NOTES))
@@ -742,7 +748,7 @@ def build_date(d, progs, dates, cache, cats, model, stadiums, alerts_by_day, url
         al_day[code] = {race["no"]: race_alerts([racer_view(x, racers, code) for x in race["entries"]], sm, code, d.isoformat())
                         for race in vprog["races"]}
     alerts_by_day[d] = al_day
-    build_day(d, progs[d], dates, al_day)
+    build_day(d, progs[d], dates, al_day, live_day)
     urls.append(f"{d:%Y%m%d}/")
     nxt = progs.get(d + dt.timedelta(days=1))
     for code, vprog in progs[d]["venues"].items():

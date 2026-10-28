@@ -5,6 +5,7 @@
 最新の1回分だけを odds ブランチに上書きで置く(レースのページのオッズのタブが読みに来る)。
 締切のあとは、締切時オッズ(確定)を1回だけ読み、日ごとのファイルに残す(期待値の確かめに使う)。
 
+締切の時刻は、読んだページの上にある公式の「締切予定時刻」(レースが遅れると変わる)に合わせる。
 odds ブランチは、いつもコミット1つだけにして上書きで送る(古いオッズが履歴にたまらない)。
 直前情報・結果の取り込み(live.py)とは別の実行で動かすので、こちらで何かあっても、あちらは止まらない。
 
@@ -26,7 +27,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from common import JST, PROGRAM, ROOT, load_json
+from common import JST, PROGRAM, ROOT, load_json, merge_deadlines, parse_deadlines
 
 URL = "https://www.boatrace.jp/owpc/pc/race/{page}?rno={no}&jcd={jcd}&hd={ymd}"
 UA = "boatrace-site/0.1 (+https://github.com/mikazuki07120609-beep/boatrace)"
@@ -269,7 +270,7 @@ def race_jobs(prog: dict, base: Path, day: dt.date, now: dt.datetime, state: dic
     finals = load_json(base / "data" / "odds_final" / f"{day:%Y%m%d}.json", {}) or {}
     for code, v in prog.get("venues", {}).items():
         for race in v.get("races", []):
-            dl = race.get("deadline")
+            dl = (state.get("dl", {}).get(code) or {}).get(str(race["no"])) or race.get("deadline")   # 公式の今の締切
             if not dl:
                 continue
             hh, mm = map(int, dl.split(":"))
@@ -307,6 +308,17 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:                  # 1回りの分を、少しだけ並べて読む
         futs = {(code, no, page): ex.submit(fetch, page, code, no, ymd) for _, _, _, code, no in sel for page in PAGES}
         got = {k: f.result() for k, f in futs.items()}
+    for _, _, _, code, no in sel:                                         # 公式の締切予定時刻(レースが遅れると変わる)
+        for page in PAGES:
+            html = got.get((code, no, page))
+            if html:
+                try:
+                    dls = merge_deadlines(prog["venues"][code]["races"], parse_deadlines(html))
+                except Exception:  # noqa: BLE001
+                    dls = {}
+                if dls:
+                    state.setdefault("dl", {}).setdefault(code, {}).update(dls)
+                    break
     for kind, _, _, code, no in sel:
         key = f"{code}-{no}"
         rec = parse_race({page: got.get((code, no, page)) for page in PAGES})
@@ -318,7 +330,7 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
         old = load_json(path, None)
         if old and any(old.get(k) for k in ("3t", "2t", "tan")):
             rec["prev"] = {k: old.get(k) for k in ("t", "at", "3t", "2t", "2f", "tan", "fuku") if old.get(k) is not None}
-        rec["dl"] = next((r.get("deadline") for r in prog["venues"][code]["races"] if r["no"] == no), None)
+        rec["dl"] = (state.get("dl", {}).get(code) or {}).get(str(no)) or next((r.get("deadline") for r in prog["venues"][code]["races"] if r["no"] == no), None)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(rec, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         changed += 1
@@ -331,14 +343,16 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
     return changed
 
 
-def remaining(day: dt.date, now: dt.datetime, base: Path | None = None) -> bool:
-    """まだ読むものがあるか(最後のレースの締切時オッズまで)。"""
+def remaining(day: dt.date, now: dt.datetime, state: dict | None = None) -> bool:
+    """まだ読むものがあるか(最後のレースの締切時オッズまで。締切は公式の今の時刻)。"""
     prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None) or {}
+    dlm = (state or {}).get("dl", {})
     last = None
-    for v in prog.get("venues", {}).values():
+    for code, v in prog.get("venues", {}).items():
         for race in v.get("races", []):
-            if race.get("deadline"):
-                hh, mm = map(int, race["deadline"].split(":"))
+            dl = (dlm.get(code) or {}).get(str(race["no"])) or race.get("deadline")
+            if dl:
+                hh, mm = map(int, dl.split(":"))
                 t = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
                 last = t if last is None or t > last else last
     return last is not None and now <= last + dt.timedelta(minutes=FINAL_UNTIL)
@@ -353,7 +367,7 @@ def loop(minutes: float, push: bool) -> None:
         raise
     day = dt.datetime.now(JST).date()
     cleanup(base, day)
-    state = {"last": {}, "tries": {}}
+    state = {"last": {}, "tries": {}, "dl": {}}
     if push:
         publish(base, f"オッズ {day:%Y-%m-%d}")
     while time.time() < end:
@@ -361,7 +375,7 @@ def loop(minutes: float, push: bool) -> None:
         if now.date() != day:
             print("日付が変わったので終わります", flush=True)
             break
-        if not remaining(day, now):
+        if not remaining(day, now, state):
             print("今日の分は終わりです", flush=True)
             break
         t0 = time.time()
