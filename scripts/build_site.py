@@ -65,8 +65,11 @@ def page(title, desc, body, depth, path, scripts="", notes=None):
 </div>{scripts}</body></html>"""
 
 
+_OUT = [OUT]               # 書き出す先(ふだんは公開用の _site。答え合わせ用のページは build_review で別の場所に作る)
+
+
 def write(path: str, text: str):
-    p = OUT / path
+    p = _OUT[0] / path
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
 
@@ -723,6 +726,67 @@ def load_live(d: dt.date) -> dict:
     return out
 
 
+def build_date(d, progs, dates, cache, cats, model, stadiums, alerts_by_day, urls):
+    """1日分のページ(開催一覧・場ごとのレース一覧・レースのページ)を作る。"""
+    ctabs: dict = {}
+    racers, vstats, nat = collect(d, cache, cats, ctabs)
+    nt = course_table(nat)
+    res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
+    live_day = load_live(d)
+    mraw = raw_scores(d, racers)
+    mrates = motor_rates(d)
+    P_pace = pacemod.build(d)
+    sm = (model or {}).get("start")
+    al_day = {}
+    for code, vprog in progs[d]["venues"].items():
+        al_day[code] = {race["no"]: race_alerts([racer_view(x, racers, code) for x in race["entries"]], sm, code, d.isoformat())
+                        for race in vprog["races"]}
+    alerts_by_day[d] = al_day
+    build_day(d, progs[d], dates, al_day)
+    urls.append(f"{d:%Y%m%d}/")
+    nxt = progs.get(d + dt.timedelta(days=1))
+    for code, vprog in progs[d]["venues"].items():
+        vinfo = venue_info(code, vstats, stadiums)
+        if not vinfo["place"]:
+            continue
+        SEARCH.setdefault(f"{d:%Y%m%d}", {"venues": {}, "races": []})["venues"][code] = search_venue(vinfo["name"], vprog, (nxt or {}).get("venues", {}).get(code))
+        vlive = live_day.get(code, {})
+        rv = {r["no"]: r for r in res_day.get("venues", {}).get(code, {}).get("races", [])}
+        build_venue(d, code, vprog, vinfo, racers, rv, vlive, al_day.get(code))
+        urls.append(f"{d:%Y%m%d}/{code}/")
+        tables = (course_table(vstats.get(code)), nt)
+        tm = today_marks(vlive, vprog)
+        ranks = series_ranks(vprog, tm)
+        motors = venue_grades(code, vprog, mraw)
+        for race in vprog["races"]:
+            cat = cats(d, code, race["entries"])
+            urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
+                                   ranks=ranks, vlive=vlive, motors=motors, today_m=tm, alerts=al_day[code][race["no"]],
+                                   pace=pacemod.for_race(P_pace, code, race["entries"]), mrates=mrates,
+                                   cat=cat, cat_tbl=venue_table(ctabs.get(cat), 100) if cat else None, fem=cats.fem))
+
+
+def build_review(d: dt.date, out) -> int:
+    """終わった日のレースのページを、公開しない場所(out)に作る。公開するサイトは今日と明日だけなので、
+    前の日の1周1マークの映像を実際の結果と比べる答え合わせ(scripts/learn_anim.js)は、こちらを読む。作ったレースの数を返す。"""
+    prog = load_json(PROGRAM / f"{d:%Y%m%d}.json", None)
+    if not prog or not prog.get("venues"):
+        return 0
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    _OUT[0] = out
+    try:
+        cats = category_resolver()
+        GRADES_ALL.clear()
+        GRADES_ALL.update(cats.grades)
+        urls: list = []
+        build_date(d, {d: prog}, [d], {}, cats, load_json(DATA / "model.json", None), load_json(DATA / "stadiums.json", {}), {}, urls)
+    finally:
+        _OUT[0] = OUT
+    return sum(1 for u in urls if u.endswith(".html"))
+
+
 def main():
     SEARCH.clear()
     today = today_jst()
@@ -754,42 +818,7 @@ def main():
     GRADES_ALL.clear()
     GRADES_ALL.update(cats.grades)
     for d in dates:
-        ctabs: dict = {}
-        racers, vstats, nat = collect(d, cache, cats, ctabs)
-        nt = course_table(nat)
-        res_day = load_json(RESULTS / f"{d:%Y%m%d}.json", {}) or {}
-        live_day = load_live(d)
-        mraw = raw_scores(d, racers)
-        mrates = motor_rates(d)
-        P_pace = pacemod.build(d)
-        sm = (model or {}).get("start")
-        al_day = {}
-        for code, vprog in progs[d]["venues"].items():
-            al_day[code] = {race["no"]: race_alerts([racer_view(x, racers, code) for x in race["entries"]], sm, code, d.isoformat())
-                            for race in vprog["races"]}
-        alerts_by_day[d] = al_day
-        build_day(d, progs[d], dates, al_day)
-        urls.append(f"{d:%Y%m%d}/")
-        nxt = progs.get(d + dt.timedelta(days=1))
-        for code, vprog in progs[d]["venues"].items():
-            vinfo = venue_info(code, vstats, stadiums)
-            if not vinfo["place"]:
-                continue
-            SEARCH.setdefault(f"{d:%Y%m%d}", {"venues": {}, "races": []})["venues"][code] = search_venue(vinfo["name"], vprog, (nxt or {}).get("venues", {}).get(code))
-            vlive = live_day.get(code, {})
-            rv = {r["no"]: r for r in res_day.get("venues", {}).get(code, {}).get("races", [])}
-            build_venue(d, code, vprog, vinfo, racers, rv, vlive, al_day.get(code))
-            urls.append(f"{d:%Y%m%d}/{code}/")
-            tables = (course_table(vstats.get(code)), nt)
-            tm = today_marks(vlive, vprog)
-            ranks = series_ranks(vprog, tm)
-            motors = venue_grades(code, vprog, mraw)
-            for race in vprog["races"]:
-                cat = cats(d, code, race["entries"])
-                urls.append(build_race(d, code, vprog, race, vinfo, racers, rv.get(race["no"]), tables,
-                                       ranks=ranks, vlive=vlive, motors=motors, today_m=tm, alerts=al_day[code][race["no"]],
-                                       pace=pacemod.for_race(P_pace, code, race["entries"]), mrates=mrates,
-                                       cat=cat, cat_tbl=venue_table(ctabs.get(cat), 100) if cat else None, fem=cats.fem))
+        build_date(d, progs, dates, cache, cats, model, stadiums, alerts_by_day, urls)
     build_index(today, progs, dates, alerts_by_day)
     build_about()
     write_search(dates, today)

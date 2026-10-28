@@ -2,3 +2,4 @@ data/raw/
 _site/
 __pycache__/
 *.pyc
+_review/

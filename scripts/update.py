@@ -183,9 +183,20 @@ def main() -> int:
         learn.main()
     except Exception as ex:  # noqa: BLE001  記録に失敗しても、サイトの更新は続ける
         print("見立てと結果の比較をとばしました:", ex)
+    # 前の日の1周1マークの映像を、実際の結果と比べる。公開するサイトは今日と明日だけなので、
+    # 前の日のレースのページは、答え合わせ用に公開しない場所(_review)に作って読ませる
     if shutil.which("node"):
         import subprocess
-        subprocess.run(["node", str(pathlib.Path(__file__).with_name("learn_anim.js"))], check=False)
+        yday = today - dt.timedelta(days=1)
+        review = OUT_DIR.parent / "_review"
+        try:
+            n = build_site.build_review(yday, review)
+        except Exception as ex:  # noqa: BLE001  答え合わせのページを作れなくても、サイトの更新は続ける
+            print("答え合わせのページを作れませんでした:", ex)
+            n = 0
+        if n:
+            subprocess.run(["node", str(pathlib.Path(__file__).with_name("learn_anim.js")), f"{yday:%Y%m%d}", str(review)], check=False)
+        shutil.rmtree(review, ignore_errors=True)
     return 0
 
 

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /* 1周1マークの映像が、実際のレース(進入・ST・決まり手・着順)をどこまで再現できたかを数える(学習の記録。サイトには出さない)。
-   前の日のレースのページ(_site)から、実際の結果で映像を作り、先頭・決まり手・2着・3着が実際と同じになったかを、
+   前の日のレースのページから、実際の結果で映像を作り、先頭・決まり手・2着・3着が実際と同じになったかを、
    決まり手ごとにまとめて data/learn/YYYYMMDD.json の anim に書く。
-     node scripts/learn_anim.js [YYYYMMDD] */
+   公開するサイト(_site)は今日と明日のページだけなので、前の日のページは scripts/update.py が答え合わせ用に
+   別の場所(_review。公開しない)に作り、その場所を2つめの引数で渡す。
+     node scripts/learn_anim.js [YYYYMMDD] [ページの場所(既定は _site)] */
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -16,7 +18,7 @@ function main() {
   const arg = process.argv[2];
   const jst = new Date(Date.now() + 9 * 3600e3 - 24 * 3600e3);
   const day = arg || jst.toISOString().slice(0, 10).replace(/-/g, "");
-  const dir = path.join(ROOT, "_site", day);
+  const dir = path.join(process.argv[3] ? path.resolve(process.argv[3]) : path.join(ROOT, "_site"), day);
   if (!fs.existsSync(dir)) { console.log("ページがありません:", day); return; }
   const by = {}, tot = { races: 0, lead: 0, kind: 0, p2: 0, p3: 0, inv: 0 }, fails = [];
   for (const v of fs.readdirSync(dir).filter((x) => /^\d{2}$/.test(x)).sort()) {
