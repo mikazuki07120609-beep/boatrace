@@ -4,7 +4,7 @@
    2) 展開の見立て: STの組み合わせごとに、どのコースがどの決まり手で1着になりやすいか(条件付きロジット)
    本番前はSTが分からないので、1)の多数の組み合わせで2)を平均する。
    使い方: var R = SuimenModel.predict(race, params, {samples: 400});
-     race = {vt, nt, wind, date, venue, boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, lv, ex, est}]}
+     race = {vt, nt, wind, date, venue, name(レース名), boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, lv, ex, est}]}
    ブラウザでもNode(require)でも使える。 */
 (function (root) {
   "use strict";
@@ -83,8 +83,14 @@
   }
   // 6艇の予想ST(fit.py の start_means と同じ式): 選手の平均ST(走数で全体の平均に寄せる)・コース・フライング持ち(F1/F2)・風・
   // 直近8走の調子・隣の艇のスタートの傾向・場の補正
+  function exDevs(byC) {                     // 6艇の展示タイムから、平均より速い分(0.05秒単位)。そろっていなければ全部0(fit.py の ex_devs と同じ)
+    var exs = byC.map(function (b) { return b.ex; });
+    if (exs.length !== 6 || !exs.every(function (x) { return x != null && isFinite(x) && x >= 6.0 && x <= 7.6; })) return [0, 0, 0, 0, 0, 0];
+    var m = exs.reduce(function (s, x) { return s + x; }, 0) / 6;
+    return exs.map(function (x) { return (m - x) / 0.05; });
+  }
   function startParts(sm, byC, wind, venue) {
-    var co = sm.coef, K = sm.K, RK = sm.REC_K || 4, mz = maeduke(byC);
+    var co = sm.coef, K = sm.K, RK = sm.REC_K || 4, mz = maeduke(byC), exd = exDevs(byC);
     function mrOf(stx) { return (stx[1] + K * sm.m_pop) / (stx[0] + K); }
     var parts = byC.map(function (b, i) {
       var stx = b.stx || [0, 0, 0], mr = mrOf(stx), r8 = b.r8 || [], rec = 0, nb = 0, nn = 0, r8m = null;
@@ -95,7 +101,14 @@
                               f: b.fp > 0 ? co.f : 0, f2: b.fp >= 2 ? (co.f2 || 0) : 0, wind: co.wind * Math.max(0, (wind || 0) - 3),
                               rec: (co.rec || 0) * rec, nb: (co.nb || 0) * nb, ven: (sm.ven || {})[venue] || 0,
                               mz: mz ? (c <= 4 ? (co.mz_in || 0) : (co.mz_out || 0)) : 0 };
-      p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven + p.mz;
+      // このコースでのSTのくせ: この選手のこのコースの平均STが、全体の平均STよりどれだけ早い・遅いか(本数が少ないほど0に寄せる)
+      var cs = (b.cs || {})[String(c)] || {}, KC = sm.CST_K || 10, sn = cs.sn || 0;
+      p.cdevX = cs.st != null && sn > 0 ? (cs.st * sn + KC * mr) / (sn + KC) - mr : 0;
+      p.cdev = (co.cdev || 0) * p.cdevX;
+      // 展示タイムが6艇の平均より速い分(0.05秒単位)。ダッシュ勢は行き足につながる
+      p.exdX = exd[i];
+      p.exd = (co.exd || 0) * exd[i] + (c >= 4 ? (co.exd_d || 0) * exd[i] : 0);
+      p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven + p.mz + p.cdev + p.exd;
       p.est = 0;
       return p;
     });
@@ -111,6 +124,20 @@
     return parts;
   }
   function startMeans(sm, byC, wind, venue) { return startParts(sm, byC, wind, venue).map(function (p) { return p.mu; }); }
+
+  // ---- レースの種類(レース名から。fit.py の race_kind と同じ決め方): 優勝戦・準優勝戦・ドリーム戦・選抜戦・特選/特賞・予選・一般・その他
+  function raceKind(name) {
+    var n = name || "";
+    if ((n.indexOf("準優") >= 0 && n.indexOf("進出") < 0) || n.indexOf("準々") >= 0) return "semi";
+    if (n.indexOf("優勝") >= 0) return "final";
+    if (n.indexOf("ドリーム") >= 0) return "dream";
+    if (n.indexOf("選抜") >= 0) return "select";
+    if (n.indexOf("特選") >= 0 || n.indexOf("特賞") >= 0) return "special";
+    if (n.indexOf("予選") >= 0 || n.indexOf("進出") >= 0) return "yosen";
+    if (n.indexOf("一般") >= 0) return "ippan";
+    return "other";
+  }
+  var KIND_NAME = { final: "優勝戦", semi: "準優勝戦", dream: "ドリーム戦", select: "選抜戦", special: "特選・特賞", yosen: "予選", ippan: "一般戦", other: "その他のレース" };
 
   // ---- 展開の見立て: STに関係しない点数(クラスごと)
   // すぐ内(c-1コース)の艇が、そのコースで勝つときに捲りが多いか(fit.py の nb_makuri と同じ)
@@ -132,6 +159,7 @@
     Object.keys(lsh).forEach(function (k) { lsw += ls1[k] || 0; });
     var exs = B.map(function (b) { return b.ex; }), exOk = exs.every(function (x) { return x != null && isFinite(x) && x >= 6.0 && x <= 7.6; });
     var exMean = exOk ? exs.reduce(function (s, x) { return s + x; }, 0) / 6 : null;
+    var kind = raceKind(race.name), fixed = String(race.name || "").indexOf("固定") >= 0;
     var parts = [];                        // 理由の説明に使う、項ごとの点数
     CLASSES.forEach(function (ck, i) {
       var c = ck[0], k = ck[1], b = B[c - 1], cs = (b.cs || {})[String(c)] || { n: 0, w1: 0, km: {} };
@@ -152,10 +180,12 @@
       }
       p.nb = 0;                                                         // 内の艇が捲りに行くと、外の艇の差し・捲り差しが生まれやすい
       if (c >= 3 && (k === "差し" || k === "捲り差し")) p.nb = (th[k === "差し" ? "nb_sa" : "nb_ms"] || 0) * nbMakuri(B, pr.q, c, K);
-      u[i] = v + p.d + p.str + p.loc + p.rec + p.mot + p.ex + p.tac + p.ls + p.nb;
+      p.kind = 0;                                                       // レースの種類(優勝戦・ドリーム戦などは1号艇が勝ちやすい)と進入固定
+      if (c === 1) p.kind = (th["kd_" + kind] || 0) + (fixed ? (th.kd_fixed || 0) : 0);
+      u[i] = v + p.d + p.str + p.loc + p.rec + p.mot + p.ex + p.tac + p.ls + p.nb + p.kind;
       parts.push(p);
     });
-    return { u: u, parts: parts, prior: pr };
+    return { u: u, parts: parts, prior: pr, kind: kind, fixed: fixed };
   }
 
   // STの組み合わせ t[0..5](1〜6コース)で変わる点数を u に足す
@@ -305,7 +335,7 @@
   }
 
   var api = { predict: predict, orderFor: orderFor, CLASSES: CLASSES, CI: CI, prior: prior, startMeans: startMeans, startParts: startParts, racerScale: racerScale,
-              staticU: staticU, addST: addST, softmax: softmax, periodStart: periodStart };
+              staticU: staticU, addST: addST, softmax: softmax, periodStart: periodStart, raceKind: raceKind, KIND_NAME: KIND_NAME };
   root.SuimenModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

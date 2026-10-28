@@ -409,7 +409,7 @@
 
   // ---- 学習済みの見立てモデル(model.js)で計算する
   function analyzeModel(B, W) {
-    var race = { vt: D.vt, nt: D.nt, wind: W.wspd, date: D.race.date, venue: V.code,
+    var race = { vt: D.vt, nt: D.nt, wind: W.wspd, date: D.race.date, venue: V.code, name: D.race.name,
                  boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], est: estOf(b.waku), cb: b.cb || [0, 0],
                                                       cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], ex: b.ex }; }) };
     var M = MODEL.predict(race, PARAMS, { samples: 400 });
@@ -491,6 +491,20 @@
     return b.course + "コースは直近" + cs.n + "走で1着" + cs.w1 + "回(" + pct(cs.w1, cs.n) + "%)";
   }
   function patName(s) { return s.b.course + "コース" + s.kim; }
+  // 本線: 1着になる見込み(勝ち方を全部足したもの)が一番高い艇の、一番起こりやすい勝ち方。
+  // 1号艇の逃げ1つより、ほかの艇の勝ち方を足した方が高ければ、その艇を本線にする(1号艇以外の本線もはっきり出す)
+  function leadScen(R) {
+    if (!R || !R.scen || !R.scen.length) return null;
+    var best = null;
+    R.B.forEach(function (b) { if (!best || (b.share || 0) > (best.share || 0) + 1e-9) best = b; });
+    var ss = best ? R.scen.filter(function (x) { return x.b === best; }) : [];
+    var s = ss.filter(function (x) { return x.kim !== "抜き" && x.kim !== "恵まれ"; })[0] || ss[0] || R.scen[0];
+    if (s && !s.ord && R.M && s.i != null) {
+      var o = R.M.order(s.i);
+      if (o) { s.ord = o; s.ordW = o.order.map(function (c) { var bb = R.B.filter(function (x) { return x.course === c; })[0]; return bb ? bb.waku : c; }); }
+    }
+    return s;
+  }
 
   // ---- スタートの見立て
   function sgn(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(3).replace(/^0/, ""); }
@@ -506,6 +520,9 @@
     var nbRel = (q.nb || 0) - (R.nbMean || 0);               // メンバー全体の傾向とは別に、この艇の両隣だけの分
     if (Math.abs(nbRel) >= 0.004) out.push("両隣が" + (nbRel < 0 ? "スタートの早い選手で、つられて早くなりやすい" : "スタートの遅い選手で、つられて遅くなりやすい") + "(" + sgn(nbRel) + "秒)");
     if (b.course >= 2 && Math.abs(q.course || 0) >= 0.008) out.push(b.course + "コースは" + sgn(q.course) + "秒");
+    var ccs = (b.cs || {})[String(b.course)] || {};
+    if (Math.abs(q.cdev || 0) >= 0.004 && ccs.st != null) out.push(b.course + "コースでは、ふだんよりSTが" + (q.cdev < 0 ? "早い" : "遅い") + "(このコースの平均ST" + st2(ccs.st) + "・" + (ccs.sn || 0) + "本、" + sgn(q.cdev) + "秒)");
+    if (Math.abs(q.exd || 0) >= 0.003) out.push("展示タイムが" + (q.exd < 0 ? "速く、行き足が良さそう" : "遅め") + "(" + sgn(q.exd) + "秒)");
     if (q.wind) out.push("風速" + R.wspd + "m(" + sgn(q.wind) + "秒)");
     var est = estOf(b.waku);
     if (est != null) out.push("展示ST" + (est < 0 ? "F" + st2(-est) : st2(est)) + (Math.abs(q.est || 0) >= 0.003 ? "(" + sgn(q.est) + "秒)" : ""));
@@ -589,14 +606,18 @@
     var p1 = V.place[0][0], t = tier(p1);
     renderStart(R);
     // 展開
+    var lead = leadScen(R);
     var top = scen.slice(0, 6), max = top.length ? top[0].p : 1;
+    if (lead && top.indexOf(lead) < 0) top = top.slice(0, 5).concat([lead]);
     $("#scen").innerHTML = top.map(function (s) {
-      return '<div class="scen-row"><span class="waku w' + s.b.waku + '">' + s.b.waku + '</span><div><div>' + patName(s) +
-        '<span class="sub"> ・' + esc(s.b.name) + '</span></div><div class="bar"><i style="width:' + (s.p / max * 100).toFixed(1) +
+      return '<div class="scen-row' + (s === lead ? " lead" : "") + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + '</span><div><div>' + patName(s) +
+        (s === lead ? '<span class="leadtag">本線</span>' : "") + '<span class="sub"> ・' + esc(s.b.name) + '</span></div><div class="bar"><i style="width:' + (s.p / max * 100).toFixed(1) +
         '%"></i></div></div><span class="pct">' + s.p.toFixed(0) + "%</span></div>";
     }).join("");
-    var lead = scen[0];
-    $("#scenLead").textContent = lead ? "本線は「" + patName(lead) + "」。上位6つの決着パターンと、起こりやすさの目安です。" : "";
+    var b1L = byCourse(1), nige = scen.filter(function (x) { return x.b === b1L && x.kim === "逃げ"; })[0];
+    $("#scenLead").textContent = !lead ? "" : lead.b.course === 1 ? "本線は「" + patName(lead) + "」。上位6つの決着パターンと、起こりやすさの目安です。" :
+      "本線は「" + patName(lead) + "」。" + lead.b.waku + "号艇が1着になる見込み(勝ち方を全部足して" + Math.round(lead.b.share) + "%)が、" +
+      (b1L ? b1L.waku + "号艇(" + Math.round(b1L.share) + "%" + (nige ? "。うち逃げ" + Math.round(nige.p) + "%" : "") + ")" : "1コース") + "より高いので、本線にしています。";
     var p2box = $("#scen2");
     if (p2box) {
       // 本線のときの2着・3着の候補(確率)
@@ -607,7 +628,11 @@
           var b = byCw[c]; return '<span class="cand"><span class="waku w' + b.waku + '">' + b.waku + "</span>" + Math.round(pp[c] * 100) + "%</span>";
         }).join("");
       }
-      p2box.innerHTML = o ? '<div class="p2row"><span class="lbl">本線の2着</span>' + cands(o.p2) + '</div><div class="p2row"><span class="lbl">本線の3着</span>' + cands(o.p3) + "</div>" : "";
+      var wins = B.slice().sort(function (a, b) { return (b.share || 0) - (a.share || 0); }).map(function (b) {
+        return '<span class="cand' + (lead && b === lead.b ? " on" : "") + '"><span class="waku w' + b.waku + '">' + b.waku + "</span>" + Math.round(b.share || 0) + "%</span>";
+      }).join("");
+      p2box.innerHTML = '<div class="p2row"><span class="lbl">1着の見込み</span>' + wins + "</div>" +
+        (o ? '<div class="p2row"><span class="lbl">本線の2着</span>' + cands(o.p2) + '</div><div class="p2row"><span class="lbl">本線の3着</span>' + cands(o.p3) + "</div>" : "");
     }
     // ポイント
     var pts = [];
@@ -832,7 +857,9 @@
     if (!canvas || !window.Turn1) return;
     if (pane && pane.hidden) { pendingR = R; return; }                   // 1S1Mのタブを開いたときに作る(ページを軽くするため)
     pendingR = null;
-    pats = R.scen.filter(function (s) { return s.kim !== "抜き" && s.kim !== "恵まれ"; }).slice(0, 4);
+    var ld = leadScen(R);
+    pats = R.scen.filter(function (s) { return s.kim !== "抜き" && s.kim !== "恵まれ" && s !== ld; }).slice(0, ld ? 3 : 4);
+    if (ld && ld.kim !== "抜き" && ld.kim !== "恵まれ") pats.unshift(ld);                    // 本線(1着の見込みが一番高い艇)を最初に
     if (!pats.length) return;
     var pk = pats.map(function (s) { return s.b.waku + s.kim; }).join(",");
     if (pk !== patKey) { patKey = pk; patIdx = 0; }
@@ -1085,7 +1112,7 @@
     state.textContent = ready() ? (finished() ? "結果が出たレース(展示の進入・STで計算)" : "展示の進入・STを入れて計算") : "展示の前(枠なり・ふだんのSTで計算)";
     // 選択: はじめは本線(一番起こりやすい決着)
     var axis = NV.w != null ? nvBoat(R, NV.w) : null;
-    if (!axis) { axis = R.scen[0] ? R.scen[0].b : R.B[0]; NV.w = axis.waku; NV.k = R.scen[0] ? R.scen[0].kim : null; }
+    if (!axis) { var ld0 = leadScen(R); axis = ld0 ? ld0.b : R.B[0]; NV.w = axis.waku; NV.k = ld0 ? ld0.kim : null; }
     if (!NV.k || !nvValid(axis.course, NV.k)) NV.k = nvBestK(R, axis);
     var c = axis.course, k = NV.k, i = nvClass(c, k);
     boxB.innerHTML = R.B.slice().sort(function (a, b) { return a.waku - b.waku; }).map(function (b) {

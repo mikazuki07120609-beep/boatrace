@@ -273,6 +273,8 @@ def _cs_out(cmap: dict) -> dict:
         if cs.get("ng"):
             x["ng"] = cs["ng"]
         x["st"] = round(cs["st_sum"] / cs["st_n"], 2) if cs["st_n"] > 0 else None
+        if cs["st_n"] > 0:
+            x["sn"] = cs["st_n"]                  # 平均STの本数(予想STの「このコースでのSTのくせ」に使う)
         cc[c] = x
     return cc
 

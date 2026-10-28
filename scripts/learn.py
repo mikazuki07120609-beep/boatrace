@@ -30,6 +30,7 @@ def compare(day: dt.date) -> dict | None:
     o_n = o2 = o3 = o23 = 0
     st_err, st_n, st_bias = 0.0, 0, 0.0
     pair = collections.Counter()
+    lead = [0, 0, 0, 0, 0, 0]                              # 本線(1着の見込みが一番高い艇)の [レース, 艇が1着, 決着パターンも同じ, 1号艇以外が本線, そのとき本線の艇が1着, そのとき1コースが1着]
     by_kind = collections.defaultdict(lambda: [0, 0])     # 実際の決まり手ごとの [レース, 本命が当たった]
     races = []
     for code, v in res.get("venues", {}).items():
@@ -52,6 +53,18 @@ def compare(day: dt.date) -> dict | None:
             py += p[y]
             nll -= math.log(max(1e-6, p[y]))
             pair[(order[0], y)] += 1
+            pc = [0.0] * 6
+            for i, (c, _) in enumerate(CLASSES):
+                pc[c - 1] += p[i]
+            lc = max(range(6), key=lambda c: pc[c]) + 1
+            li = max((i for i, (c, k) in enumerate(CLASSES) if c == lc), key=lambda i: (CLASSES[i][1] != "抜き", p[i]))
+            lead[0] += 1
+            lead[1] += int(lc == win["course"])
+            lead[2] += int(li == y)
+            if lc != 1:
+                lead[3] += 1
+                lead[4] += int(lc == win["course"])
+                lead[5] += int(win["course"] == 1)
             by_kind[k][0] += 1
             by_kind[k][1] += int(order[0] == y)
             # 2着・3着(実際の決着パターンのときに予想していた並びと比べる)
@@ -81,6 +94,9 @@ def compare(day: dt.date) -> dict | None:
                       "hit23": round(o23 / o_n * 100, 1) if o_n else None},
             "st": {"rmse": round(math.sqrt(st_err / st_n), 4) if st_n else None, "bias": round(st_bias / st_n, 4) if st_n else None, "n": st_n},
             "by_kimarite": {k: {"races": a, "top1": round(b / a * 100, 1)} for k, (a, b) in by_kind.items()},
+            "lead": {"races": lead[0], "boat": round(lead[1] / lead[0] * 100, 1), "pattern": round(lead[2] / lead[0] * 100, 1),
+                     "non1": lead[3], "non1_boat": round(lead[4] / lead[3] * 100, 1) if lead[3] else None,
+                     "non1_one": round(lead[5] / lead[3] * 100, 1) if lead[3] else None},
             "common_misses": miss, "detail": races}
 
 
@@ -95,7 +111,9 @@ def main() -> int:
     if old.get("anim"):
         r["anim"] = old["anim"]
     save_json(path, r)
-    print(f"{day}: {r['races']}レース 本命{r['top1']}% 上位3つ{r['top3']}% 2着{r['order']['hit2']}% ST誤差{r['st']['rmse']}")
+    L = r["lead"]
+    print(f"{day}: {r['races']}レース 本命{r['top1']}% 上位3つ{r['top3']}% 2着{r['order']['hit2']}% ST誤差{r['st']['rmse']}"
+          f" 本線の艇{L['boat']}% 1号艇以外の本線{L['non1']}レース(その艇{L['non1_boat']}%・1コース{L['non1_one']}%)")
     return 0
 
 

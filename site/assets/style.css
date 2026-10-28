@@ -506,3 +506,6 @@ table.vt thead th.absent .hn{opacity:.7;text-decoration:line-through;text-decora
 .wait.absent-note{border-style:solid;border-color:color-mix(in srgb,#5b6472 45%,var(--line2));color:var(--ink);font-weight:700}
 .race-list .dl.moved{color:var(--rank1);font-weight:800}
 #dlTag[title]:not([title=""]){border-color:var(--rank1);color:var(--rank1)}
+.scen-row.lead{background:color-mix(in srgb,var(--rank1) 7%,transparent);border-radius:10px;padding:4px 6px;margin:-4px -6px}
+.leadtag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:6px;background:var(--rank1);color:#fff;font-size:11px;font-weight:800;vertical-align:1px}
+.p2 .cand.on{outline:2px solid var(--rank1);border-radius:8px}

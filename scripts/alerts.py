@@ -54,9 +54,12 @@ def start_means(sm: dict, boats: list, venue: str, date: str, wind: float | None
         nb = sum(nbs) / len(nbs) - sm["m_pop"] if nbs else 0.0
         fp = sum(1 for x in b.get("f") or [] if ps <= x < date)
         c = i + 1
+        cs = (b.get("cs") or {}).get(str(c)) or {}
+        st_c, sn, KC = cs.get("st"), cs.get("sn") or 0, sm.get("CST_K", 10)
+        cdev = (st_c * sn + KC * mr) / (sn + KC) - mr if st_c is not None and sn > 0 else 0.0     # このコースでのSTのくせ
         mu = (co["a"] + co["b"] * mr + (co.get(f"c{c}", 0) if c >= 2 else 0) + (co["f"] if fp > 0 else 0)
               + (co.get("f2", 0) if fp >= 2 else 0) + co["wind"] * max(0, (wind or 0) - 3)
-              + co.get("rec", 0) * rec + co.get("nb", 0) * nb + (sm.get("ven") or {}).get(venue, 0))
+              + co.get("rec", 0) * rec + co.get("nb", 0) * nb + co.get("cdev", 0) * cdev + (sm.get("ven") or {}).get(venue, 0))
         out.append(mu)
     return out
 

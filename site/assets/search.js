@@ -115,8 +115,13 @@
       { id: "nigeHigh", label: "逃げが堅い(60%以上)", test: function (r) { return r.p1 != null && r.p1 >= 0.6 ? [nigeText(r)] : null; } },
       { id: "nigeLow", label: "逃げが危ない(40%以下)", test: function (r) {
         if (r.p1 == null || r.p1 > 0.4) return null;
-        var t = r.top && r.top[0] && r.top[0][2] !== "逃げ" ? "本線は" + r.top[0][0] + "号艇の" + r.top[0][2] + " " + Math.round(r.top[0][3] * 100) + "%" : "";
-        return [nigeText(r)].concat(t ? [t] : []); } }
+        var t = r.lead && r.lead[1] !== 1 ? "本線は" + r.lead[0] + "号艇の" + r.lead[2] + "(1着の見込み" + Math.round(r.lead[3] * 100) + "%)" :
+          r.top && r.top[0] && r.top[0][2] !== "逃げ" ? "本線は" + r.top[0][0] + "号艇の" + r.top[0][2] + " " + Math.round(r.top[0][3] * 100) + "%" : "";
+        return [nigeText(r)].concat(t ? [t] : []); } },
+      { id: "leadOut", label: "本線が1号艇以外", test: function (r) {
+        if (!r.lead || r.lead[1] === 1) return null;
+        return [waku(r.lead[0]) + " " + r.lead[1] + "コースの" + esc(r.lead[2]) + "(1着の見込み" + Math.round(r.lead[3] * 100) + "%・1コースは" + Math.round(r.lead[4] * 100) + "%)" +
+          (r.pre ? '<span class="dim">(展示前の見立て)</span>' : "")]; } }
     ]],
     ["選手・節間", [
       { id: "junyu", label: "準優の勝負駆け", test: function (r) {
