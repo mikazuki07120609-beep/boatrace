@@ -50,6 +50,19 @@ jobs:
             echo "::notice title=データの公開URL ${i}回目::${st} / $(pick access-control-allow-origin) / $(pick cf-cache-status) / $(pick cache-control) / $(head -c 120 body.txt | tr -d '\r\n') $(head -c 160 err.txt | tr -d '\r\n')"
             sleep 2
           done
+      - name: DNS が今どこを指しているか
+        if: ${{ always() && github.event.inputs.site != '' }}
+        env:
+          SITE: ${{ github.event.inputs.site }}
+        run: |
+          command -v dig >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils; }
+          d="${SITE#https://}"; d="${d#http://}"; d="${d%%/*}"
+          echo "::notice title=DNS ネームサーバー ${d}::$(dig +short NS "$d" @1.1.1.1 | tr '\n' ' ') / .com の登録元: $(dig +norecurse +short NS "$d" @a.gtld-servers.net | tr '\n' ' ')$(dig +norecurse NS "$d" @a.gtld-servers.net | awk '/AUTHORITY SECTION/{f=1;next} f&&NF{printf "%s ", $5}')"
+          for n in "$d" "www.$d" "data.$d"; do
+            for r in 1.1.1.1 8.8.8.8; do
+              echo "::notice title=DNS ${n} (${r})::A: $(dig +short A "$n" @$r | tr '\n' ' ') / AAAA: $(dig +short AAAA "$n" @$r | tr '\n' ' ') / CNAME: $(dig +short CNAME "$n" @$r | tr '\n' ' ')"
+            done
+          done
       - name: サイトのURLが開けるか
         if: ${{ always() && github.event.inputs.site != '' }}
         env:
