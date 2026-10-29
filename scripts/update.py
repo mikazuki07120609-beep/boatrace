@@ -19,6 +19,7 @@ import build_site
 import fetch
 import parse
 import pays
+import times
 from common import DATA, OUT as OUT_DIR, PROGRAM, RAW, RESULTS, load_json, save_json, today_jst
 
 HISTORY_DAYS = 365       # 選手のコース別成績・戦法の傾向に使う期間
@@ -50,6 +51,8 @@ def ingest(kind: str, day: dt.date, log: list, offline: bool) -> str:
         log.append(f"{kind} {day}: 読み取れたレースが0件")
         return "error"
     data["date"] = day.isoformat()
+    if kind == "B":                       # 締切予定時刻は別に残す(番組表は数日で消すため。潮の満ち引きと合わせるのに使う)
+        times.save(day, data)
     if kind == "K":                       # 払戻金は別のファイルに(裏水面ノートの「荒れ」の学習と答え合わせに使う)。成績のファイルの形は変えない
         pays.save(day, data)
         for v in data["venues"].values():

@@ -1,0 +1,90 @@
+name: 過去分の取り込み(締切時刻・潮位)
+
+# 裏水面ノートの「潮の満ち引き」のためのデータを取り込む(手で動かす)。
+#  mode=times      : 過去の番組表から、レースの締切予定時刻を data/times に(まだない日を、新しい日から順に days 日分)
+#  mode=tide-probe : 気象庁の潮位表の地点一覧と、テキストの見本を probe ブランチに置く(地点記号を確かめるため)
+#  mode=tide       : 気象庁の潮位表(推算潮位)を、years の年の分だけ取り込んで data/tide に
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "times / tide-probe / tide"
+        default: "times"
+      days:
+        description: "times で1回に取り込む日数"
+        default: "400"
+      years:
+        description: "tide で取り込む年(空白区切り)"
+        default: "2025 2026"
+
+concurrency:
+  group: past-${{ github.event.inputs.mode }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  past:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 解凍ツールを入れる
+        if: ${{ github.event.inputs.mode == 'times' }}
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lhasa
+      - name: 過去の締切時刻を取り込んで送る
+        if: ${{ github.event.inputs.mode == 'times' }}
+        env:
+          DAYS: ${{ github.event.inputs.days }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/times.py --backfill "$DAYS" --commit-every 50
+      - name: 潮位表の地点一覧と見本を probe ブランチに置く
+        if: ${{ github.event.inputs.mode == 'tide-probe' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p probe_out && cd probe_out
+          UA="suimen-note/1.0 (+https://suimennote.com/)"
+          i=0
+          for u in https://www.data.jma.go.jp/kaiyou/db/tide/suisan/station.php \
+                   https://www.data.jma.go.jp/gmd/kaiyou/db/tide/suisan/station.php \
+                   https://www.data.jma.go.jp/kaiyou/db/tide/suisan/station2026.php \
+                   https://www.data.jma.go.jp/kaiyou/db/tide/suisan/index.php \
+                   https://www.data.jma.go.jp/kaiyou/data/db/tide/suisan/txt/2026/TK.txt \
+                   https://www.data.jma.go.jp/gmd/kaiyou/data/db/tide/suisan/txt/2026/TK.txt; do
+            i=$((i+1))
+            code=$(curl -sS -A "$UA" -L -o "p$i.bin" -w '%{http_code} %{content_type} %{size_download}' "$u" 2>>err.txt || true)
+            echo "$i $u -> $code" | tee -a index.txt
+            echo "::notice title=潮位表 $i::$u -> $code"
+            sleep 2
+          done
+          git init -q && git checkout -q -b probe
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "潮位表の見本" || true
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" probe
+      - name: 潮位表を取り込んで送る
+        if: ${{ github.event.inputs.mode == 'tide' }}
+        env:
+          YEARS: ${{ github.event.inputs.years }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/tide.py --fetch $YEARS
+          git add data/tide
+          if git commit -q -m "潮位表の取り込み $YEARS [skip ci]"; then
+            for i in 1 2 3 4; do
+              if git pull --rebase -q origin main || { git rebase --abort; git pull --rebase -X theirs -q origin main; }; then
+                git push -q && break
+              fi
+              sleep 5
+            done
+          fi
