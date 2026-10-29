@@ -49,6 +49,12 @@ jobs:
           # 前後に空白や改行が入っていないか(値そのものは出さない)
           t1=$(printf '%s' "$RAW_KEY" | tr -d '[:space:]'); t2=$(printf '%s' "$RAW_SECRET" | tr -d '[:space:]')
           echo "::notice title=合鍵の前後の空白::Access Key ID ${#RAW_KEY}→${#t1}文字 / Secret ${#RAW_SECRET}→${#t2}文字"
+          # アカウントID の末尾(ダッシュボードのアドレスに出ているもの。秘密ではない)と照らし合わせ、入れ替わっていないかを見る
+          tail_id="164c752f3a36c146b3"
+          a=no; k=no
+          case "$(printf '%s' "$ACCT" | tr -d '[:space:]')" in *"$tail_id") a=yes;; esac
+          case "$t1" in *"$tail_id") k=yes;; esac
+          echo "::notice title=アカウントIDの照らし合わせ::R2_ACCOUNT_ID の末尾が一致: ${a} / R2_ACCESS_KEY_ID の末尾が一致(入れ替わり): ${k}"
           export AWS_ACCESS_KEY_ID="$t1" AWS_SECRET_ACCESS_KEY="$t2"
           ACCT=$(printf '%s' "$ACCT" | tr -d '[:space:]')
           echo '{"cli":true}' > c.json
