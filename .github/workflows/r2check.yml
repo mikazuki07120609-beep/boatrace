@@ -20,6 +20,9 @@ on:
       keys:
         description: "データの公開URLから読んでみるキー(空白区切り。例: live/20261029/01.json odds/20261029/01/12.json)"
         default: ""
+      page:
+        description: "ブラウザで開いてみるページ(例: https://example.com/20261029/01/09.html)。どこからデータを読んだかを数える"
+        default: ""
 
 jobs:
   check:
@@ -100,6 +103,32 @@ jobs:
             info=$(python3 -c "import json,sys; d=json.load(open('d.json')); print('updated', d.get('updated') or d.get('at') or d.get('t'), '/ keys', ','.join(sorted(d.keys()))[:120])" 2>/dev/null || head -c 100 d.json)
             echo "::notice title=データ ${k}::${st} / ${lm} / ${info} $(head -c 120 err.txt | tr -d '\r\n')"
           done
+      - name: ブラウザでページを開き、どこからデータを読んだかを数える
+        if: ${{ always() && github.event.inputs.page != '' }}
+        env:
+          PAGE: ${{ github.event.inputs.page }}
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw
+          npm init -y >/dev/null && npm i -s playwright@1.56.0 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1
+          cat > look.js <<'JS'
+          const { chromium } = require("playwright");
+          (async () => {
+            const b = await chromium.launch(); const pg = await b.newPage();
+            const seen = []; const errs = [];
+            pg.on("response", (r) => { const u = r.url(); if (/data\.suimennote\.com|raw\.githubusercontent\.com/.test(u)) seen.push(r.status() + " " + u.replace(/\?t=\d+/, "").replace("https://", "")); });
+            pg.on("requestfailed", (r) => { const u = r.url(); if (/data\.suimennote\.com|raw\.githubusercontent\.com/.test(u)) seen.push("失敗 " + (r.failure() || {}).errorText + " " + u.replace(/\?t=\d+/, "").replace("https://", "")); });
+            pg.on("console", (m) => { if (m.type() === "error") errs.push(m.text().slice(0, 160)); });
+            await pg.goto(process.env.PAGE, { waitUntil: "load" }); await pg.waitForTimeout(4000);
+            const odds = await pg.$('.tabs [data-tab="odds"]'); if (odds) { await odds.click(); await pg.waitForTimeout(4000); }
+            const dl = await pg.evaluate(() => { const t = document.getElementById("dlTag"); return t ? t.textContent : ""; });
+            const helper = await pg.evaluate(() => typeof window.suimenGet);
+            console.log("::notice title=ブラウザ " + process.env.PAGE + "::締切表示 " + dl + " / 読み込み係 " + helper);
+            console.log("::notice title=ブラウザが読んだデータ::" + (seen.join(" | ") || "なし"));
+            if (errs.length) console.log("::warning title=ブラウザのエラー::" + errs.join(" | ").slice(0, 600));
+            await b.close();
+          })();
+          JS
+          node look.js
       - name: DNS が今どこを指しているか
         if: ${{ always() && github.event.inputs.site != '' }}
         env:
