@@ -1,0 +1,6 @@
+1 https://www.data.jma.go.jp/kaiyou/db/tide/suisan/station.php -> 200 text/html; charset=UTF-8 103933
+2 https://www.data.jma.go.jp/gmd/kaiyou/db/tide/suisan/station.php -> 200 text/html; charset=UTF-8 103933
+3 https://www.data.jma.go.jp/kaiyou/db/tide/suisan/station2026.php -> 200 text/html; charset=UTF-8 103933
+4 https://www.data.jma.go.jp/kaiyou/db/tide/suisan/index.php -> 200 text/html; charset=UTF-8 28426
+5 https://www.data.jma.go.jp/kaiyou/data/db/tide/suisan/txt/2026/TK.txt -> 200 text/plain; charset=UTF-8 50005
+6 https://www.data.jma.go.jp/gmd/kaiyou/data/db/tide/suisan/txt/2026/TK.txt -> 200 text/plain; charset=UTF-8 50005
