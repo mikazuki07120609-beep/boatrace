@@ -1,0 +1,36 @@
+name: 調べもの(一時)
+
+# 動画の配信のしかたを確かめるための、一時的な調べもの。ページとスクリプトだけを取り、probe ブランチに置く(動画は取らない)。
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "読むページのURL(空白区切り)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: 読む
+        env:
+          URLS: ${{ github.event.inputs.urls }}
+        run: python3 .github/probe.py "$URLS"
+      - name: probe ブランチに置く
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p probe_out && cd probe_out
+          git init -q && git checkout -q -b probe
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "調べもの $(TZ=Asia/Tokyo date +'%Y-%m-%d %H:%M')" || true
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" probe
