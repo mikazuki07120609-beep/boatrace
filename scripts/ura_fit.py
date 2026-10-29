@@ -17,18 +17,21 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import subprocess
 import sys
 
 import numpy as np
 from scipy.optimize import minimize
 
 import fit
+import tide
 import ura
-from common import DATA, RESULTS, load_json, parse_ymd, save_json, today_jst
+from common import DATA, RESULTS, ROOT, load_json, parse_ymd, save_json, today_jst
 from stats import races_of
 
 PAYS = DATA / "pays"
 OUT = DATA / "ura.json"
+OUT_RACERS = DATA / "ura_racers.json"
 MAN = 10000
 EVAL_DAYS = 30
 FIT_DAYS = 240                 # 見立てを計算して学習に使う日数(古すぎる日は使わない。毎晩の計算時間のため)
@@ -144,6 +147,119 @@ def auc(s, y):
 
 def shrink(k, n, base, K=K_SHRINK):
     return (k + K * base) / (n + K)
+
+
+ORDER_3T = [f"{a}-{b}-{c}" for a in range(1, 7) for b in range(1, 7) for c in range(1, 7) if len({a, b, c}) == 3]
+
+
+def load_final_odds() -> dict:
+    """締切時オッズ(odds ブランチの data/odds_final。scripts/odds.py が残す)。(日, 場, R) → 3連単のオッズ(ORDER_3T の順)。"""
+    out = {}
+    try:
+        subprocess.run(["git", "fetch", "-q", "origin", "+refs/heads/odds:refs/remotes/origin/odds"], cwd=ROOT, capture_output=True, timeout=180)
+        ls = subprocess.run(["git", "ls-tree", "--name-only", "refs/remotes/origin/odds", "data/odds_final/"], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        for name in ls.stdout.split():
+            r = subprocess.run(["git", "show", f"refs/remotes/origin/odds:{name}"], cwd=ROOT, capture_output=True, timeout=60)
+            if r.returncode != 0:
+                continue
+            ymd = name.rsplit("/", 1)[-1][:8]
+            for v, rs in (json.loads(r.stdout.decode("utf-8")) or {}).items():
+                for no, x in rs.items():
+                    if x and x.get("3t"):
+                        out[(ymd, v, int(no))] = x["3t"]
+    except Exception as ex:  # noqa: BLE001
+        print("締切時オッズを読めませんでした:", ex)
+    return out
+
+
+def market_man(odds3t: list, c2w: dict | None = None) -> float | None:
+    """オッズから見た万舟の見込み(100倍以上の組の、票の割合。オッズの逆数を合計1にしたもの)。"""
+    inv = [(1 / od, od >= 100) for od in odds3t if od and od > 0]
+    if len(inv) < 100:
+        return None
+    tot = sum(x for x, _ in inv)
+    return sum(x for x, big in inv if big) / tot if tot > 0 else None
+
+
+def fit_mix(rows_odds: list) -> dict | None:
+    """オッズが出たあとの万舟の見込み: 見立ての見込み(pm)とオッズから見た見込み(mk)を、ロジスティック回帰で合わせる。
+    締切時オッズのあるレースが少ないうちは、見立ての見込みだけ(重み 0・1・0)に寄せる。"""
+    if len(rows_odds) < 300 or sum(y for _, _, y in rows_odds) < 40:
+        return None
+    X = np.array([[1.0, math.log(max(pm, 1e-4) / max(1 - pm, 1e-4)), math.log(max(mk, 1e-4) / max(1 - mk, 1e-4))] for pm, mk, _ in rows_odds])
+    y = np.array([float(yy) for _, _, yy in rows_odds])
+    prior = np.array([0.0, 1.0, 0.0])
+    lam = 8.0
+
+    def nll(wt):
+        z = X @ wt
+        p = 1 / (1 + np.exp(-z))
+        ll = -(y * np.log(np.maximum(p, 1e-9)) + (1 - y) * np.log(np.maximum(1 - p, 1e-9))).sum()
+        g = X.T @ (p - y)
+        d = wt - prior
+        return ll + lam * (d * d).sum(), g + 2 * lam * d
+    wt = minimize(nll, prior.copy(), jac=True, method="L-BFGS-B").x
+    pm = np.array([r[0] for r in rows_odds])
+    mix = 1 / (1 + np.exp(-(X @ wt)))
+    return {"w": [round(float(x), 4) for x in wt], "n": len(rows_odds), "man": round(float(y.mean()) * 100, 1),
+            "auc_pm": round(auc(pm, y), 3), "auc_mk": round(auc(np.array([r[1] for r in rows_odds]), y), 3), "auc_mix": round(auc(mix, y), 3),
+            "mean_mix": round(float(mix.mean()) * 100, 1)}
+
+
+_TIMES: dict = {}
+
+
+def times_of(ymd: str) -> dict:
+    """その日のレースの締切予定時刻(data/times)。"""
+    if ymd not in _TIMES:
+        _TIMES[ymd] = (load_json(DATA / "times" / f"{ymd}.json", {}) or {}).get("venues") or {}
+    return _TIMES[ymd]
+
+
+def racer_stats(pays: dict) -> dict:
+    """選手ごとの [走数, 3着以内, 万舟のレースで3着以内, 万舟のレースで1着, 1コースの走数, 1コースで万舟になった数]。
+    穴をあけやすい選手(3着以内に来たときに万舟になりやすい)と、1コースで万舟になりやすい選手(イン崩れ)を見る。
+    級ごとの平均と比べるため、番組表(data/program)にある今の級ごとの率も出す。"""
+    acc = {}
+    for p in sorted(RESULTS.glob("*.json")):
+        day = load_json(p, {}) or {}
+        for v, vv in day.get("venues", {}).items():
+            for r in races_of(vv):
+                pv = pays.get((p.stem, v, r["no"]))
+                if not pv:
+                    continue
+                man = pv["y"] >= MAN
+                for e in r.get("entries", []):
+                    t = e.get("toban")
+                    if not t or e.get("course") is None:
+                        continue
+                    a = acc.setdefault(t, [0, 0, 0, 0, 0, 0])
+                    a[0] += 1
+                    rk = e.get("rank")
+                    if isinstance(rk, int) and rk <= 3:
+                        a[1] += 1
+                        a[2] += man
+                        a[3] += man and rk == 1
+                    if e.get("course") == 1:
+                        a[4] += 1
+                        a[5] += man
+    cls = {}
+    for p in sorted((DATA / "program").glob("*.json")):
+        for v in (load_json(p, {}) or {}).get("venues", {}).values():
+            for r in v.get("races", []):
+                for e in r.get("entries", []):
+                    cls[e["toban"]] = e.get("cls")
+    share, inr = {}, {}
+    for key, sel in [("all", lambda t: True)] + [(c, (lambda c: lambda t: cls.get(t) == c)(c)) for c in ("A1", "A2", "B1", "B2")]:
+        xs = [a for t, a in acc.items() if sel(t)]
+        t3, m = sum(a[1] for a in xs), sum(a[2] for a in xs)
+        n1, m1 = sum(a[4] for a in xs), sum(a[5] for a in xs)
+        if t3 >= 200:
+            share[key] = round(m / t3 * 100, 1)
+        if n1 >= 100:
+            inr[key] = round(m1 / n1 * 100, 1)
+    return {"fitted": today_jst().isoformat(), "share": share, "inr": inr,
+            "r": {t: [int(x) for x in a] for t, a in acc.items() if a[0] >= 10}}
 
 
 def main(recs=None) -> int:
@@ -278,6 +394,20 @@ def main(recs=None) -> int:
         ev = summarize(score(te, px_tr, w_tr))
     px, w = fit_all(rows)
     back = summarize(score(rows, px, w))
+    # オッズが出たあと: 締切時オッズのあるレースで、見立ての見込みとオッズから見た見込みの合わせ方を学ぶ
+    mix = None
+    try:
+        FO = load_final_odds()
+        ro = []
+        for sc_ in score([x for x in rows if (x["d"].strftime("%Y%m%d"), x["v"], x["no"]) in FO], px, w):
+            x = sc_["x"]
+            mk = market_man(FO[(x["d"].strftime("%Y%m%d"), x["v"], x["no"])])
+            if mk is not None:
+                ro.append((sc_["pm"], mk, x["yen"] >= MAN))
+        mix = fit_mix(ro)
+        print("オッズを入れた見込み:", json.dumps(mix, ensure_ascii=False) if mix else f"締切時オッズのあるレースが少ないので、まだ合わせません({len(ro)}レース)")
+    except Exception as ex:  # noqa: BLE001
+        print("オッズを入れた見込みを作れませんでした:", ex)
     # 3) 荒れの集計(理由の説明に使う。払戻金がある日の全部)
     allr = []
     for key, pv in pays.items():
@@ -287,7 +417,8 @@ def main(recs=None) -> int:
     nat_n = len(allr)
     nat_k = sum(1 for _, pv, _ in allr if pv["y"] >= MAN)
     nat = nat_k / nat_n
-    st = {"nat": round(nat * 100, 1), "n": nat_n, "ven": {}, "wind": {}, "wave": {}, "time": {}, "dir": {}, "recent": {}, "kim": {}, "pop": {}}
+    st = {"nat": round(nat * 100, 1), "n": nat_n, "ven": {}, "wind": {}, "wave": {}, "time": {}, "dir": {}, "recent": {}, "kim": {}, "pop": {},
+          "tide": {}, "tider": {}}
     by_v: dict = {}
     for key, pv, mt in allr:
         by_v.setdefault(key[1], []).append((key, pv, mt))
@@ -313,6 +444,22 @@ def main(recs=None) -> int:
                 a[0] += pv["y"] >= MAN
                 a[1] += 1
         st["dir"][v] = {b: [round(shrink(a[0], a[1], vr) * 100, 1), a[1]] for b, a in acc.items() if a[1] >= 15}
+        # 潮(潮の満ち引きの差がある場だけ。締切の時刻の潮の満ち引きと、その日の干満の差の大きさごと)
+        if v in tide.STATIONS:
+            acc, accr = {}, {}
+            for key, pv, mt in lst:
+                tms = times_of(key[0]).get(v) or []
+                dl = tms[key[2] - 1] if 0 < key[2] <= len(tms) else None
+                td = tide.at(v, dt.datetime.strptime(key[0], "%Y%m%d").date(), dl) if dl else None
+                if not td:
+                    continue
+                for dct, k in ((acc, td["ph"]), (accr, tide.range_level(v, td.get("rg")))):
+                    if k:
+                        a = dct.setdefault(k, [0, 0])
+                        a[0] += pv["y"] >= MAN
+                        a[1] += 1
+            st["tide"][v] = {b: [round(shrink(a[0], a[1], vr) * 100, 1), a[1]] for b, a in acc.items() if a[1] >= 30}
+            st["tider"][v] = {b: [round(shrink(a[0], a[1], vr) * 100, 1), a[1]] for b, a in accr.items() if a[1] >= 30}
         rec = sorted((x for x in lst if x[1]["y"] >= MAN), key=lambda x: (x[0][0], x[0][2]), reverse=True)[:8]
         st["recent"][v] = [[f"{key[0][4:6]}/{key[0][6:]}", key[2], pv["c"], pv["y"], pv["pop"], mt.get("wc"), mt.get("kim")] for key, pv, mt in rec]
     # 1着のコース・決まり手ごとの万舟の割合(全国)と、3連単の人気(何番人気の組が来たか)
@@ -342,8 +489,12 @@ def main(recs=None) -> int:
     out = {"version": 1, "fitted": today_jst().isoformat(), "data_to": last.isoformat(), "man": MAN,
            "proxy": {k: round(v, 4) for k, v in px.items()},
            "cal": {"w": [round(float(x), 4) for x in w], "vens": vens, "wind": [b[2] for b in WIND_B], "wave": [b[2] for b in WAVE_B], "kinds": KINDS},
-           "eval": ev, "back": back, "stats": st}
+           "eval": ev, "back": back, "stats": st, "mix": mix}
     save_json(OUT, out)
+    try:
+        save_json(OUT_RACERS, racer_stats(pays))
+    except Exception as ex:  # noqa: BLE001  選手ごとの数が作れなくても、裏の学習の結果は残す
+        print("選手ごとの万舟の数を作れませんでした:", ex)
     print(json.dumps({"rows": len(rows), "proxy": out["proxy"], "eval": ev, "back": {k: back[k] for k in ("races", "man", "auc", "ura_hit", "ura_pay", "ura_tan", "omote_tan")}},
                      ensure_ascii=False))
     return 0

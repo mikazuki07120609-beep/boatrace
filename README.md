@@ -34,6 +34,17 @@
 - ページ(`site/assets/ura.js`・`site/assets/ura_page.js`): 見立て(表と同じ `model.js`)から万舟の見込みを出し、表の本線の艇以外で「その決着になって、しかも万舟になる」見込みが一番高い決着を裏本線にします。オッズが出たあと(締切の15分前から)は実際のオッズで計算し直し、人気と見立てのずれも出します。
 - 答え合わせ: 締切前の裏の見立てを `pred.json` の `u` に記録し(`scripts/predlog.js`)、翌日に払戻金と締切時オッズで比べて `data/learn/YYYYMMDD.json` の `ura` に残します(`scripts/learn.py`)。
 
+### 裏の追加の材料と知らせ
+
+- 締切前の売れ方: オッズの取り込み(`scripts/odds.py`)が、そのレースで最初に取り込んだオッズ(締切の約15分前)を `first` として残し、オッズのタブと裏の「人気と見立てのずれ」に変化を出します。
+- 潮の満ち引き: 気象庁の潮位表(推算潮位)を `data/tide` に取り込み(`scripts/tide.py`。毎日の更新が今年の分を確かめる)、締切の時刻の潮をレースのページに出します。過去のレースの締切時刻は `data/times`(`scripts/times.py`)。過去分は Actions の「過去分の取り込み」(`past.yml`)で取り込みます。
+- 穴をあける選手: 裏の学習が `data/ura_racers.json` に選手ごとの万舟絡みの数を残します。
+- オッズを入れた万舟の見込み: 裏の学習が、締切時オッズ(odds ブランチの `data/odds_final`)のあるレースで、見立ての見込みと票の割合の合わせ方を学びます(`data/ura.json` の `mix`)。
+- 直前の荒れ・知らせ: 展示のあとの裏の見込みを `data/live/YYYYMMDD/ura.json` にまとめ(`scripts/predlog.js`)、Cloudflare に置きます。大荒れ注意になったレースは RSS(`ura/feed.xml`)にも足します。
+- X への自動投稿(使うときだけ): リポジトリの秘密の値に `X_API_KEY`・`X_API_SECRET`・`X_ACCESS_TOKEN`・`X_ACCESS_SECRET` を入れると、大荒れ注意になったレースを投稿します(`scripts/xpost.py`)。1日の上限はリポジトリの変数 `X_DAILY_MAX`(ふだん 3)。X API は1件ごとの料金です。
+- Google Search Console: HTML タグで確かめるときは、タグの `content` の値をリポジトリの変数 `GOOGLE_SITE_VERIFICATION` に入れると、最初のページに入ります(DNS で確かめるときは要りません)。
+- シェア用の画像: `site/assets/og-*.png`(`python3 scripts/make_og.py site/assets` で作り直す。Pillow と Noto Sans CJK が要る)。
+
 ## 開催中のデータの置き場所(Cloudflare R2)
 
 締切の前後に取り込む直前情報・結果(`scripts/live.py`)とオッズ(`scripts/odds.py`)は、リポジトリ(GitHub)に入れるのと同時に、Cloudflare R2 にも置きます(`scripts/r2.py`)。ページは先に R2 を読み、ない・読めないときだけ GitHub(raw.githubusercontent.com)を読みます。GitHub のファイル置き場はサイトの配信用ではなく、ログインしていない人のアクセスに回数制限があるためです。

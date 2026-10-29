@@ -625,11 +625,62 @@
     if (exs.length >= 4) { exRank = {}; exs.forEach(function (b) { exRank[b.waku] = 1 + exs.filter(function (x) { return x.ex < b.ex - 1e-9; }).length; }); }
     R.B.forEach(function (b) { b.mgGrade = (b.mg || {}).grade || null; });
     return { venue: V.code, vname: V.name, no: D.race.no, name: D.race.name, B: R.B, wind: wind, wave: wave, weatherPre: pre, exRank: exRank,
-             place1: V.place && V.place[0] ? V.place[0][0] : null, odds: window.SuimenOdds || null, BI: BI, ready: beforeReady(), finished: finished(), nt: D.nt };
+             place1: V.place && V.place[0] ? V.place[0][0] : null, odds: window.SuimenOdds || null, BI: BI, ready: beforeReady(), finished: finished(), nt: D.nt,
+             tide: D.tide || null };
   }
   function uraRender(R) {
     if (!URA || !R || !R.M) return null;
     try { return window.SuimenUraPage.render(R, uraCtx(R)); } catch (e) { if (window.console) console.error(e); return null; }
+  }
+  // ---- 裏: このレースの振り返り(結果から、どう荒れたか・荒れなかったか。締切前の裏本線の答え合わせも)
+  function reviewData() {
+    if (LR && LR.tri && LR.tri.length === 3) {                        // レース直後の結果(公式サイトから)
+      var cw = LR.course && LR.course.length === 6 ? LR.course : null, byW = {};
+      (LR.order || []).forEach(function (o) { byW[o.waku] = { rank: o.rank, status: o.status }; });
+      D.entries.forEach(function (e) {
+        var x = byW[e.waku] = byW[e.waku] || {};
+        x.name = e.name; x.course = cw ? cw.indexOf(e.waku) + 1 : null; x.st = LR.st ? LR.st[String(e.waku)] : null;
+      });
+      return { tri: LR.tri, pay: LR.pay, pop: LR.pop, kim: LR.kimarite, byW: byW, cw: cw };
+    }
+    if (D.result && D.result.entries) {                               // 翌日の競走成績と払戻金
+      var by2 = {}, fin = D.result.entries.filter(function (x) { return x.rank; }).sort(function (a, b) { return a.rank - b.rank; });
+      D.result.entries.forEach(function (x) {
+        var e = D.entries.filter(function (y) { return y.waku === x.waku; })[0] || {};
+        by2[x.waku] = { rank: x.rank, status: x.status, name: e.name, course: x.course, st: x.flying ? null : x.st };
+      });
+      var p3 = D.pay && D.pay["3t"] && D.pay["3t"][0];
+      var cw2 = D.result.entries.filter(function (x) { return x.course; }).sort(function (a, b) { return a.course - b.course; }).map(function (x) { return x.waku; });
+      return fin.length >= 3 ? { tri: fin.slice(0, 3).map(function (x) { return x.waku; }), pay: p3 ? p3[1] : null, pop: p3 ? p3[2] : null, kim: D.result.kimarite,
+                                 byW: by2, cw: cw2.length === 6 ? cw2 : null } : null;
+    }
+    return null;
+  }
+  function uraReview(R) {
+    var box = $("#uraReview");
+    if (!URA || !box) return;
+    var X = reviewData();
+    if (!X) { box.hidden = true; return; }
+    var w1 = X.tri[0], win = X.byW[w1] || {}, pay = X.pay;
+    var lv = pay >= 10000 ? ["万舟", "L3"] : pay >= 5000 ? ["中穴", "L2"] : pay >= 1000 ? ["ふつうの配当", "L1"] : pay ? ["本命どおり", "L0"] : null;
+    var out = [];
+    out.push((win.course ? win.course + "コースの" : "") + esc(win.name || "") + "(" + w1 + "号艇)が" + (X.kim ? esc(X.kim) + "で" : "") + "1着。");
+    var c1w = X.cw ? X.cw[0] : null, c1 = c1w ? X.byW[c1w] : null;
+    if (c1 && c1w !== w1) out.push("1コースの" + esc(c1.name || "") + "(" + c1w + "号艇)は" + (c1.rank ? c1.rank + "着" : esc(c1.status || "着外")) + (c1.st != null ? "(ST " + st2(c1.st) + ")" : "") + "。");
+    var sts = Object.keys(X.byW).map(function (w) { return { w: +w, st: X.byW[w].st, c: X.byW[w].course }; }).filter(function (x) { return x.st != null; });
+    if (sts.length >= 5) {
+      sts.sort(function (a, b) { return a.st - b.st; });
+      var f = sts[0];
+      out.push("スタートは" + (f.c ? f.c + "コースの" : "") + f.w + "号艇が一番早く(ST " + st2(f.st) + ")" +
+        (c1 && c1.st != null && c1.st - f.st >= 0.08 ? "、1コースは " + st2(c1.st) + " と遅れました" : "") + "。");
+    }
+    if (X.cw && X.cw.some(function (w, i) { return w !== i + 1; })) out.push("本番の進入は " + X.cw.join("") + "。");
+    if (pay) out.push("3連単 " + X.tri.join("-") + " は " + Number(pay).toLocaleString() + "円" + (X.pop ? "(" + X.pop + "番人気)" : "") + "。");
+    var L = R && R.U && R.U.lead;
+    if (L) out.push("見立ての裏本線(" + L.c + "コース" + esc(L.k) + ")は" + (win.course === L.c && X.kim === L.k ? "当たり。" : win.course === L.c ? "艇は当たり(決まり手は" + esc(X.kim || "") + ")。" : "外れ。"));
+    box.innerHTML = '<div class="row-head"><h2>このレースの振り返り</h2>' + (lv ? '<span class="ulv ' + lv[1] + '">' + lv[0] + "</span>" : "") + "</div>" +
+      '<p class="urev-t">' + out.join("") + "</p>";
+    box.hidden = false;
   }
   function uraAbsent(ab) {                                          // 裏: 欠場があるレースは、万舟の見込みを出さない
     if (!URA) return;
@@ -804,11 +855,11 @@
     var on = ready();
     setGated(on);
     if (!on) {                                                        // 展開ナビは展示の前でも出す(枠なり・ふだんのST)
-      if (URA) { var R0 = analyze(); R0.U = uraRender(R0); }           // 裏: 展示の前の目安(枠なり・ふだんのST)
+      if (URA) { var R0 = analyze(); R0.U = uraRender(R0); uraReview(R0); }   // 裏: 展示の前の目安(枠なり・ふだんのST)
       navi(null); return;
     }
     var R = analyze(), B = R.B, scen = R.scen;
-    if (URA) R.U = uraRender(R);
+    if (URA) { R.U = uraRender(R); uraReview(R); }
     navi(R);
     renderAlerts(R);
     function byCourse(c) { return B.filter(function (b) { return b.course === c; })[0]; }

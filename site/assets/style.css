@@ -719,3 +719,25 @@ small.th2{display:block;font-size:10.5px;color:var(--muted);font-weight:700;lett
 .odmv.up{background:color-mix(in srgb,var(--rank2) 14%,var(--surface));color:var(--rank2)}
 .umv{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
 .umv.dn{color:var(--rank1)}.umv.up{color:var(--rank2)}
+.utag.t穴{background:linear-gradient(90deg,#ffd27a,#ff8a5c);color:#0d0b12}
+.utide{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;font-size:13.5px;margin:0 0 10px;padding:8px 10px;border-radius:10px;background:#2ed3b714;border:1px solid #2ed3b744}
+.utk{font-size:11.5px;font-weight:800;padding:1px 8px;border-radius:999px;background:#2ed3b7;color:#0d0b12;margin-right:4px}
+.tidetag{background:color-mix(in srgb,#2ed3b7 18%,var(--surface));color:color-mix(in srgb,#0f8f7c 70%,var(--ink))}
+.ura .tidetag{color:#7fe8d4}
+/* 裏の今日のレース: 直前の荒れ・通知・今日の万舟 */
+.ustrip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;border-radius:12px;background:#3a1622;border:1px solid #ff547066;font-size:14px}
+.ustrip a{color:#ffd9e0;font-weight:800;text-decoration:none}
+.ustrip small{color:var(--muted);font-weight:700}
+.ust-k{font-size:12px;font-weight:800;padding:2px 10px;border-radius:999px;background:#ff5470;color:#0d0b12}
+.unotify{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.unotify .chip{cursor:pointer;text-decoration:none}
+.uhit{display:inline-block;font-size:11px;font-weight:800;padding:0 7px;border-radius:999px;background:#ffd27a;color:#0d0b12}
+.uhit2{display:inline-block;font-size:11px;font-weight:800;padding:0 7px;border-radius:999px;background:#3b3146;color:#ffd27a}
+.urev{--pc:var(--gold)}
+.urev .row-head{align-items:center}
+.urev-t{margin:6px 0 0;line-height:1.85}
+.ukt tr.ucur td{background:#2ed3b726;font-weight:800}
+.ulist .res .small{display:block}
+.ulist td.uln2{font-size:13px;line-height:1.6;white-space:nowrap}
+.ukt tr.ucur td:first-child{box-shadow:inset 3px 0 0 #2ed3b7}
+

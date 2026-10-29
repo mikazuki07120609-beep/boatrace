@@ -181,7 +181,8 @@ def at(venue: str, d: dt.date, hhmm: str | None) -> dict | None:
     lv = level(code, d, m)
     return {"st": name, "ph": ph, "h": round(lv) if lv is not None else None,
             "dh": round(h1 - h0) if h0 is not None and h1 is not None else None, "rg": rg,
-            "hi": [hm(nhi), nhi[2]] if nhi else None, "lo": [hm(nlo), nlo[2]] if nlo else None}
+            "hi": [hm(nhi), nhi[2]] if nhi else None, "lo": [hm(nlo), nlo[2]] if nlo else None,
+            "ev": [hm(near), near[2]] if abs(near[0] - m) <= NEAR_MIN else None}   # 満潮前後・干潮前後のときの、その満潮・干潮
 
 
 def range_level(venue: str, rg) -> str | None:

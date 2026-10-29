@@ -85,11 +85,19 @@
     var c2w = {}, byC = {};
     B.forEach(function (b) { c2w[b.course] = b.waku; byC[b.course] = b; });
     var tc = triOf(Mo), T = tc.T, O = ctx.odds || null;
-    var mg = manG(T, UP.proxy, O && O["3t"], c2w), G = mg.G;
+    var mg = manG(T, UP.proxy, O && O["3t"], c2w), G = mg.G;          // 決着ごとの「そのとき万舟」: オッズがあればオッズで
+    var Gp = mg.odds ? manG(T, UP.proxy, null, c2w).G : G;             // レース全体の見込み: 学習したときと同じ、市場の目安で
     var x = { wind: ctx.wind, wave: ctx.wave, kind: MODEL.raceKind(ctx.name), mz: maeduke(B), v: ctx.venue };
     var m = 0;
-    for (var k = 0; k < 216; k++) m += T[k] * G[k];
-    var pMan = calib(m, x, UP.cal);
+    for (var k = 0; k < 216; k++) m += T[k] * Gp[k];
+    var pModel = calib(m, x, UP.cal), pMan = pModel, mk = null;
+    // オッズが出たあと: オッズから見た万舟の見込み(100倍以上の組の票の割合)と、見立ての見込みを、締切時オッズで学習した重みで合わせる
+    if (mg.odds && O && O["3t"]) {
+      var tot = 0, big = 0, nn = 0;
+      Object.keys(O["3t"]).forEach(function (key) { var od = O["3t"][key]; if (od > 0) { tot += 1 / od; nn++; if (od >= 100) big += 1 / od; } });
+      if (nn >= 100 && tot > 0) mk = big / tot;
+      if (mk != null && UP.mix && UP.mix.w) pMan = sig(UP.mix.w[0] + UP.mix.w[1] * logit(pModel) + UP.mix.w[2] * logit(mk));
+    }
     // 1着の見込み(艇ごと)と、表の本線の艇
     var pc = [0, 0, 0, 0, 0, 0];
     Mo.p.forEach(function (p, i) { pc[CL[i][0] - 1] += p; });
@@ -121,7 +129,8 @@
         pop = { rows: rows, value: value, over: rows.filter(function (r) { return r.pm - r.pw >= 0.08; }).sort(function (a, b) { return (b.pm - b.pw) - (a.pm - a.pw); }) };
       }
     }
-    return { T: T, G: G, m: m, pMan: pMan, x: x, pc: pc, oc: oc, scen: scen, cands: cands, lead: lead, pop: pop, odds: mg.odds, c2w: c2w, byC: byC };
+    return { T: T, G: G, m: m, pMan: pMan, pModel: pModel, mk: mk, mixed: pMan !== pModel, x: x, pc: pc, oc: oc, scen: scen, cands: cands, lead: lead, pop: pop,
+             odds: mg.odds, c2w: c2w, byC: byC };
   }
 
   // ---- 荒れの目安の言葉
@@ -180,6 +189,18 @@
       if (b.mgGrade && /^(S\+|S|A)$/.test(b.mgGrade)) why.push("モーター評価 " + b.mgGrade);
       if (why.length >= 2) out.push({ w: 2 + why.length * 0.6 + (U.pc[b.course - 1] || 0) * 4, t: b.course + "コースの" + (b.name || "") + "(" + b.waku + "号艇)に攻めの材料がそろっています(" + why.join("・") + ")。" });
     });
+    // 穴をあけやすい選手(3着以内に来たときに万舟になりやすい。表の本線の艇を除く)と、1コースで万舟が多い選手
+    B.filter(function (b) { return b.ana && b.ana[4] && b.course !== U.oc; }).slice(0, 2).forEach(function (b) {
+      out.push({ w: 2.6 + (U.pc[b.course - 1] || 0) * 3, t: b.course + "コースの" + (b.name || "") + "(" + b.waku + "号艇)は、3着以内に来たときの " + b.ana[2] + "% が万舟(同じ級の平均 " + b.ana[3] +
+        "%・過去1年に " + b.ana[0] + "回)。穴をあけやすい選手です。" });
+    });
+    if (b1 && b1.inm && b1.inm[4]) out.push({ w: 3.4, t: "1コースの" + (b1.name || "") + "は、1コースのときにレースが万舟になった割合が " + b1.inm[2] + "%(" + b1.inm[0] + "走・同じ級の平均 " + b1.inm[3] + "%)。" });
+    // 潮(潮の満ち引きの差がある場)
+    var T = ctx.tide, tst = T ? (((st.tide || {})[v] || {})[T.ph] || null) : null, trg = T && T.rl ? (((st.tider || {})[v] || {})[T.rl] || null) : null;
+    var tev = T ? (T.ph === "満潮前後" || T.ph === "干潮前後" ? T.ev : T.ph === "上げ潮" ? T.hi : T.lo) : null;
+    if (tst && tst[1] >= 40 && tst[0] / 100 - base >= 0.015) out.push({ w: 2.8 + (tst[0] / 100 - base) * 25, t: "潮は" + T.ph + (tev ? "(" + (/満潮|上げ/.test(T.ph) ? "満潮 " : "干潮 ") + tev[0] + ")" : "") +
+      "。この場で" + T.ph + "のときの万舟率は " + tst[0].toFixed(0) + "%(ふだん " + pc(base) + ")。" });
+    if (trg && trg[1] >= 40 && trg[0] / 100 - base >= 0.015) out.push({ w: 2.4 + (trg[0] / 100 - base) * 20, t: "この日は干満の差が" + T.rl + "(" + T.rg + "cm)。この場で干満の差が" + T.rl + "日の万舟率は " + trg[0].toFixed(0) + "%(ふだん " + pc(base) + ")。" });
     // 進入
     if (U.x.mz && st.mz && st.mz[0]) out.push({ w: 3, t: "前づけで進入が乱れています。全国で前づけがあったレースの万舟率は " + st.mz[0][0] + "%(ないとき " + (st.mz[1] ? st.mz[1][0] : "—") + "%)。" });
     // 裏目: 表の本線が崩れたときの形

@@ -107,8 +107,9 @@ def _put(conn: http.client.HTTPSConnection, key: str, body: bytes) -> tuple[bool
     path = "/" + urllib.parse.quote(BUCKET, safe="") + "/" + urllib.parse.quote(key, safe="/-_.~")
     when = dt.datetime.now(dt.timezone.utc)
     ph = hashlib.sha256(body).hexdigest()
+    ctype = "application/rss+xml; charset=utf-8" if key.endswith(".xml") else CONTENT_TYPE
     headers = {"host": host, "x-amz-date": when.strftime("%Y%m%dT%H%M%SZ"), "x-amz-content-sha256": ph,
-               "content-type": CONTENT_TYPE, "cache-control": CACHE_CONTROL}
+               "content-type": ctype, "cache-control": "public, max-age=60" if key.endswith(".xml") else CACHE_CONTROL}
     headers["authorization"] = sign("PUT", host, path, headers, ph, os.environ["R2_ACCESS_KEY_ID"].strip(), _secret(), when)
     headers["content-length"] = str(len(body))
     conn.request("PUT", path, body=body, headers=headers)

@@ -436,6 +436,11 @@ def mirror_live(day: dt.date) -> None:
         pairs = [(f"live/{ymd}/{p.name}", p) for p in sorted(d.glob("[0-9][0-9].json"))]
         if (d / "dl.json").exists():
             pairs.append((f"live/{ymd}/dl.json", d / "dl.json"))
+        if (d / "ura.json").exists():                   # 裏: 展示のあとの万舟の見込みと裏本線(scripts/predlog.js)
+            pairs.append((f"live/{ymd}/ura.json", d / "ura.json"))
+        feed = DATA / "live" / "feed.xml"                 # 裏: 大荒れ注意の知らせ(RSS)
+        if feed.exists():
+            pairs.append(("ura/feed.xml", feed))
         r2.mirror(pairs)
         if not (d / "dl.json").exists():
             r2.ensure(f"live/{ymd}/dl.json", b'{"dl":{}}')
@@ -533,6 +538,12 @@ def after_change(day: dt.date, push: bool) -> None:
     取り込んだデータを送ったあとで作り、手元でまとめておいて次の回に一緒に送る。"""
     subprocess.run([sys.executable, str(ROOT / "scripts" / "build_site.py")], cwd=ROOT, capture_output=True)
     subprocess.run(["node", str(ROOT / "scripts" / "predlog.js")], cwd=ROOT)
+    try:                                       # 裏: 大荒れ注意になったレースを X に投稿(X のキーを入れたときだけ)
+        import xpost
+        xpost.run(day)
+    except Exception as ex:  # noqa: BLE001
+        print("X への投稿をとばしました:", ex, flush=True)
+    mirror_live(day)                           # 裏の見込み(ura.json)と知らせ(RSS)を、すぐ Cloudflare に
     if push:
         _git("add", "data/live")
         if _git("diff", "--cached", "--quiet").returncode != 0:

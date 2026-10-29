@@ -14,7 +14,7 @@
 
   function stateText(ctx, U) {
     if (ctx.finished) return "締切前の計算";
-    if (U.odds) return "展示とオッズを入れた計算";
+    if (U.mixed) return "展示とオッズを入れた計算";
     if (ctx.ready) return "展示のあとの計算";
     return "展示の前の目安(枠なり・ふだんのST)";
   }
@@ -52,17 +52,20 @@
       if ((b.fp || 0) > 0) tags.push(["F", "F" + b.fp + "持ち"]);
       if (b.course === 1 && cs.n >= 5 && cs.w1 / cs.n < 0.4) tags.push(["弱", "イン1着率 " + Math.round(cs.w1 / cs.n * 100) + "%"]);
       if (b.course !== b.waku) tags.push(["進入", b.waku + "→" + b.course + "コース"]);
+      if (b.ana && b.ana[4] && b.course !== U.oc) tags.unshift(["穴", "万舟絡み" + b.ana[0] + "回"]);
+      if (b.course === 1 && b.inm && b.inm[4]) tags.push(["弱", "イン戦の万舟 " + b.inm[2] + "%"]);
       var pop = U.pop ? U.pop.rows.filter(function (r) { return r.b === b; })[0] : null;
       return "<tr" + (U.lead && U.lead.b === b ? ' class="ulead"' : "") + "><td>" + wk(b.waku) + "</td><td class=\"unc\"><div class=\"un\"><b>" + esc(b.name || "") + "</b>" +
         '<span class="dim">' + b.course + "コース " + esc(b.cls || "") + (U.lead && U.lead.b === b ? ' <i class="ubtag">裏本線</i>' : "") + "</span>" +
         (tags.length ? '<span class="utags">' + tags.map(function (t) { return '<span class="utag t' + esc(t[0]) + '">' + esc(t[1]) + "</span>"; }).join("") + "</span>" : "") + "</div></td>" +
         '<td class="num">' + pc(pw) + "</td>" + '<td class="num"><b>' + pc(ps) + "</b></td>" +
-        '<td class="num">' + (pop ? pop.rank + "番人気<span class=\"dim\">" + pop.odds.toFixed(1) + "倍</span>" : "—") + "</td></tr>";
+        '<td class="num">' + (pop && pop.odds > 0 ? pop.rank + "番人気<span class=\"dim\">" + pop.odds.toFixed(1) + "倍</span>" : "—") + "</td></tr>";
     }).join("");
     return '<div class="scroll"><table class="gridt utab"><thead><tr><th></th><th class="unc">選手・穴の材料</th><th class="num">1着の<br>見込み</th><th class="num">荒れた<br>とき1着</th>' +
       '<th class="num">人気</th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
       '<p class="note">荒れたとき1着は、万舟になったとしたら、どの艇が1着の形が多いか(見立てで万舟になる決着の中での割合)です。人気は単勝オッズの順位(締切の15分前から)。' +
-      "穴の材料: 捲り系1着=このコースでの捲り・捲り差しの1着の回数、一撃=一撃スタートの見込み、凹み=スタートで凹む見込み、展示=展示タイムの順位、F持ち=今期のフライング(スタートを控えやすい)。</p>";
+      "穴の材料: 捲り系1着=このコースでの捲り・捲り差しの1着の回数、一撃=一撃スタートの見込み、凹み=スタートで凹む見込み、展示=展示タイムの順位、F持ち=今期のフライング(スタートを控えやすい)、" +
+      "万舟絡み=過去1年に万舟のレースで3着以内に入った回数(3着以内に来たときに万舟になる割合が、同じ級の平均よりはっきり高い選手だけ)、イン戦の万舟=1コースのときにそのレースが万舟になった割合(同じ級の平均よりはっきり高い選手だけ)。</p>";
   }
   // 外の攻め手と、1号艇の負け方
   function tac(U, ctx) {
@@ -88,9 +91,21 @@
     return '<ul class="points">' + rows.join("") + "</ul>";
   }
   // 荒れのサイン(直前情報)
+  function tideLine(ctx) {                                            // 締切の時刻の潮(潮の満ち引きの差がある場だけ)
+    var T = ctx.tide;
+    if (!T) return "";
+    var st = ((UP.stats || {}).tide || {})[ctx.venue] || {}, base = UX.venueBase(UP, ctx.venue), x = st[T.ph];
+    function ev(lab, x) { return x ? "・" + lab + " " + esc(x[0]) + "(" + x[1] + "cm)" : ""; }
+    var evs = T.ph === "満潮前後" ? ev("満潮", T.ev || T.hi) + ev("次の干潮", T.lo) : T.ph === "干潮前後" ? ev("干潮", T.ev || T.lo) + ev("次の満潮", T.hi) :
+      T.ph === "上げ潮" ? ev("満潮", T.hi) : ev("干潮", T.lo);
+    return '<p class="utide"><span class="utk">潮</span><b>' + esc(T.ph) + "</b>" + evs +
+      (T.rg != null ? "・この日の干満の差 " + T.rg + "cm" + (T.rl ? "(" + esc(T.rl) + ")" : "") : "") +
+      (x ? '<span class="dim">。この場で' + esc(T.ph) + "のときの万舟率 " + x[0].toFixed(0) + "%(ふだん " + pc(base) + ")</span>" : "") +
+      '<span class="dim">(気象庁の潮位表・' + esc(T.st) + ")</span></p>";
+  }
   function before(U, ctx) {
     var BI = ctx.BI;
-    if (!BI || !BI.ready) return '<p class="wait">展示航走のあと(締切の10〜15分前ごろ)に、展示タイム・スタート展示・進入・チルト・部品交換・風と波から、荒れにつながるサインを探します。</p>';
+    if (!BI || !BI.ready) return tideLine(ctx) + '<p class="wait">展示航走のあと(締切の10〜15分前ごろ)に、展示タイム・スタート展示・進入・チルト・部品交換・風と波から、荒れにつながるサインを探します。</p>';
     var out = [], B = ctx.B, byW = {};
     B.forEach(function (b) { byW[b.waku] = b; });
     var ex = ctx.exRank || {};
@@ -116,7 +131,7 @@
     B.forEach(function (b) { var p = (parts[String(b.waku)] || []).filter(Boolean); if (p.length) out.push(b.waku + "号艇が部品交換(" + p.join("・") + ")。足の変化に注意。"); });
     var W = BI.weather || {};
     if (W.wind != null || W.wave != null) out.push("水面: 風速" + (W.wind != null ? W.wind : "—") + "m・波" + (W.wave != null ? W.wave : "—") + "cm。" + (W.wind >= 5 ? "強めの風で、スタートがばらつきやすい条件です。" : ""));
-    return out.length ? '<ul class="points">' + out.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>" : '<p class="sub">展示では、目立った荒れのサインは見つかりませんでした。</p>';
+    return tideLine(ctx) + (out.length ? '<ul class="points">' + out.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>" : '<p class="sub">展示では、目立った荒れのサインは見つかりませんでした。</p>');
   }
   // 人気と見立てのずれ
   function odds(U, ctx) {
@@ -125,7 +140,7 @@
       var mark = r.ratio >= 1.3 && r.pw >= 0.05 && r.b.course !== U.oc ? '<span class="utag t攻め">見立てが上</span>' : r.pm - r.pw >= 0.08 ? '<span class="utag t弱">人気しすぎ</span>' : "";
       var mvc = r.mv == null ? '<span class="dim">—</span>' : (r.mv <= 0.8 ? '<span class="umv dn">' + r.f0.toFixed(1) + "→<b>" + r.odds.toFixed(1) + "</b></span>" :
         r.mv >= 1.3 ? '<span class="umv up">' + r.f0.toFixed(1) + "→" + r.odds.toFixed(1) + "</span>" : '<span class="dim">' + r.f0.toFixed(1) + "→" + r.odds.toFixed(1) + "</span>");
-      return "<tr><td class=\"num\">" + r.rank + "</td><td>" + wk(r.b.waku) + " " + esc(surname(r.b.name)) + "</td><td class=\"num\">" + r.odds.toFixed(1) + "</td>" +
+      return "<tr><td class=\"num\">" + r.rank + "</td><td>" + wk(r.b.waku) + " " + esc(surname(r.b.name)) + "</td><td class=\"num\">" + (r.odds > 0 ? r.odds.toFixed(1) : "—") + "</td>" +
         '<td class="num">' + mvc + "</td>" +
         '<td class="num">' + pc(r.pm) + '</td><td class="num"><b>' + pc(r.pw) + "</b></td><td>" + mark + "</td></tr>";
     }).join("");
@@ -139,26 +154,32 @@
     }
     return '<div class="scroll"><table class="gridt"><thead><tr><th class="num">人気</th><th>艇</th><th class="num">単勝</th><th class="num">締切前の<br>動き</th><th class="num">人気からの<br>見込み</th>' +
       '<th class="num">見立ての<br>1着</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
-      (O ? '<p class="sub">3連単で100倍以上の組み合わせは120通り中 <b>' + c100 + "通り</b>。見立てでは、そのどれかで決まる見込みが <b>" + pc(p100) + "</b>(これが万舟の見込みのもとです)。</p>" : "") +
+      (O ? '<p class="sub">3連単で100倍以上の組み合わせは120通り中 <b>' + c100 + "通り</b>。そのどれかで決まる見込みは、見立てでは <b>" + pc(p100) + "</b>" +
+        (U.mk != null ? "、票の割合(オッズの逆数)では <b>" + pc(U.mk) + "</b>" : "") + "。" +
+        (U.mixed ? "上の万舟の見込みは、見立ての見込みと票の割合を、過去の締切時オッズで学習した重みで合わせたものです。" :
+          "締切時オッズのたまったレースがまだ少ないため、上の万舟の見込みには票の割合を入れていません。") + "</p>" : "") +
       '<p class="note">人気からの見込みは、単勝オッズの逆数を6艇で合計1にしたもの。見立てが人気の1.3倍以上の艇を「見立てが上」、人気からの見込みが見立てより8ポイント以上高い艇を「人気しすぎ」にしています。' +
       "締切前の動きは、このレースで最初に取り込んだ単勝オッズ(締切の約15分前)から今までの変化で、赤は2割以上下がった(売れた)艇です。</p>";
   }
   // この場の荒れ方
   function venueData(U, ctx) {
     var st = UP.stats || {}, v = ctx.venue, base = UX.venueBase(UP, v);
-    function tbl(title, obj, order, fmt) {
+    function tbl(title, obj, order, fmt, cur) {
       if (!obj) return "";
       var ks = order.filter(function (k) { return obj[k]; });
       if (!ks.length) return "";
       return '<div class="gridt-wrap"><table class="gridt ukt"><caption>' + esc(title) + "</caption><thead><tr><th></th><th class=\"num\">万舟率</th><th class=\"num\">数</th></tr></thead><tbody>" +
-        ks.map(function (k) { var x = obj[k]; return "<tr><td>" + esc(fmt(k)) + '</td><td class="num' + (x[0] / 100 >= base * 1.15 ? " hi" : "") + '">' + x[0].toFixed(0) + '%</td><td class="num dim">' + x[1] + "</td></tr>"; }).join("") +
+        ks.map(function (k) { var x = obj[k]; return "<tr" + (cur && k === cur ? ' class="ucur" title="このレース"' : "") + "><td>" + esc(fmt(k)) + '</td><td class="num' + (x[0] / 100 >= base * 1.15 ? " hi" : "") + '">' + x[0].toFixed(0) + '%</td><td class="num dim">' + x[1] + "</td></tr>"; }).join("") +
         "</tbody></table></div>";
     }
     var html = '<p class="sub">' + esc(ctx.vname) + "のふだんの万舟率は <b>" + pc(base) + "</b>(全国 " + pc((st.nat || 16) / 100) + "・過去1年)。</p>" + '<div class="ukts">' +
       tbl("風速", (st.wind || {})[v], ["0-2", "3-4", "5-6", "7+"], function (k) { return k === "7+" ? "7m以上" : k.replace("-", "〜") + "m"; }) +
       tbl("波", (st.wave || {})[v], ["0-2", "3-5", "6-9", "10+"], function (k) { return k === "10+" ? "10cm以上" : k.replace("-", "〜") + "cm"; }) +
       tbl("レース番号", (st.time || {})[v], ["1-4", "5-8", "9-12"], function (k) { return k.replace("-", "〜") + "R"; }) +
-      tbl("風向き(3m以上)", (st.dir || {})[v], ["北", "北東", "東", "南東", "南", "南西", "西", "北西"], function (k) { return k; }) + "</div>";
+      tbl("風向き(3m以上)", (st.dir || {})[v], ["北", "北東", "東", "南東", "南", "南西", "西", "北西"], function (k) { return k; }) +
+      tbl("潮の満ち引き", (st.tide || {})[v], ["上げ潮", "下げ潮", "満潮前後", "干潮前後"], function (k) { return k; }, ctx.tide && ctx.tide.ph) +
+      tbl("干満の差", (st.tider || {})[v], ["大きい", "ふつう", "小さい"], function (k) { return k; }, ctx.tide && ctx.tide.rl) + "</div>" +
+      (ctx.tide ? '<p class="note">潮の表の塗った行が、このレースの締切のころの潮です(気象庁の潮位表・' + esc(ctx.tide.st) + ")。</p>" : "");
     var kim = st.kim || {}, ks = Object.keys(kim).filter(function (k) { return kim[k][1] >= 100; }).sort(function (a, b) { return kim[b][0] - kim[a][0]; }).slice(0, 6);
     if (ks.length) html += '<p class="sub">全国で万舟になりやすい決着: ' + ks.map(function (k) { return esc(k.replace(/^(\d)/, "$1コース")) + " " + kim[k][0].toFixed(0) + "%"; }).join("・") + "</p>";
     var rec = (st.recent || {})[v] || [];

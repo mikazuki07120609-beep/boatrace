@@ -210,12 +210,19 @@
       { id: "a1out", label: "4〜6号艇にA1級", test: function (r) {
         var hit = r.e.filter(function (e) { return e.w >= 4 && e.k === "A1"; });
         return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + " A1"; }) : null; } },
+      { id: "ana", label: "穴をあけやすい選手がいる", test: function (r) {
+        var hit = r.e.filter(function (e) { return e.an; }); return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + " 万舟によく絡む"; }) : null; } },
+      { id: "inman", label: "1号艇がイン戦で万舟の多い選手", test: function (r) {
+        var e = r.e.filter(function (x) { return x.w === 1; })[0]; return e && e.im ? [waku(1) + " " + esc(e.n) + " 1コースのとき万舟が多い"] : null; } },
       { id: "flat", label: "A級が1人もいない(B級だけ)", test: function (r) { return r.e.every(function (e) { return /^B/.test(e.k || ""); }) ? ["6人ともB級"] : null; } },
       { id: "motorOut", label: "4〜6号艇のモーターがS以上", test: function (r) {
         var g = motorGrades(r), hit = r.e.map(function (e, i) { return [e, g[i]]; }).filter(function (x) { return x[0].w >= 4 && (x[1] === "S" || x[1] === "S+"); });
         return hit.length ? hit.map(function (x) { return waku(x[0].w) + ' <b class="g ' + (x[1] === "S+" ? "gSp" : "gS") + '">' + x[1] + "</b>"; }) : null; } }
     ]],
     ["水面・直前情報", [
+      { id: "tideUp", label: "上げ潮のレース", test: function (r) { return r.td === "上げ潮" ? ["締切のころ上げ潮"] : null; } },
+      { id: "tideDown", label: "下げ潮のレース", test: function (r) { return r.td === "下げ潮" ? ["締切のころ下げ潮"] : null; } },
+      { id: "tideTurn", label: "満潮・干潮の前後", test: function (r) { return r.td === "満潮前後" || r.td === "干潮前後" ? ["締切のころ" + esc(r.td)] : null; } },
       { id: "wind4", label: "風速4m以上", live: true, test: function (r) {
         var bi = beforeOf(r), w = bi && bi.weather ? bi.weather.wind : null; return w != null && w >= 4 ? ["風速" + w + "m"] : null; } },
       { id: "wave5", label: "波5cm以上", live: true, test: function (r) {
