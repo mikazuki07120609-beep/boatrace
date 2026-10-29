@@ -1,0 +1,45 @@
+name: 調べもの・映像(一時)
+
+# 公式のリプレイのプレーヤーをブラウザで開き、数枚の画面を撮って probe ブランチに置く(一時的な確かめ。映像のファイルは取らない)。
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "プレーヤーのURL"
+        required: true
+      times:
+        description: "撮る秒(カンマ区切り)"
+        default: "0,10,20,30,40,50,60,70,80,90,100,110,120"
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 開いて撮る
+        env:
+          URL: ${{ github.event.inputs.url }}
+          TIMES: ${{ github.event.inputs.times }}
+        run: |
+          npm i --no-save --silent playwright@1.48.2
+          node .github/probe_video.js "$URL" "$TIMES"
+      - name: probe ブランチに置く
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p probe_out && cd probe_out
+          git init -q && git checkout -q -b probe
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "調べもの $(TZ=Asia/Tokyo date +'%Y-%m-%d %H:%M')" || true
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" probe
