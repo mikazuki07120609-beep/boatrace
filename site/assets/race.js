@@ -223,6 +223,122 @@
     box.innerHTML = '<div class="vt-wrap stick"><table class="vt rcv">' + vhead(true) + "<tbody>" + rows.join("") + "</tbody></table></div>";
   }
 
+  // ---- コース別の戦法: 選手ごと・コースごとの戦い方(直近1年)。1着の決まり手・2着/3着の時の動き(推定)・スタートで内より先に出た割合・
+  //      その選手がそのコースにいたときの1コースの逃げと、外の艇の差し・捲り差しの割合(全国の割合と比べる)
+  var TAC = { w: null }, TAC_MV = ["捲り", "差し", "捲り差し"], TAC_N = 15;
+  function cnt(o, k) { return (o || {})[k] || 0; }
+  function tacNat() {
+    var nt = D.nt || {}, races = (nt["1"] || {}).n || 0, out = { nige: null, sa: {} };
+    if (!races) return out;
+    out.nige = cnt((nt["1"] || {}).km, "逃げ") / races;
+    for (var c = 2; c <= 6; c++) { var km = (nt[String(c)] || {}).km || {}; out.sa[c] = (cnt(km, "差し") + cnt(km, "捲り差し")) / races; }
+    return out;
+  }
+  function tacOf(cs, c, NR) {
+    cs = cs || {};
+    var n = cs.n || 0, wc = cs.wc || {}, mv = {}, tot = 0;
+    TAC_MV.forEach(function (k) { mv[k] = cnt(cs.km, k) + cnt(cs.s2, k) + cnt(cs.s3, k); tot += mv[k]; });
+    var top = TAC_MV.slice().sort(function (a, b) { return mv[b] - mv[a]; }), type = "—";
+    if (c === 1) { if (n >= 5) { var r = cnt(cs.km, "逃げ") / n; type = r >= 0.62 ? "逃げが堅い" : r <= 0.42 ? "逃げが弱い" : "逃げは標準"; } else if (n) type = "記録が少ない"; }
+    else if (tot >= 5) type = mv[top[0]] / tot >= 0.5 ? top[0] + "型" : top[0] + "・" + top[1];
+    else if (n) type = "記録が少ない";
+    var osa = 0, osaNat = 0;
+    for (var k = c + 1; k <= 6; k++) { osa += cnt(wc, k + "差し") + cnt(wc, k + "捲り差し"); osaNat += NR.sa[k] || 0; }
+    return { n: n, mv: mv, tot: tot, top: top, type: type, cs: cs,
+             nige: n && Object.keys(wc).length ? cnt(wc, "1逃げ") / n : null, nigeNat: NR.nige,
+             osa: n && c < 6 && Object.keys(wc).length ? osa / n : null, osaNat: c < 6 ? osaNat : null,
+             lead: c >= 2 && cs.sn ? (cs.sl || 0) / cs.sn : null };
+  }
+  function tacList(o, keys) {                        // 決まり手・動きの回数を多い順に(上位3つ)
+    o = o || {};
+    var items = Object.keys(o).filter(function (k) { return o[k] > 0 && k !== "その他" && (!keys || keys.indexOf(k) >= 0); })
+      .sort(function (a, b) { return o[b] - o[a]; }).slice(0, 3);
+    return items.length ? '<span class="tx">' + items.map(function (k) { return esc(KS[k] || k) + o[k]; }).join(" ") + "</span>" : "—";
+  }
+  function tacRate(v, nat, n, gap) {               // 割合と全国の割合。15走以上で全国と大きく違えば ▲▼
+    if (v == null) return "—";
+    var mark = "", cls = "";
+    if (nat != null && n >= TAC_N && Math.abs(v - nat) >= gap) { mark = v > nat ? "▲" : "▼"; cls = v > nat ? "up" : "dn"; }
+    return '<span class="rt"><b class="' + cls + '">' + mark + Math.round(v * 100) + "%</b>" + (nat != null ? '<span class="dim">全国' + Math.round(nat * 100) + "%</span>" : "") + "</span>";
+  }
+  function tacRows(list, cols, todayIdx) {           // list: [{t, c}] (t: tacOf の結果, c: コース)。cols: 列の見出し(thead)。todayIdx: 今日のコースの列
+    function vrow(label, cells, vals, dir) {
+      var t = vals ? rank12(vals, dir) : null;
+      return '<tr><th scope="row">' + label + "</th>" + cells.map(function (c, i) {
+        return '<td class="' + ((t ? rkClass(t[i]) : "") + (i === todayIdx ? " today" : "")).trim() + '">' + c + "</td>"; }).join("") + "</tr>";
+    }
+    var rows = [];
+    rows.push(vrow("走数", list.map(function (x) { return x.t.n ? String(x.t.n) : "—"; })));
+    rows.push(vrow("タイプ", list.map(function (x) { return x.t.type === "—" ? "—" : '<span class="ty">' + esc(x.t.type) + "</span>"; })));
+    rows.push(vrow("1着の時", list.map(function (x) { return tacList(x.t.cs.km); })));
+    rows.push(vrow("2着の時", list.map(function (x) { return tacList(x.t.cs.s2); })));
+    rows.push(vrow("3着の時", list.map(function (x) { return tacList(x.t.cs.s3); })));
+    rows.push(vrow("内より<br>先に出た", list.map(function (x) { return x.t.lead == null ? "—" : Math.round(x.t.lead * 100) + "%"; }),
+      list.map(function (x) { return x.t.lead != null && x.t.n >= 5 ? x.t.lead : null; }), "max"));
+    rows.push(vrow("1コースの<br>逃げ", list.map(function (x) { return tacRate(x.t.nige, x.t.nigeNat, x.t.n, 0.08); })));
+    rows.push(vrow("外の差し・<br>捲り差し", list.map(function (x) { return x.c >= 6 ? "—" : tacRate(x.t.osa, x.t.osaNat, x.t.n, 0.05); })));
+    return '<div class="vt-wrap"><table class="vt tact">' + cols + "<tbody>" + rows.join("") + "</tbody></table></div>";
+  }
+  function renderTactics() {
+    var now = $("#tacNow"), notes = $("#tacNotes"), boxB = $("#tacBoats"), all = $("#tacAll");
+    if (!now) return;
+    var NR = tacNat(), E = D.entries, C = E.map(function (e) { return courseOf(e.waku); });
+    var list = E.map(function (e, i) { return { e: e, c: C[i], t: tacOf((e.cs || {})[String(C[i])], C[i], NR) }; });
+    var head = '<thead><tr><th class="corner"></th>' + list.map(function (x) {
+      var ab = absMark(x.e);
+      return '<th class="bw w' + x.e.waku + (ab ? " absent" : "") + '"><span class="bn">' + x.e.waku + '</span><span class="hn">' + esc(x.e.name) + femMark(x.e) + "</span>" + ab +
+        '<small class="hc">' + x.c + "コース</small></th>";
+    }).join("") + "</tr></thead>";
+    now.innerHTML = tacRows(list, head);
+    // このレースのポイント: 今日のコースで目立つ戦い方
+    var pts = [];
+    list.slice().sort(function (a, b) { return a.c - b.c; }).forEach(function (x) {
+      var t = x.t, nm = x.c + "コースの" + x.e.name, parts = [];
+      if (x.c === 1) {
+        if (t.n >= 10 && t.nige != null && t.nigeNat != null && Math.abs(t.nige - t.nigeNat) >= 0.10) {
+          var ls = t.cs.ls || {}, lk = ["差し", "捲り", "捲り差し"].filter(function (k) { return ls[k]; }).sort(function (a, b) { return ls[b] - ls[a]; })[0];
+          pts.push(nm + "は、1コースの逃げ" + Math.round(t.nige * 100) + "%(全国" + Math.round(t.nigeNat * 100) + "%)と" + (t.nige > t.nigeNat ? "高い。" : "低い。") +
+            (t.nige < t.nigeNat && lk ? "負けたときは" + ({ "差し": "差され", "捲り": "捲られ", "捲り差し": "捲り差され" })[lk] + "が多い(" + ls[lk] + "回)。" : ""));
+        }
+        return;
+      }
+      if (t.tot >= 6 && t.mv[t.top[0]] / t.tot >= 0.5)
+        parts.push(x.c + "コースでは" + t.top[0] + "が多い(" + TAC_MV.filter(function (k) { return t.mv[k]; }).map(function (k) { return k + t.mv[k]; }).join("・") + "。1〜3着の合計)");
+      if (t.lead != null && t.n >= 10 && t.lead >= 0.3) parts.push("スタートで内より先に出ることが多く(" + Math.round(t.lead * 100) + "%)、握って攻めやすい");
+      if (t.n >= TAC_N && t.nige != null && t.nigeNat != null && t.nige <= t.nigeNat - 0.08) parts.push("この選手が" + x.c + "コースにいると1コースの逃げが決まりにくい(" + Math.round(t.nige * 100) + "%・全国" + Math.round(t.nigeNat * 100) + "%)");
+      if (t.n >= TAC_N && t.nige != null && t.nigeNat != null && t.nige >= t.nigeNat + 0.08) parts.push("この選手が" + x.c + "コースにいると1コースが逃げやすい(" + Math.round(t.nige * 100) + "%・全国" + Math.round(t.nigeNat * 100) + "%)");
+      if (t.n >= TAC_N && t.osa != null && t.osaNat != null && t.osa >= t.osaNat + 0.05) parts.push("外の艇の差し・捲り差しがよく決まる(" + Math.round(t.osa * 100) + "%・全国" + Math.round(t.osaNat * 100) + "%)ので、外の艇にもチャンス");
+      if (parts.length) pts.push(nm + ": " + parts.join("。") + "。");
+    });
+    if (notes) notes.innerHTML = pts.slice(0, 5).map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") ||
+      "<li>" + esc("このレースの6人には、今日のコースで目立った戦い方の偏りはありません(走数が少ない選手は数えていません)。") + "</li>";
+    // 選手を選んで、全コースの戦法
+    if (!boxB || !all) return;
+    if (TAC.w == null || !E.some(function (e) { return e.waku === TAC.w; })) TAC.w = E[0] ? E[0].waku : null;
+    boxB.innerHTML = E.map(function (e, i) {
+      var on = e.waku === TAC.w;
+      return '<button type="button" class="' + (on ? "on" : "") + '" data-w="' + e.waku + '" aria-pressed="' + on + '">' + wk(e.waku) + esc(surname(e.name)) + femMark(e) + "</button>";
+    }).join("");
+    var me = E.filter(function (e) { return e.waku === TAC.w; })[0];
+    if (!me) { all.innerHTML = ""; return; }
+    var today = C[E.indexOf(me)];
+    var list2 = [1, 2, 3, 4, 5, 6].map(function (c) { return { e: me, c: c, t: tacOf((me.cs || {})[String(c)], c, NR) }; });
+    var head2 = '<thead><tr><th class="corner"></th>' + [1, 2, 3, 4, 5, 6].map(function (c) {
+      return '<th class="cno' + (c === today ? " today" : "") + '">' + c + (c === today ? "<small>今日</small>" : "<small>コース</small>") + "</th>";
+    }).join("") + "</tr></thead>";
+    all.innerHTML = tacRows(list2, head2, today - 1);
+  }
+  function setupTactics() {
+    var boxB = $("#tacBoats");
+    if (!boxB) return;
+    boxB.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-w]");
+      if (!b) return;
+      TAC.w = +b.getAttribute("data-w");
+      renderTactics();
+    });
+  }
+
   // 直前情報(展示タイム・推定タイム・スタート展示など)
   function renderBefore() {
     var box = $("#beforeBox"), at = $("#beforeAt"), exb = $("#ex1Box");
@@ -592,6 +708,7 @@
     renderDeadline();
     renderResult();
     renderCard();
+    renderTactics();
     renderBefore();
     var ab = absentWakus();
     if (ab.length) { showAbsent(ab); navi(null); return; }
@@ -1310,6 +1427,7 @@
   copyBtn("#btnCopyR", "#review", "#copyMsgR");
   setupViewControls();
   setupNavi();
+  setupTactics();
   render();
   if (!(finished() && LR)) poll();
   schedule();

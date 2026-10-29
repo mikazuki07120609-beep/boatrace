@@ -176,8 +176,7 @@ def main() -> int:
         fit.main()
     except ImportError as ex:
         print("学習をとばしました:", ex)
-    build_site.main()
-    # 前の日の見立て・映像と結果を比べて記録する(学習の記録。サイトには出さない)
+    # 前の日の見立て・映像と結果を比べて記録する(成績のページに使うので、サイトを作る前に)
     try:
         import learn
         learn.main()
@@ -197,6 +196,7 @@ def main() -> int:
         if n:
             subprocess.run(["node", str(pathlib.Path(__file__).with_name("learn_anim.js")), f"{yday:%Y%m%d}", str(review)], check=False)
         shutil.rmtree(review, ignore_errors=True)
+    build_site.main()
     return 0
 
 

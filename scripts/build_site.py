@@ -59,7 +59,7 @@ def page(title, desc, body, depth, path, scripts="", notes=None):
 <link rel="stylesheet" href="{rel}assets/style.css">
 </head><body><div class="wrap">
 <header class="site-head"><a class="logo" href="{rel}index.html">{SITE_NAME}</a>
-<nav class="site-nav"><a href="{rel}index.html">今日のレース</a><a href="{rel}search.html">レース検索</a><a href="{rel}about.html">このサイトについて</a></nav></header>
+<nav class="site-nav"><a href="{rel}index.html">今日のレース</a><a href="{rel}search.html">レース検索</a><a href="{rel}seiseki.html">見立ての成績</a><a href="{rel}about.html">このサイトについて</a></nav></header>
 {body}
 <footer><h2>注意とこのページの見方</h2><ul class="notes">{items}</ul></footer>
 </div>{scripts}</body></html>"""
@@ -104,7 +104,7 @@ def racer_view(entry, racers, code=None):
     st_sum = st_n = n_all = 0
     for c, s in r.get("c", {}).items():
         cs[c] = {"n": s["n"], "w1": s["w1"], "w2": s["w2"], "w3": s["w3"], "st": s["st"], "km": s.get("km", {})}
-        for k in ("ls", "s2", "ng"):
+        for k in ("ls", "s2", "s3", "ng", "wc", "sl", "sn"):       # sn: 平均STの本数(予想STの「このコースでのSTのくせ」に使う)
             if s.get(k):
                 cs[c][k] = s[k]
         n_all += s["n"]
@@ -545,10 +545,21 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     if pace:
         data["pace"] = pace              # 推定タイム(一周・まわり足)と展示タイム1位の1着率(scripts/pace.py)
     tabs = ('<nav class="tabs" role="tablist" aria-label="このレースの情報">'
-            '<button type="button" role="tab" data-tab="card">出走表</button><button type="button" role="tab" data-tab="before">直前情報</button>'
+            '<button type="button" role="tab" data-tab="card">出走表</button><button type="button" role="tab" data-tab="tac">戦法</button>'
+            '<button type="button" role="tab" data-tab="before">直前<br class="tb">情報</button>'
             '<button type="button" role="tab" data-tab="odds">オッズ</button>'
-            '<button type="button" role="tab" data-tab="t1">1S1M展開</button><button type="button" role="tab" data-tab="navi">展開ナビ</button>'
+            '<button type="button" role="tab" data-tab="t1">1S1M<br class="tb">展開</button><button type="button" role="tab" data-tab="navi">展開<br class="tb">ナビ</button>'
             '<button type="button" role="tab" data-tab="data">データ</button></nav>')
+    tac_html = ('<section class="tac" aria-labelledby="h-tac"><div class="row-head"><h2 id="h-tac">コース別の戦法</h2><span class="sub">直近1年</span></div>'
+                '<p class="sub">このレースの6人の、今日のコースでの戦い方です。1着の決まり手だけでなく、2着・3着になったときの動きと、'
+                'その選手がそのコースにいたときに1コースの逃げや外の艇の差しがどれだけ決まったかも出します。</p>'
+                '<div id="tacNow"><p class="wait">計算しています…</p></div><ul class="points" id="tacNotes"></ul></section>'
+                '<section class="tac" aria-labelledby="h-tac2"><h2 id="h-tac2">選手ごとの全コースの戦法</h2>'
+                '<div class="tacsel" id="tacBoats" role="group" aria-label="選手"></div><div id="tacAll"></div>'
+                '<p class="note">2着・3着の時の動きは、公式の記録が1着の決まり手だけなので、1着の艇のコース・決まり手と、スタートの差から推定しています'
+                '(差し: 勝った艇の内の筋を回った・捲り: スタートで内より先に出て外から攻めた・捲り差し: 間の艇の前を横切って内へ切り込んだ・残し: 外の艇に先に回られたが残した・道中: 2マーク以降で決まった)。'
+                '「内より先に出た」はスタートで内側のどの艇よりも0.03秒以上早かった割合、「1コースの逃げ」はその選手がそのコースにいたレースで1コースの艇が逃げた割合(1コースの選手は自分の逃げ率)、'
+                '「外の差し・捲り差し」はその選手より外の艇が差し・捲り差しで1着になった割合です。小さい数字は全国の割合。▲▼は、15走以上で全国と大きく違うところです。</p></section>')
     odds_html = ('<section class="odds" aria-labelledby="h-odds"><div class="row-head"><h2 id="h-odds">オッズ</h2><span class="sub" id="odAt"></span></div>'
                  '<div class="chips odsel" id="odKinds" role="group" aria-label="券種">'
                  '<button type="button" class="chip on" data-k="3t">3連単</button><button type="button" class="chip" data-k="2t">2連単・2連複</button>'
@@ -556,6 +567,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                  '<div id="odBox"><p class="wait">締切の15分前から、1分ごとに公式サイトのオッズを表示します。</p></div></section>')
     body = (head + result_banner(res_live, result) + tabs
             + '<div class="pane" id="pane-card">' + card + "</div>"
+            + '<div class="pane" id="pane-tac">' + tac_html + "</div>"
             + '<div class="pane" id="pane-before">' + before_html + "</div>"
             + '<div class="pane" id="pane-odds">' + odds_html + "</div>"
             + '<div class="pane" id="pane-t1">' + view + analysis + "</div>"
@@ -719,6 +731,129 @@ def write_search(dates, today):
                               body, 0, "search.html", f'<script>window.LIVE_BASE = {json.dumps(LIVE_BASE)};</script><script src="assets/search.js"></script>', notes))
 
 
+# 見立ての変更の記録(成績のページに出す)
+MODEL_CHANGES = [
+    ("2026-10-29", "見立てにレースの種類(優勝戦・ドリーム戦など)と、選手ごとのコースでのSTのくせを入れ、本線を「1着の見込みが一番高い艇」にしました。"),
+]
+REC_ITEMS = [   # (キー, 名前, 説明)
+    ("boat", "本線の艇が1着", "本線(1着になる見込みが一番高い艇)が、実際に1着になった割合。"),
+    ("pat", "本線の決着パターンがそのまま", "本線の艇と決まり手(逃げ・差し・捲りなど)の両方が当たった割合。"),
+    ("top3", "上位3つの決着パターンに入った", "実際の決着(1着のコースと決まり手)が、見立ての起こりやすい上位3つに入っていた割合。"),
+    ("ex2", "本線の並びで1-2着がそのまま", "本線の決着パターンのときの並び(2着〜6着の見立て)で、1着と2着が実際と同じだった割合。"),
+    ("ex3", "本線の並びで1-2-3着がそのまま", "同じく、1着・2着・3着が実際と同じだった割合。"),
+    ("nnb", "1号艇以外が本線のとき、その艇が1着", "本線が1号艇(1コース)以外になったレースで、その艇が1着になった割合。"),
+]
+
+
+def record_days() -> list:
+    """毎晩の答え合わせ(data/learn)から、日ごとの成績。サイトが締切前に記録した見立て(data/live/*/pred.json)と結果の比べ。"""
+    out = []
+    for p in sorted((DATA / "learn").glob("*.json")):
+        x = load_json(p, {}) or {}
+        L = x.get("lead") or {}
+        if not L.get("races") or L.get("one") is None or L["races"] < 30:
+            continue
+        a = x.get("anim") or {}
+        out.append({"d": x.get("date") or f"{p.stem[:4]}-{p.stem[4:6]}-{p.stem[6:]}", "n": L["races"], "boat": L["boat"], "one": L["one"],
+                    "pat": L["pattern"], "top3": x.get("top3"), "ex2": L.get("ex2"), "ex3": L.get("ex3"), "nn": L.get("non1") or 0,
+                    "nnb": L.get("non1_boat"), "nno": L.get("non1_one"),
+                    "anim": {k: a.get(k) for k in ("races", "lead", "kind", "hit2", "hit3")} if a.get("races") else None})
+    return out
+
+
+def record_sum(days: list) -> dict:
+    """日ごとの成績を、レースの数で重みを付けてまとめる(1号艇以外の本線は、そのレースの数で)。"""
+    n = sum(x["n"] for x in days)
+    out = {"n": n, "days": len(days)}
+    if not n:
+        return out
+    for k in ("boat", "one", "pat", "top3", "ex2", "ex3"):
+        v = [(x[k], x["n"]) for x in days if x.get(k) is not None]
+        out[k] = round(sum(a * b for a, b in v) / sum(b for _, b in v), 1) if v else None
+    nn = sum(x["nn"] for x in days if x.get("nnb") is not None)
+    out["nn"] = nn
+    out["nnb"] = round(sum(x["nnb"] * x["nn"] for x in days if x.get("nnb") is not None) / nn, 1) if nn else None
+    out["nno"] = round(sum(x["nno"] * x["nn"] for x in days if x.get("nno") is not None) / nn, 1) if nn else None
+    return out
+
+
+def build_record():
+    """見立ての成績のページ(seiseki.html)。"""
+    days = record_days()
+    title = f"見立ての成績 | {SITE_NAME}"
+    desc = "水面ノートの見立て(本線)が実際にどれだけ当たったかの記録。毎晩、前の日の分を足します。"
+    if not days:
+        write("seiseki.html", page(title, desc, "<h1>見立ての成績</h1><section><p>まだ記録がありません。</p></section>", 0, "seiseki.html"))
+        return
+    last7 = days[-7:]
+    S7, SA = record_sum(last7), record_sum(days)
+    def md(iso):
+        return f"{int(iso[5:7])}/{int(iso[8:10])}"
+    def pc(v):
+        return "—" if v is None else f"{v:.0f}<small>%</small>"
+    span7 = f"{md(last7[0]['d'])}〜{md(last7[-1]['d'])}・{S7['n']:,}レース"
+    spanA = f"{md(days[0]['d'])}〜{md(days[-1]['d'])}・{SA['n']:,}レース"
+    tiles = []
+    for k, name, _ in REC_ITEMS:
+        if k == "boat":
+            sub = f'<span class="cmp">毎回1号艇(1コース)と言った場合 <b>{pc(S7.get("one"))}</b></span>'
+        elif k == "nnb":
+            sub = (f'<span class="cmp">そのとき1号艇が1着 <b>{pc(S7.get("nno"))}</b>・{S7.get("nn", 0)}レース</span>')
+        else:
+            sub = ""
+        tiles.append(f'<div class="rtile"><div class="rl">{e(name)}</div><div class="rv">{pc(S7.get(k))}</div>{sub}'
+                     f'<div class="ra">これまで {pc(SA.get(k))}</div></div>')
+    # 直近7日の表(列が日付)
+    heads = "".join(f"<th>{md(x['d'])}" + ("<small>見立て更新</small>" if any(x["d"] == c[0] for c in MODEL_CHANGES) else "") + "</th>" for x in last7)
+    def row(label, vals):
+        return f'<tr><th scope="row">{label}</th>' + "".join(f"<td>{v}</td>" for v in vals) + "</tr>"
+    def p0(v):
+        return "—" if v is None else f"{v:.0f}%"
+    rows = [row("レース", [str(x["n"]) for x in last7]),
+            row("本線の艇が1着", [f"<b>{p0(x['boat'])}</b>" for x in last7]),
+            row("毎回1号艇なら", [p0(x["one"]) for x in last7]),
+            row("決着パターン", [p0(x["pat"]) for x in last7]),
+            row("上位3つ", [p0(x["top3"]) for x in last7]),
+            row("1-2着", [p0(x["ex2"]) for x in last7]),
+            row("1-2-3着", [p0(x["ex3"]) for x in last7]),
+            row("1号艇以外が本線", [f'{p0(x["nnb"])}<small>{x["nn"]}R</small>' if x["nn"] else "—" for x in last7])]
+    t7 = '<div class="vt-wrap"><table class="vt rect"><thead><tr><th class="corner"></th>' + heads + "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
+    # 全期間の日ごと(新しい順)
+    allrows = "".join(f"<tr><td>{md(x['d'])}</td><td>{x['n']}</td><td><b>{p0(x['boat'])}</b></td><td>{p0(x['one'])}</td><td>{p0(x['top3'])}</td><td>{p0(x['ex2'])}</td></tr>"
+                      for x in reversed(days))
+    tall = ('<div class="gridt-wrap"><table class="gridt rall"><thead><tr><th>日付</th><th>レース</th><th>本線の艇</th><th>毎回1号艇</th><th>上位3つ</th><th>1-2着</th></tr></thead>'
+            f"<tbody>{allrows}</tbody></table></div>")
+    # 1周1マークの映像の再現度
+    an = [x for x in days if x.get("anim")]
+    anim_html = ""
+    if an:
+        ar = "".join(f"<tr><td>{md(x['d'])}</td><td>{x['anim']['races']}</td><td>{p0(x['anim']['lead'])}</td><td>{p0(x['anim']['kind'])}</td>"
+                     f"<td>{p0(x['anim']['hit2'])}</td><td>{p0(x['anim']['hit3'])}</td></tr>" for x in reversed(an))
+        anim_html = ('<section><details><summary><h2>1周1マークの映像の再現度</h2></summary>'
+                     '<p class="sub">終わったレースの実際の進入・ST・決まり手・着順を映像の仕組みに入れたとき、映像の先頭・決まり手・2着・3着が実際と同じになった割合です(映像の動き方の確かめ)。</p>'
+                     '<div class="gridt-wrap"><table class="gridt rall"><thead><tr><th>日付</th><th>レース</th><th>先頭</th><th>決まり手</th><th>2着</th><th>3着</th></tr></thead>'
+                     f"<tbody>{ar}</tbody></table></div></details></section>")
+    chart = {"days": [{"d": x["d"], "boat": x["boat"], "one": x["one"], "n": x["n"]} for x in days]}
+    notes = "".join(f"<li><b>{e(name)}</b>: {e(txt)}</li>" for _, name, txt in REC_ITEMS)
+    changes = "".join(f"<li><b>{md(d)}</b>: {e(t)}</li>" for d, t in MODEL_CHANGES)
+    body = ('<h1>見立ての成績</h1>'
+            '<p class="lead">サイトが締切前(スタート展示のあと)に出した見立てと、実際の結果を比べた記録です。毎晩、前の日の分を足します。</p>'
+            f'<section class="rsec"><div class="row-head"><h2>直近7日</h2><span class="sub">{span7}</span></div><div class="rtiles">{"".join(tiles)}</div>'
+            f'<p class="note">「これまで」は記録を始めてからの全部({spanA})。</p></section>'
+            '<section class="rsec"><h2>日ごとの推移</h2>'
+            '<div class="rlegend" aria-hidden="true"><span class="k main"></span>本線の艇が1着<span class="k base"></span>毎回1号艇(1コース)と言った場合</div>'
+            '<div id="recChart" class="rchart" role="img" aria-label="日ごとの、本線の艇が1着になった割合と、1号艇(1コース)が1着になった割合の折れ線グラフ。数字は下の表にもあります。"></div>'
+            f"{t7}"
+            f'<details class="rdet"><summary>全部の日を見る({len(days)}日)</summary>{tall}</details></section>'
+            f'<section><h2>見方</h2><ul class="points">{notes}</ul>'
+            '<p class="note">本線の並びは、本線の決着パターンになったときの2着〜6着の見立てです。見立ては締切前に最後に記録したもので、欠場のあるレースなど見立てを出さなかったレースは数えていません。</p></section>'
+            f'<section><h2>見立ての変更</h2><ul class="points">{changes}</ul></section>'
+            + anim_html)
+    blob = json.dumps(chart, ensure_ascii=False).replace("</", "<\\/")
+    script = f'<script type="application/json" id="rec-data">{blob}</script><script src="assets/record.js"></script>'
+    write("seiseki.html", page(title, desc, body, 0, "seiseki.html", script))
+
+
 def build_about():
     body = ('<h1>このサイトについて</h1><section><p>水面ノートは、ボートレースの出走表と成績をデータで読み解く非公式のサイトです。'
             '毎日、公式が配布している番組表と競走成績のファイルを自動で取り込み、選手のコース別成績とレース場の特徴をまとめています。'
@@ -818,7 +953,7 @@ def main():
         return
     dates = sorted(progs)
     cache: dict = {}
-    urls = ["", "about.html"]
+    urls = ["", "about.html", "seiseki.html"]
     # 見立てモデルの重み(scripts/fit.py が学習したもの)。ページから読めるように JS にして置く
     model = load_json(DATA / "model.json", None)
     (OUT / "assets" / "params.js").write_text(
@@ -832,6 +967,7 @@ def main():
         build_date(d, progs, dates, cache, cats, model, stadiums, alerts_by_day, urls)
     build_index(today, progs, dates, alerts_by_day)
     build_about()
+    build_record()
     write_search(dates, today)
     sm = "".join(f"<url><loc>{BASE_URL}{u}</loc></url>" for u in urls)
     write("sitemap.xml", f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{sm}</urlset>')

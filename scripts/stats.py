@@ -178,10 +178,19 @@ def _cs_add(cs: dict, e: dict, kim, sign: int, ctx: dict) -> None:
     c, rank = str(e["course"]), e.get("rank")
     if c == "2" and ctx.get("w") == 1 and kim == "逃げ":                  # 2コースのときに1コースを逃がした回数
         cs["ng"] = cs.get("ng", 0) + sign
-    if rank == 2 and ctx.get("w"):                                        # 2着になったときの展開
-        s2 = cs.setdefault("s2", {})
+    if rank in (2, 3) and ctx.get("w"):                                   # 2着・3着になったときの展開(推定)
+        sx = cs.setdefault("s2" if rank == 2 else "s3", {})
         k2 = second_kind(e["course"], ctx, kim)
-        s2[k2] = s2.get(k2, 0) + sign
+        sx[k2] = sx.get(k2, 0) + sign
+    w = ctx.get("w")
+    if w and kim in KIMARITE:                                             # このコースにいたときの1着の決まり方(どのコースが・何で勝ったか)
+        wk = f"{w}{'抜き' if kim == '恵まれ' else kim}"
+        wc = cs.setdefault("wc", {})
+        wc[wk] = wc.get(wk, 0) + sign
+    if e["course"] >= 2 and valid_st(e):                                  # スタートで内の艇より0.03秒以上先に出た(握って攻めやすい形)
+        inner = [t for k, t in (ctx.get("st") or {}).items() if k < e["course"]]
+        if inner and e["st"] <= min(inner) - 0.03:
+            cs["sl"] = cs.get("sl", 0) + sign
     cs["n"] += sign
     if rank in (1, 2, 3):
         cs[f"w{rank}"] += sign
@@ -270,6 +279,12 @@ def _cs_out(cmap: dict) -> dict:
             x["ls"] = {k: v for k, v in cs["ls"].items() if v > 0}
         if cs.get("s2"):
             x["s2"] = {k: v for k, v in cs["s2"].items() if v > 0}
+        if cs.get("s3"):
+            x["s3"] = {k: v for k, v in cs["s3"].items() if v > 0}
+        if cs.get("wc"):
+            x["wc"] = {k: v for k, v in cs["wc"].items() if v > 0}
+        if cs.get("sl"):
+            x["sl"] = cs["sl"]
         if cs.get("ng"):
             x["ng"] = cs["ng"]
         x["st"] = round(cs["st_sum"] / cs["st_n"], 2) if cs["st_n"] > 0 else None

@@ -31,6 +31,7 @@ def compare(day: dt.date) -> dict | None:
     st_err, st_n, st_bias = 0.0, 0, 0.0
     pair = collections.Counter()
     lead = [0, 0, 0, 0, 0, 0]                              # 本線(1着の見込みが一番高い艇)の [レース, 艇が1着, 決着パターンも同じ, 1号艇以外が本線, そのとき本線の艇が1着, そのとき1コースが1着]
+    lx = [0, 0, 0, 0]                                      # [1コースが1着(毎回1号艇と言った場合), 本線の並びで1-2着そのまま, 1-2-3着そのまま, 上位3艇(順不同)]
     by_kind = collections.defaultdict(lambda: [0, 0])     # 実際の決まり手ごとの [レース, 本命が当たった]
     races = []
     for code, v in res.get("venues", {}).items():
@@ -69,6 +70,12 @@ def compare(day: dt.date) -> dict | None:
             by_kind[k][1] += int(order[0] == y)
             # 2着・3着(実際の決着パターンのときに予想していた並びと比べる)
             act = [e["course"] for e in sorted([e for e in ents if e.get("rank")], key=lambda e: e["rank"])]
+            lx[0] += int(win["course"] == 1)
+            lo = (lg.get("ord") or {}).get(str(li))              # 本線の決着パターンのときの並び
+            if lo and len(act) >= 3:
+                lx[1] += int(lo[:2] == act[:2])
+                lx[2] += int(lo[:3] == act[:3])
+                lx[3] += int(sorted(lo[:3]) == sorted(act[:3]))
             po = (lg.get("ord") or {}).get(str(y))
             if po and len(act) >= 3:
                 o_n += 1
@@ -95,6 +102,8 @@ def compare(day: dt.date) -> dict | None:
             "st": {"rmse": round(math.sqrt(st_err / st_n), 4) if st_n else None, "bias": round(st_bias / st_n, 4) if st_n else None, "n": st_n},
             "by_kimarite": {k: {"races": a, "top1": round(b / a * 100, 1)} for k, (a, b) in by_kind.items()},
             "lead": {"races": lead[0], "boat": round(lead[1] / lead[0] * 100, 1), "pattern": round(lead[2] / lead[0] * 100, 1),
+                     "one": round(lx[0] / lead[0] * 100, 1), "ex2": round(lx[1] / lead[0] * 100, 1), "ex3": round(lx[2] / lead[0] * 100, 1),
+                     "in3": round(lx[3] / lead[0] * 100, 1), "non1_n": lead[3],
                      "non1": lead[3], "non1_boat": round(lead[4] / lead[3] * 100, 1) if lead[3] else None,
                      "non1_one": round(lead[5] / lead[3] * 100, 1) if lead[3] else None},
             "common_misses": miss, "detail": races}

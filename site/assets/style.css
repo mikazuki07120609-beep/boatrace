@@ -8,15 +8,16 @@
   --body:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
   --mono:"M PLUS Rounded 1c","Hiragino Sans",ui-monospace,monospace;
   --rank1:#e53935; --rank2:#1e6fe0; --pink:#ff4f9a;
-  --tc-card:#1e88e5; --tc-before:#fb8c00; --tc-odds:#e53977; --tc-t1:#00a676; --tc-navi:#8e44d9; --tc-data:#0097a7;
+  --tc-card:#1e88e5; --tc-before:#fb8c00; --tc-odds:#e53977; --tc-t1:#00a676; --tc-navi:#8e44d9; --tc-data:#0097a7; --tc-tac:#3f51b5;
   --b1:#ffffff; --b1t:#14212b; --b2:#1b1b1b; --b2t:#ffffff; --b3:#d7282f; --b3t:#ffffff;
   --b4:#1d5fbf; --b4t:#ffffff; --b5:#f2cf1d; --b5t:#14212b; --b6:#1f9a4b; --b6t:#ffffff;
+  --rec-main:#1478b8; --rec-base:#9aa7b2;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#0e161c; --surface:#16222b; --ink:#e8eef3; --muted:#9fb0bc; --line:#2a3a46;
   --accent:#5cc0de; --accent-soft:#183847; --warn:#f0a06a; --good:#6fd39b; --b1:#f4f6f8; --b2:#000000;
-  --rank1:#ef5350; --rank2:#4d8ff0; color-scheme:dark}}
+  --rank1:#ef5350; --rank2:#4d8ff0; --rec-main:#3e9fd0; --rec-base:#5b6a75; color-scheme:dark}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
@@ -28,7 +29,8 @@ a{color:var(--accent)}
 .logo{font-family:var(--pop);font-size:24px;color:var(--accent);text-decoration:none;letter-spacing:.04em}
 .logo::before{content:"";display:inline-block;width:.9em;height:.9em;margin-right:.3em;vertical-align:-.08em;border-radius:50%;
   background:radial-gradient(circle at 35% 35%,#7fd3ff,#1478b8 70%);box-shadow:0 0 0 3px #d4ecfa}
-.site-nav{display:flex;gap:14px;font-size:14px;font-weight:700}
+.site-nav{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;font-weight:700}
+.site-nav a{white-space:nowrap}
 .crumb{font-size:13px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap}
 .crumb a{color:var(--muted)}
 h1{font-family:var(--pop);font-weight:400;font-size:clamp(25px,6.4vw,34px);line-height:1.25;margin:0;letter-spacing:.02em;text-wrap:balance}
@@ -197,13 +199,15 @@ footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:colu
 .cand{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono)}
 .cand .waku{width:22px;height:22px;font-size:12px}
 /* タブ(出走表・直前情報・1S1M展開・データ) */
-.tabs{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:5px;border-radius:16px;background:var(--surface);position:sticky;top:0;z-index:5;
+.tabs{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:5px;border-radius:16px;background:var(--surface);position:sticky;top:0;z-index:5;
   box-shadow:0 2px 0 #cfe3f2,0 6px 14px rgba(30,60,90,.10)}
 .tabs button{--tc:var(--accent);border:0;border-radius:11px;background:color-mix(in srgb,var(--tc) 11%,var(--surface));padding:10px 2px;font-weight:800;font-size:14px;
   color:color-mix(in srgb,var(--tc) 85%,#000);white-space:nowrap;line-height:1.35}
 .tabs button.on{background:var(--tc);color:#fff;box-shadow:0 3px 0 color-mix(in srgb,var(--tc) 70%,#000)}
 .tabs [data-tab=card]{--tc:var(--tc-card)}.tabs [data-tab=before]{--tc:var(--tc-before)}.tabs [data-tab=odds]{--tc:var(--tc-odds)}
-.tabs [data-tab=t1]{--tc:var(--tc-t1)}.tabs [data-tab=navi]{--tc:var(--tc-navi)}.tabs [data-tab=data]{--tc:var(--tc-data)}
+.tabs [data-tab=t1]{--tc:var(--tc-t1)}.tabs [data-tab=navi]{--tc:var(--tc-navi)}.tabs [data-tab=data]{--tc:var(--tc-data)}.tabs [data-tab=tac]{--tc:var(--tc-tac)}
+.tabs br.tb{display:none}
+#pane-tac{--pc:var(--tc-tac)}
 #pane-card{--pc:var(--tc-card)}#pane-before{--pc:var(--tc-before)}#pane-odds{--pc:var(--tc-odds)}#pane-t1{--pc:var(--tc-t1)}#pane-navi{--pc:var(--tc-navi)}#pane-data{--pc:var(--tc-data)}
 .pane{display:flex;flex-direction:column;gap:18px}
 ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -247,7 +251,8 @@ table.ex1t thead th{font-family:var(--mono);font-size:13px}
 @media (max-width:480px){
   section{padding:12px 8px}
   .tabs{gap:3px;padding:4px}
-  .tabs button{font-size:12px;padding:10px 0;letter-spacing:-.05em}
+  .tabs button{font-size:12px;padding:6px 0;letter-spacing:-.05em;line-height:1.2;white-space:normal}
+  .tabs br.tb{display:inline}
 }
 table.vt thead th.w1{background:var(--b1);color:var(--b1t)}table.vt thead th.w2{background:var(--b2);color:var(--b2t)}
 table.vt thead th.w3{background:var(--b3);color:var(--b3t)}table.vt thead th.w4{background:var(--b4);color:var(--b4t)}
@@ -509,3 +514,59 @@ table.vt thead th.absent .hn{opacity:.7;text-decoration:line-through;text-decora
 .scen-row.lead{background:color-mix(in srgb,var(--rank1) 7%,transparent);border-radius:10px;padding:4px 6px;margin:-4px -6px}
 .leadtag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:6px;background:var(--rank1);color:#fff;font-size:11px;font-weight:800;vertical-align:1px}
 .p2 .cand.on{outline:2px solid var(--rank1);border-radius:8px}
+
+/* コース別の戦法 */
+.tac .tx{font-size:12px;line-height:1.35}
+.tac .rt b{display:block;font-family:var(--mono);font-size:14px}
+.tac .rt .dim{display:block;font-size:10.5px;color:var(--muted);font-weight:600}
+.tac .rt .up{color:var(--rank1)}.tac .rt .dn{color:var(--rank2)}
+.tac .ty{display:inline-block;padding:1px 6px;border-radius:7px;background:color-mix(in srgb,var(--tc-tac) 13%,var(--surface));color:color-mix(in srgb,var(--tc-tac) 85%,#000);font-weight:800;font-size:12px}
+.tacsel{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.tacsel button{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--line2);background:var(--surface);border-radius:10px;padding:5px 8px;font-weight:800;font-size:13px;color:var(--ink)}
+.tacsel button.on{border-color:var(--tc-tac);background:color-mix(in srgb,var(--tc-tac) 12%,var(--surface))}
+.tacsel .waku{width:22px;height:22px;font-size:12px}
+table.vt thead th.cno{background:var(--head);font-family:var(--mono);font-size:15px}
+table.vt thead th.cno.today{background:var(--tc-tac);color:#fff}
+table.vt thead th.cno small{display:block;font-size:10px;font-weight:700}
+table.vt td.today:not(.top):not(.top2){background:color-mix(in srgb,var(--tc-tac) 7%,var(--surface))}
+table.vt thead th small.hc{display:block;font-size:10px;font-weight:700;opacity:.9;margin-top:1px}
+
+/* 見立ての成績 */
+.rtiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:700px){.rtiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.rtile{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;background:var(--surface)}
+.rtile .rl{font-size:12.5px;font-weight:800;color:var(--muted);line-height:1.35}
+.rtile .rv{font-size:34px;font-weight:800;line-height:1.1;color:var(--ink)}
+.rtile .rv small{font-size:16px;margin-left:1px}
+.rtile .cmp,.rtile .ra{font-size:12px;color:var(--muted);font-weight:700;line-height:1.4}
+.rtile .cmp b{color:var(--ink)}
+.rtile .cmp b small,.rtile .ra small{font-size:11px}
+.rlegend{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:12.5px;color:var(--muted);font-weight:700}
+.rlegend .k,.rtip .k{display:inline-block;width:16px;height:0;border-top:2px solid var(--rec-main);border-radius:2px;margin-left:6px}
+.rlegend .k:first-child{margin-left:0}
+.rlegend .k.base,.rtip .k.base{border-top-color:var(--rec-base)}
+.rchart{position:relative;width:100%;min-height:236px}
+.rchart svg{display:block;width:100%;height:auto;overflow:visible;outline:none}
+.rchart svg:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.rchart .grid{stroke:var(--line);stroke-width:1}
+.rchart .tick{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.rchart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.rchart .ln.main{stroke:var(--rec-main)}.rchart .ln.base{stroke:var(--rec-base)}
+.rchart .dot{stroke:var(--surface);stroke-width:2}
+.rchart .dot.main{fill:var(--rec-main)}.rchart .dot.base{fill:var(--rec-base)}
+.rchart .endl{fill:var(--ink);font-size:12px;font-weight:800}
+.rchart .cross{stroke:var(--muted);stroke-width:1}
+.rtip{position:absolute;z-index:2;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 9px;
+  box-shadow:0 4px 14px rgba(20,40,60,.14);font-size:12px;min-width:150px}
+.rtip .th{font-weight:800;color:var(--muted);margin-bottom:2px}
+.rtip .tr{display:flex;align-items:center;gap:6px}
+.rtip .tr b{font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.rtip .tn{color:var(--muted)}
+.rtip .k{margin-left:0}
+table.vt.rect thead th{font-family:var(--mono);font-size:12px;white-space:nowrap;letter-spacing:-.03em}
+table.vt.rect thead th small{display:block;font-size:9.5px;color:var(--rank1);font-weight:800}
+table.vt.rect td small{display:block;font-size:10px;color:var(--muted)}
+.rdet summary{cursor:pointer;font-weight:800;color:var(--accent);padding:4px 0}
+table.gridt.rall td,table.gridt.rall th{text-align:center;font-variant-numeric:tabular-nums}
+section details > summary h2{display:inline-flex;margin:0}
+section details > summary{cursor:pointer;list-style-position:inside}
