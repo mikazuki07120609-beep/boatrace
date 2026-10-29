@@ -10,7 +10,12 @@
   var PARAMS = window.SUIMEN_PARAMS || null, MODEL = window.SuimenModel || null;
   var KIM = ["逃げ", "捲り", "差し", "捲り差し", "抜き", "恵まれ"];
   var SHRINK = 10; // 走数が少ない選手の成績を、場の平均に寄せる強さ(学習済みの重みがないときの簡易モデル用)
-  var LIVE_URL = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/main/data/live/" + D.race.ymd + "/" + V.code + ".json";
+  var LIVE_REL = D.race.ymd + "/" + V.code + ".json";
+  // 直前情報・結果の読み込み(ページの頭の suimenGet: 先に Cloudflare、だめなら GitHub)。古いページと組み合わさったときは GitHub だけ
+  var getData = window.suimenGet || function (k, rel) {
+    return fetch("https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/" + (k === "odds" ? "odds/data/odds/" : "main/data/live/") + rel + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; });
+  };
   var NO = String(D.race.no);
   var BI = D.before || null, LR = D.live || null, OG = D.orig || null;     // 直前情報・レース直後の結果・場のオリジナル展示データ
   function $(s) { return document.querySelector(s); }
@@ -1346,12 +1351,12 @@
     });
   }
 
-  // 直前情報と結果を読み直す(raw.githubusercontent.com。締切の1時間半前から、結果が出るまで。締切から時間がたっていても、結果がまだなら読みに行く)
+  // 直前情報と結果を読み直す(Cloudflare か GitHub。締切の1時間半前から、結果が出るまで。締切から時間がたっていても、結果がまだなら読みに行く)
   var pollTimer = null;
   function poll() {
     var left = minsLeft();
     if (left > 90) return;
-    fetch(LIVE_URL + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    getData("live", LIVE_REL).then(function (j) {
       if (!j) return;
       var nb = (j.before || {})[NO], nr = (j.result || {})[NO], no = (j.orig || {})[NO], ch = false;
       var nd = (j.dl || {})[NO];                                    // 公式の今の締切(レースが遅れると変わる)

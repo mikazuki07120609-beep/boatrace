@@ -25,6 +25,15 @@
 - 吹き出しの戦法名は、走らせた結果の位置関係(どちら側を通って前に出たか・前を横切ったか)から決めます。
 - 結果が出たレースは、実際のSTと進入で動かした映像も見られます。動画として保存・共有もできます。
 
+## 開催中のデータの置き場所(Cloudflare R2)
+
+締切の前後に取り込む直前情報・結果(`scripts/live.py`)とオッズ(`scripts/odds.py`)は、リポジトリ(GitHub)に入れるのと同時に、Cloudflare R2 にも置きます(`scripts/r2.py`)。ページは先に R2 を読み、ない・読めないときだけ GitHub(raw.githubusercontent.com)を読みます。GitHub のファイル置き場はサイトの配信用ではなく、ログインしていない人のアクセスに回数制限があるためです。
+
+- R2 のキー: `live/YYYYMMDD/{場コード}.json`・`live/YYYYMMDD/dl.json`・`odds/YYYYMMDD/{場コード}/{レース番号2けた}.json`(バケット名 `suimen-data`)
+- リポジトリの秘密の値(Settings → Secrets and variables → Actions): `R2_ACCOUNT_ID`・`R2_ACCESS_KEY_ID`・`R2_SECRET_ACCESS_KEY`。ないときは GitHub にだけ入れます。
+- ページが読む公開のURLは `scripts/build_site.py` の `DATA_BASE`(空なら GitHub だけを読む)。サイトのURLは同じファイルの `BASE_URL`。
+- 設定がすんだら、Actions の「Cloudflare の置き場所の確認」(`r2check.yml`)を手で動かして確かめます。
+
 ## 手元で動かす
 
 ```

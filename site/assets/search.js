@@ -2,7 +2,11 @@
    条件に当てはまるレースを探す。時刻はこの端末の時計を日本時間に直して数える。 */
 (function () {
   "use strict";
-  var LIVE_BASE = window.LIVE_BASE || "";
+  // 直前情報・結果の読み込み(ページの頭の suimenGet: 先に Cloudflare、だめなら GitHub)。古いページと組み合わさったときは GitHub だけ
+  var getData = window.suimenGet || function (k, rel) {
+    return fetch("https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/" + (k === "odds" ? "odds/data/odds/" : "main/data/live/") + rel + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; });
+  };
   var AL_LV = { 3: "特別警報", 2: "警報", 1: "注意報" };
   var PTS = { 1: 10, 2: 8, 3: 6, 4: 4, 5: 2, 6: 1 };
   var S = null, LIVE = {}, BORDER = {}, SPAN = {}, spanTried = false, liveTimer = null, loadSeq = 0;
@@ -225,14 +229,13 @@
   }
   // 今日の分の直前情報・結果を読む。明日を見ているときは、今日のファイルから節の日付の並び(span)だけを使う
   function fetchLive() {
-    if (!S || !LIVE_BASE || (!isToday() && spanTried)) { render(); return; }
+    if (!S || (!isToday() && spanTried)) { render(); return; }
     var today = isToday(), ymd = today ? S.ymd : nowJst().iso.replace(/-/g, "");
     if (!today) spanTried = true;
     var seq = loadSeq, codes = Object.keys(S.venues || {}).filter(function (c) { return today || !SPAN[c]; }), left = codes.length;
     if (!left) { render(); return; }
     codes.forEach(function (code) {
-      fetch(LIVE_BASE + ymd + "/" + code + ".json?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
-        .then(function (r) { return r.ok ? r.json() : null; })
+      getData("live", ymd + "/" + code + ".json")
         .then(function (j) {
           if (!j || seq !== loadSeq) return;
           if (j.span) SPAN[code] = j.span;

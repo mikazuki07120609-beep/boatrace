@@ -1,0 +1,44 @@
+name: Cloudflare の置き場所の確認
+
+# Cloudflare R2 の設定がすんだら、手で動かして確かめる(ふだんは動かない)。
+#  1. 秘密の値で、確かめ用の小さなファイル(check.json)を R2 に送れるか
+#  2. data_base を入れたときは、公開のURLから読めるか(サイトから読むための CORS と、Cloudflare の中継の使い回し)
+on:
+  workflow_dispatch:
+    inputs:
+      data_base:
+        description: "公開のURL(例: https://data.example.com/)。空なら送るところまで"
+        default: ""
+      origin:
+        description: "サイトのURL(CORS の確認用。例: https://example.com)"
+        default: ""
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 確かめ用のファイルを R2 に送る
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: python3 scripts/r2.py --check
+      - name: 公開のURLから読めるか(CORS と中継の使い回し)
+        if: ${{ github.event.inputs.data_base != '' }}
+        env:
+          BASE: ${{ github.event.inputs.data_base }}
+          ORIGIN: ${{ github.event.inputs.origin }}
+        run: |
+          u="${BASE%/}/check.json?t=$(date +%s)"
+          for i in 1 2; do
+            echo "---- $i 回目: $u"
+            curl -sS -D - -o body.txt ${ORIGIN:+-H "Origin: $ORIGIN"} "$u" | grep -iE "^(HTTP|content-type|cache-control|access-control-allow-origin|cf-cache-status|age)" || true
+            cat body.txt; echo
+            sleep 2
+          done

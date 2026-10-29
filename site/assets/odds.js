@@ -1,11 +1,16 @@
-/* レースのページのオッズのタブ。締切の15分前から締切までは、1分ごとに取り込んでいるオッズ(odds ブランチ)を読み直して出す。
+/* レースのページのオッズのタブ。締切の15分前から締切までは、1分ごとに取り込んでいるオッズ(Cloudflare か odds ブランチ)を読み直して出す。
    締切のあとは締切時オッズ。矢印は、ひとつ前の取り込み(約1分前)からの変化。 */
 (function () {
   "use strict";
   var el = document.getElementById("race-data"), box = document.getElementById("odBox");
   if (!el || !box) return;
   var D = JSON.parse(el.textContent);
-  var URL0 = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/odds/data/odds/" + D.race.ymd + "/" + D.venue.code + "/" + ("0" + D.race.no).slice(-2) + ".json";
+  var REL = D.race.ymd + "/" + D.venue.code + "/" + ("0" + D.race.no).slice(-2) + ".json";
+  // オッズの読み込み(ページの頭の suimenGet: 先に Cloudflare、だめなら GitHub の odds ブランチ)。古いページと組み合わさったときは GitHub だけ
+  var getData = window.suimenGet || function (k, rel) {
+    return fetch("https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/" + (k === "odds" ? "odds/data/odds/" : "main/data/live/") + rel + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; });
+  };
   var WINDOW = 15, O = null, kind = "3t", first = 1, timer = null, lastFetch = 0;
   var names = {}, fems = {};
   D.entries.forEach(function (e) { names[e.waku] = e.name; fems[e.waku] = !!e.fem; });
@@ -111,8 +116,7 @@
   // ---- 読み込み(締切の15分前から。締切時オッズが入ったら止める)
   function load() {
     lastFetch = Date.now();
-    return fetch(URL0 + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
-      .then(function (r) { return r.ok ? r.json() : null; })
+    return getData("odds", REL)
       .then(function (j) {
         if (j && j.dl && /^\d{1,2}:\d{2}$/.test(j.dl)) D.race.deadline = j.dl;          // 公式の今の締切(レースが遅れると変わる)
         if (j && (!O || JSON.stringify(j) !== JSON.stringify(O))) { O = j; render(); } else if (!O) render();

@@ -4,6 +4,7 @@ import datetime as dt
 import html
 import json
 import math
+import os
 import shutil
 import subprocess
 
@@ -14,9 +15,28 @@ import pace as pacemod
 from stats import VENUE_DAYS, category_resolver, collect, venue_table
 
 SITE_NAME = "水面ノート"
-BASE_URL = "https://mikazuki07120609-beep.github.io/boatrace/"
+# サイトのURL(canonical・OGP・サイトマップ)。独自ドメインにしたら、ここを書きかえる(試すときは環境変数 SITE_URL で上書き)
+BASE_URL = os.environ.get("SITE_URL") or "https://mikazuki07120609-beep.github.io/boatrace/"
 PAST_DAYS = 0          # 今日より前に何日分のページを残すか(終わった日のページは出さない。今日と明日だけ)
-LIVE_BASE = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/main/data/live/"   # 直前情報・結果(ページが開いている間に読みに行く)
+# ページが開いている間に読みに行く直前情報・結果・締切の変更・オッズの置き場所。
+# DATA_BASE(Cloudflare R2 の公開URL。例 https://data.example.com/)を先に読み、空のとき・読めないときは GitHub から読む
+DATA_BASE = os.environ.get("DATA_BASE", "")
+RAW_BASE = "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/"
+DATA_FALLBACK = {"live": RAW_BASE + "main/data/live/", "odds": RAW_BASE + "odds/data/odds/"}
+
+
+def data_js() -> str:
+    """どのページにも入れる小さな読み込み係(window.suimenGet(種類, "YYYYMMDD/…json"))。
+    先に Cloudflare(DATA_BASE)を読み、ない(404)・読めないときは GitHub を読む。読めなかったときは3分間 GitHub だけを読む。
+    中身は JSON か、ないときは null。つながらないときだけ失敗(reject)を返す。"""
+    return ("<script>window.suimenGet=(function(){var P=" + json.dumps(DATA_BASE) + ",F=" + json.dumps(DATA_FALLBACK) + ",off=0;"
+            "function one(u,ms){var c=ms&&window.AbortController?new AbortController():null,t=c?setTimeout(function(){c.abort();},ms):0;"
+            "return fetch(u,c?{cache:\"no-store\",signal:c.signal}:{cache:\"no-store\"}).then(function(r){clearTimeout(t);"
+            "if(r.status===404)return null;if(!r.ok)throw new Error(\"HTTP \"+r.status);return r.json();},function(e){clearTimeout(t);throw e;});}"
+            "return function(k,rel){var q=\"?t=\"+Math.floor(Date.now()/15000),g=function(){return one(F[k]+rel+q).catch(function(e){"
+            "if(e&&/^HTTP /.test(e.message))return null;throw e;});};"
+            "if(!P||Date.now()<off)return g();"
+            "return one(P+k+\"/\"+rel+q,6000).then(function(j){return j===null?g():j;},function(){off=Date.now()+180000;return g();});};})();</script>")
 SEARCH: dict = {}      # 日付ごとの検索用のデータ(レース検索のページが読む {ymd}/search.json)
 WD = "月火水木金土日"
 
@@ -57,6 +77,7 @@ def page(title, desc, body, depth, path, scripts="", notes=None):
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Mochiy+Pop+One&family=Dela+Gothic+One&display=swap">
 <link rel="stylesheet" href="{rel}assets/style.css">
+{data_js()}
 </head><body><div class="wrap">
 <header class="site-head"><a class="logo" href="{rel}index.html">{SITE_NAME}</a>
 <nav class="site-nav"><a href="{rel}index.html">今日のレース</a><a href="{rel}search.html">レース検索</a><a href="{rel}seiseki.html">見立ての成績</a><a href="{rel}about.html">このサイトについて</a></nav></header>
@@ -614,7 +635,7 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
     body = (f'<nav class="crumb"><a href="../../index.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + cat_tag(venue_cat(ymd, code)) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
-            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{e(LIVE_BASE)}{ymd}/{code}.json" data-code="{code}" data-dlurl="{e(LIVE_BASE)}{ymd}/dl.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
+            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{ymd}/{code}.json" data-code="{code}" data-dlurl="{ymd}/dl.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
             '<th>結果</th><th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
             + "</tbody></table></div></section>")
     title = f"{vname} {jdate(d)} 出走表・レース一覧 | {SITE_NAME}"
@@ -651,7 +672,7 @@ def day_cards(d, prog, depth_prefix, alerts=None, live=None):
                              f'<span class="t">{e(v.get("title", ""))}</span><span class="sub">'
                              + (f'第{v["day"]}日 ・ ' if v.get("day") else "") + f'{len(v["races"])}R ・ 締切 {e(first)}〜{e(last)}</span></a>'))
     items.sort()
-    return f'<div class="cards" data-date="{d.isoformat()}" data-dlurl="{e(LIVE_BASE)}{ymd}/dl.json">' + "".join(x[1] for x in items) + "</div>"
+    return f'<div class="cards" data-date="{d.isoformat()}" data-dlurl="{ymd}/dl.json">' + "".join(x[1] for x in items) + "</div>"
 
 
 DAY_NOTES = ["開催場は、次のレースの締切が近い順に並べています(この端末の時計で数え、開いている間は1分ごとに並べ直します)。締切まで10分を切ったレースは赤で示します。",
@@ -728,7 +749,7 @@ def write_search(dates, today):
              "モーター評価は、展示タイムが出ていればそれも加えて計算し直します。チルト・進入・展示タイム・部品交換・風は、取り込んだ直前情報から調べます。",
              "逃げの見立ては、ページを作ったときの計算です(展示の前のものは枠なり・ふだんのSTとして計算)。"]
     write("search.html", page(f"レース検索 | {SITE_NAME}", "イン飛び・カドまくりの警報、準優の勝負駆け、モーター評価S、チルトを跳ねた選手などで、今日のレースを探す。",
-                              body, 0, "search.html", f'<script>window.LIVE_BASE = {json.dumps(LIVE_BASE)};</script><script src="assets/search.js"></script>', notes))
+                              body, 0, "search.html", '<script src="assets/search.js"></script>', notes))
 
 
 # 見立ての変更の記録(成績のページに出す)

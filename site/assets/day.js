@@ -7,6 +7,14 @@
     return { iso: t.toISOString().slice(0, 10), min: t.getUTCHours() * 60 + t.getUTCMinutes() + t.getUTCSeconds() / 60 };
   }
   function toMin(hm) { var a = hm.split(":"); return +a[0] * 60 + +a[1]; }
+  // 取り込んだ直前情報・結果・締切の変更の読み込み(ページの頭の suimenGet: 先に Cloudflare、だめなら GitHub)。
+  // data-live などに URL がそのまま入った古いページや、suimenGet のない古いページと組み合わさったときは、GitHub を直接読む
+  function getLive(rel) {
+    var t = "?t=" + Math.floor(Date.now() / 15000);
+    if (window.suimenGet && !/^https?:/.test(rel)) return window.suimenGet("live", rel);
+    var u = /^https?:/.test(rel) ? rel : "https://raw.githubusercontent.com/mikazuki07120609-beep/boatrace/main/data/live/" + rel;
+    return fetch(u + t, { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; });
+  }
   function label(left) {
     if (left < 1) return "まもなく締切";
     if (left < 60) return Math.floor(left) + "分前";
@@ -64,8 +72,7 @@
     });
     if (!want.length) return;
     resBusy = true;
-    fetch(tbl.getAttribute("data-live") + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
-      .then(function (r) { return r.ok ? r.json() : null; })
+    getLive(tbl.getAttribute("data-live"))
       .then(function (j) {
         var res = (j && j.result) || {};
         want.forEach(function (tr) {
@@ -91,8 +98,7 @@
     if (!el || dlBusy || Date.now() - dlAt < 55000) return;
     if (el.getAttribute("data-date") !== nowJst().iso) return;
     dlBusy = true; dlAt = Date.now();
-    fetch(el.getAttribute("data-dlurl") + "?t=" + Math.floor(Date.now() / 15000), { cache: "no-store" })
-      .then(function (r) { return r.ok ? r.json() : null; })
+    getLive(el.getAttribute("data-dlurl"))
       .then(function (j) {
         var M = (j && j.dl) || {}, moved = false;
         [].slice.call(document.querySelectorAll(".vcard[data-code]")).forEach(function (c) {

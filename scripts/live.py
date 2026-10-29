@@ -11,6 +11,7 @@
 読み取った内容は data/live/YYYYMMDD/{場コード}.json に入れ、すぐにリポジトリへ送る。
 公式の締切が番組表と違うレースは、data/live/YYYYMMDD/dl.json にもまとめる(開催一覧のページが読む)。
 レースのページは、このファイルを開くたびに読みに来る(サイトを作り直さなくても、展示と結果が出る)。
+秘密の値があれば、同じファイルを Cloudflare R2 にも置く(scripts/r2.py。ページは先にそちらを読む)。
 
   python3 scripts/live.py --loop 350          # 350分まで(その日の最終レースの結果が出たら終わる)
   python3 scripts/live.py --once              # 1回だけ
@@ -28,6 +29,7 @@ import time
 import urllib.request
 
 from common import DATA, JST, PROGRAM, ROOT, deadline_of, load_json, merge_deadlines, parse_deadlines, save_json, zen2han
+import r2
 
 LIVE = DATA / "live"
 URL = "https://www.boatrace.jp/owpc/pc/race/{page}?rno={no}&jcd={jcd}&hd={ymd}"
@@ -424,6 +426,23 @@ def save_delays(day: dt.date, prog: dict, venues: dict) -> None:
         save_json(path, {"dl": out, "updated": dt.datetime.now(JST).strftime("%H:%M")})
 
 
+def mirror_live(day: dt.date) -> None:
+    """ページが読みに来るファイル(場ごとの直前情報・結果と dl.json)を、Cloudflare R2 にも置く(変わったものだけ)。
+    秘密の値がないときは何もしない。dl.json がまだない日は、空のものを置いておく(ページが GitHub まで探しに行かないように)。"""
+    if not r2.enabled():
+        return
+    try:
+        d, ymd = day_dir(day), f"{day:%Y%m%d}"
+        pairs = [(f"live/{ymd}/{p.name}", p) for p in sorted(d.glob("[0-9][0-9].json"))]
+        if (d / "dl.json").exists():
+            pairs.append((f"live/{ymd}/dl.json", d / "dl.json"))
+        r2.mirror(pairs)
+        if not (d / "dl.json").exists():
+            r2.ensure(f"live/{ymd}/dl.json", b'{"dl":{}}')
+    except Exception as ex:  # noqa: BLE001  Cloudflare に送れなくても、取り込みとリポジトリへの送りは止めない
+        print("Cloudflare に送れませんでした:", ex, flush=True)
+
+
 def remaining(day: dt.date, now: dt.datetime) -> bool:
     """まだ読みに行くものがあるか(最終レースの結果まで)。"""
     prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None) or {}
@@ -546,8 +565,10 @@ def loop(minutes: float, push: bool) -> None:
                 if push and not asked_update and now.hour >= 6:
                     asked_update = dispatch("update.yml")
             changed = cycle(day, now)
+            mirror_live(day)                     # 見る人のページへは、こちら(Cloudflare)から先に届ける
             if push:
                 git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
+                mirror_live(day)                 # ほかの実行が送った分と合わせて中身が変わっていれば、それも送る
             if changed:
                 after_change(day, push)
             if (PROGRAM / f"{day:%Y%m%d}.json").exists() and not remaining(day, now):

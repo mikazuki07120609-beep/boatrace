@@ -7,6 +7,7 @@
 
 締切の時刻は、読んだページの上にある公式の「締切予定時刻」(レースが遅れると変わる)に合わせる。
 odds ブランチは、いつもコミット1つだけにして上書きで送る(古いオッズが履歴にたまらない)。
+秘密の値があれば、同じファイルを Cloudflare R2 にも置く(scripts/r2.py。ページは先にそちらを読む)。
 直前情報・結果の取り込み(live.py)とは別の実行で動かすので、こちらで何かあっても、あちらは止まらない。
 
   python3 scripts/odds.py --loop 345 --push     # 開催中ずっと(Actions)
@@ -28,6 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from common import JST, PROGRAM, ROOT, load_json, merge_deadlines, parse_deadlines
+import r2
 
 URL = "https://www.boatrace.jp/owpc/pc/race/{page}?rno={no}&jcd={jcd}&hd={ymd}"
 UA = "boatrace-site/0.1 (+https://github.com/mikazuki07120609-beep/boatrace)"
@@ -343,6 +345,18 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
     return changed
 
 
+def mirror_odds(base: Path, day: dt.date) -> None:
+    """レースのページが読みに来る今日のオッズを、Cloudflare R2 にも置く(変わったものだけ。秘密の値がないときは何もしない)。"""
+    if not r2.enabled():
+        return
+    try:
+        ymd = f"{day:%Y%m%d}"
+        root = base / "data" / "odds" / ymd
+        r2.mirror([(f"odds/{ymd}/{p.parent.name}/{p.name}", p) for p in sorted(root.glob("*/*.json"))])
+    except Exception as ex:  # noqa: BLE001  Cloudflare に送れなくても、取り込みと odds ブランチへの送りは止めない
+        print("Cloudflare に送れませんでした:", ex, flush=True)
+
+
 def remaining(day: dt.date, now: dt.datetime, state: dict | None = None) -> bool:
     """まだ読むものがあるか(最後のレースの締切時オッズまで。締切は公式の今の時刻)。"""
     prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None) or {}
@@ -368,6 +382,7 @@ def loop(minutes: float, push: bool) -> None:
     day = dt.datetime.now(JST).date()
     cleanup(base, day)
     state = {"last": {}, "tries": {}, "dl": {}}
+    mirror_odds(base, day)                     # 前の実行までに取ったものも、Cloudflare にそろえておく
     if push:
         publish(base, f"オッズ {day:%Y-%m-%d}")
     while time.time() < end:
@@ -385,6 +400,8 @@ def loop(minutes: float, push: bool) -> None:
             print("1回りに失敗:", ex, flush=True)
             report("error", f"1回りに失敗: {ex}", force=True)
             n = 0
+        if n:
+            mirror_odds(base, day)             # 見る人のページへは、こちら(Cloudflare)から先に届ける
         if n and push:
             publish(base, f"オッズ {now:%Y-%m-%d %H:%M}")
         time.sleep(max(5, CYCLE_SEC - (time.time() - t0)))

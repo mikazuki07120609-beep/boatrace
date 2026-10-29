@@ -39,6 +39,10 @@ jobs:
       - name: 締切の前後に、直前情報と結果を読み取ってリポジトリへ送る
         env:
           GH_TOKEN: ${{ github.token }}
+          # Cloudflare R2(ページが先に読みに行く置き場所)。設定していなければ GitHub の方だけに送る
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
