@@ -67,6 +67,13 @@ URA_NOTES = ["裏水面ノートは、荒れる(3連単が1万円以上の万舟
              "当たる割合は表の本線よりずっと低く、配当の高さで当たりにくさを補う考え方です。荒れを狙えば回収率が上がるとは限りません(見立ての成績のページに、実際の当たり方と配当を出しています)。"]
 
 
+# ページのアイコン(表: 昼の水面の青い玉、裏: 夜の赤い三日月)
+ICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%231478b8'/%3E"
+        "%3Ccircle cx='12' cy='11' r='5' fill='%237fd3ff' opacity='.75'/%3E%3C/svg%3E")
+ICON_URA = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d0b12'/%3E"
+            "%3Ccircle cx='15' cy='17' r='11' fill='%23ff5470'/%3E%3Ccircle cx='20' cy='12' r='9' fill='%230d0b12'/%3E%3C/svg%3E")
+
+
 def page(title, desc, body, depth, path, scripts="", notes=None, mode="omote", alt=None, page_class=""):
     """1ページの枠。mode は "omote"(水面ノート)か "ura"(裏水面ノート)。alt はもう一方のモードの同じページ(サイトの一番上からの道筋)。"""
     rel = "../" * depth
@@ -92,6 +99,7 @@ def page(title, desc, body, depth, path, scripts="", notes=None, mode="omote", a
 <meta property="og:type" content="website"><meta property="og:url" content="{BASE_URL}{path}">
 <meta property="og:site_name" content="{SITE_NAME}"><meta name="twitter:card" content="summary">
 <link rel="canonical" href="{BASE_URL}{path}">{'<meta name="theme-color" content="#0d0b12">' if ura else ""}
+<link rel="icon" href="{ICON_URA if ura else ICON}">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Mochiy+Pop+One&family=Dela+Gothic+One&display=swap">
 <link rel="stylesheet" href="{rel}assets/style.css">
@@ -1201,10 +1209,12 @@ def build_ura_record():
         parts.append("</section>")
     days = ura_record_days()
     if days:
-        rows = "".join(f'<tr><td>{x["d"][5:].replace("-", "/")}</td><td class="num">{x["races"]}</td><td class="num">{x.get("man", 0):.0f}%</td>'
-                       f'<td class="num">{x.get("top_man", 0):.0f}%</td><td class="num"><b>{x.get("hit", 0):.0f}%</b></td>'
-                       f'<td class="num">{(x.get("pay") or 0):,.0f}</td><td class="num">{x.get("tan", 0):.0f}%</td>'
-                       f'<td class="num">{(str(x["val_n"]) + "頭 " + format(x.get("val_tan", 0), ".0f") + "%") if x.get("val_n") else "—"}</td></tr>'
+        def p0(v):
+            return "—" if v is None else f"{v:.0f}%"
+        rows = "".join(f'<tr><td>{x["d"][5:].replace("-", "/")}</td><td class="num">{x["races"]}</td><td class="num">{p0(x.get("man"))}</td>'
+                       f'<td class="num">{p0(x.get("top_man"))}</td><td class="num"><b>{p0(x.get("hit"))}</b></td>'
+                       f'<td class="num">{"—" if not x.get("pay") else format(x["pay"], ",.0f") + "円"}</td><td class="num">{p0(x.get("tan"))}</td>'
+                       f'<td class="num">{(str(x["val_n"]) + "頭 " + p0(x.get("val_tan"))) if x.get("val_n") else "—"}</td></tr>'
                        for x in reversed(days))
         parts.append('<section><h2>日ごとの記録</h2><p class="sub">締切前(スタート展示のあと)に記録した裏の見立てと、その日の結果です。</p>'
                      '<div class="gridt-wrap"><table class="gridt rall"><thead><tr><th>日付</th><th class="num">レース</th><th class="num">万舟率</th>'
