@@ -7,6 +7,7 @@
     return { iso: t.toISOString().slice(0, 10), min: t.getUTCHours() * 60 + t.getUTCMinutes() + t.getUTCSeconds() / 60 };
   }
   function toMin(hm) { var a = hm.split(":"); return +a[0] * 60 + +a[1]; }
+  var URA = document.body.classList.contains("ura");   // 裏水面ノートの一覧(結果の万舟に印)
   // 取り込んだ直前情報・結果・締切の変更の読み込み(ページの頭の suimenGet: 先に Cloudflare、だめなら GitHub)。
   // data-live などに URL がそのまま入った古いページや、suimenGet のない古いページと組み合わさったときは、GitHub を直接読む
   function getLive(rel) {
@@ -85,7 +86,8 @@
           }
           if (!tri) return;
           cell.innerHTML = '<span class="tri small-tri">' + tri.map(function (w) { return '<span class="waku w' + w + '">' + w + "</span>"; }).join("-") + "</span>"
-            + (x.pay ? '<span class="small">' + (x.pay / 100).toFixed(1) + "倍</span>" : "");
+            + (x.pay ? '<span class="small">' + (x.pay / 100).toFixed(1) + "倍</span>" : "")
+            + (URA && x.pay >= 10000 ? '<span class="uman-tag sm">万舟</span>' : "");
         });
       })
       .catch(function () {})

@@ -648,7 +648,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     write(path, page(title, desc, body, depth, path, script, RACE_NOTES, mode="omote", alt=f"ura/{path}"))
     # ---- 裏水面ノートの同じレースのページ(ura/ の下)。タブの種類は同じで、裏の見方に書きかえ、要るものを足して要らないものを外す
     ur = "../" * (depth + 1)
-    uhead = (f'<nav class="crumb"><a href="{ur}ura/index.html">今日の荒れ予報</a>›<a href="{ur}ura/{ymd}/index.html">{jdate(d)}</a>›'
+    uhead = (f'<nav class="crumb"><a href="{ur}ura/index.html">今日のレース</a>›<a href="{ur}ura/{ymd}/index.html">{jdate(d)}</a>›'
              f'<a href="index.html">{e(vname)}</a></nav>' + meta_html)
     uhero = ('<section class="uhero" id="uraHero" aria-live="polite"><div class="uh-wait">'
              '<p class="sub">万舟(3連単が1万円以上)になる見込みと、荒れるとしたら一番ありそうな決着(裏本線)を計算しています…</p></div></section>')
@@ -686,17 +686,21 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                f'<script src="{ur}assets/model.js"></script><script src="{ur}assets/params.js"></script><script src="{ur}assets/uraparams.js"></script>'
                f'<script src="{ur}assets/turn1.js"></script><script src="{ur}assets/ura.js"></script><script src="{ur}assets/ura_page.js"></script>'
                f'<script src="{ur}assets/race.js"></script><script src="{ur}assets/odds.js"></script>')
-    utitle = f"{vname} {race['no']}R 荒れ予報(万舟の見込み・裏本線) {d.month}/{d.day} | {SITE_NAME_URA}"
+    utitle = f"{vname} {race['no']}R 万舟の見込み・裏本線 {d.month}/{d.day} | {SITE_NAME_URA}"
     udesc = (f"{vname}{race['no']}R {race['name']}({jdate(d)} {race['deadline']}締切)の荒れ予報。万舟になる見込み、荒れるとしたら一番ありそうな決着(裏本線)と、"
              "風・波・展開・人気から見た荒れる理由。")
     write(upath, page(utitle, udesc, ubody, depth + 1, upath, uscript, URA_RACE_NOTES, mode="ura", alt=path))
     return path
 
 
+VENUE_LIST: dict = {}   # 場ごとのレース一覧の中身((ymd, 場コード) → 行)。裏の場のページも同じ並び・同じ列で作る
+
+
 def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=None):
     ymd = d.strftime("%Y%m%d")
     vname = vinfo["name"]
     rows = []
+    keep = []
     for race in vprog["races"]:
         x = racer_view(race["entries"][0], racers)
         c1 = x["cs"].get("1")
@@ -710,6 +714,9 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
         restxt = ('<span class="tri small-tri">' + "-".join(f'<span class="waku w{w}">{w}</span>' for w in tri) + "</span>"
                   + (f'<span class="small">{lr["pay"] / 100:.1f}倍</span>' if lr and lr.get("pay") else "")) if tri else ""
         dl_now = deadline_of(race, vlive)
+        keep.append({"no": race["no"], "dl": dl_now, "moved": dl_now != race["deadline"], "name": race["name"], "dist": race["distance"],
+                     "al": badges((al_map or {}).get(race["no"]), True) if (al_map or {}).get(race["no"]) and any((al_map or {}).get(race["no"]).values()) else "",
+                     "tri": tri, "pay": (lr or {}).get("pay"), "w1": (x["name"], x["cls"]), "c1": c1txt})
         rows.append(f'<tr data-deadline="{e(dl_now)}" data-no="{race["no"]}"><td><a class="rno" href="{race["no"]:02d}.html">{race["no"]}R</a></td>'
                     f'<td class="num"><span class="dl{" moved" if dl_now != race["deadline"] else ""}">{e(dl_now)}</span><span class="small cd"></span></td>'
                     f'<td><a href="{race["no"]:02d}.html">{e(race["name"])}</a>' + (f'<span class="small">{race["distance"]}m</span>' if race["distance"] != 1800 else "")
@@ -717,6 +724,7 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
                     + f'</td><td class="res">{restxt}</td><td><span class="waku w1">1</span> {e(x["name"])} <span class="small">{e(x["cls"])}</span></td>'
                     f'<td class="num">{c1txt}</td></tr>')
     p1 = vinfo["place"][0][0] if vinfo["place"] else 0
+    VENUE_LIST[(ymd, code)] = {"rows": keep, "tier": f"{tier(p1)}(1コース1着率{f1(p1)}%)"}
     body = (f'<nav class="crumb"><a href="../../today.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + cat_tag(venue_cat(ymd, code)) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
@@ -758,8 +766,9 @@ def day_cards(d, prog, depth_prefix, alerts=None, live=None, ura=False, S=None):
             base = ura_base(code)
             hot = [r for r in (S or {}).get("races", []) if r["c"] == code and (r.get("u") or {}).get("pm") is not None
                    and r["u"]["pm"] >= base * 1.15]
+            nums = sorted(r["no"] for r in hot)
             extra = (f'<span class="ubadge">ふだんの万舟率 {base * 100:.0f}%</span>'
-                     + (f'<span class="ubadge hot">荒れ気味以上 {len(hot)}R</span>' if hot else ""))
+                     + (f'<span class="ubadge hot">荒れ気味以上 {"・".join(str(n) for n in nums[:5])}R{f" ほか{len(nums) - 5}" if len(nums) > 5 else ""}</span>' if nums else ""))
         items.append((first, f'<a class="card vcard" href="{depth_prefix}{ymd}/{code}/index.html" data-dl="{dls}" data-al="{als}" data-code="{code}">'
                              f'<span class="vrow"><span class="v">{e(VENUES.get(code, code))}</span>{cat_tag(venue_cat(ymd, code))}<span class="als"></span></span>'
                              f'<span class="next" aria-live="polite"></span>'
@@ -1002,78 +1011,101 @@ def read_search(ymd) -> dict:
     return load_json(_OUT[0] / ymd / "search.json", None) or {}
 
 
-def ura_row(r, S, prefix, show_venue=True) -> str:
-    """裏の一覧の1行(レース)。r は search.json のレース。"""
-    u = r.get("u") or {}
+def ura_cell(r) -> str:
+    """裏の一覧の「荒れの見込み」の欄(万舟の見込み・荒れ度と、裏本線)。r は search.json のレース。"""
+    u = (r or {}).get("u") or {}
     pm = u.get("pm")
-    base = ura_base(r["c"])
+    if pm is None:
+        return '<span class="dim">—</span>'
+    name, cls = ura_level(pm, ura_base(r["c"]))
+    ul = u.get("ul")
+    line = (f'<span class="uln"><span class="waku w{ul[0]}">{ul[0]}</span><span class="uline">{ul[1]}コース <span class="nw">{e(ul[2])}</span></span></span>'
+            if ul else "")
+    return (f'<span class="ubox"><span class="umeter {cls}"><i style="width:{min(100, pm * 250):.0f}%"></i></span>'
+            f'<b class="upct">{pm * 100:.0f}<small>%</small></b><span class="ulv {cls}">{name}</span></span>{line}')
+
+
+def res_cell(tri, pay, ura=True) -> str:
+    """一覧の結果の欄(3連単の組と払戻金)。裏では万舟(1万円以上)に印を付ける。"""
+    if not tri:
+        return ""
+    return ('<span class="tri small-tri">' + "-".join(f'<span class="waku w{w}">{w}</span>' for w in tri) + "</span>"
+            + (f'<span class="small">{pay / 100:.1f}倍</span>' if pay else "")
+            + ('<span class="uman-tag sm">万舟</span>' if ura and pay and pay >= 10000 else ""))
+
+
+def ura_row(r, S, prefix, live_day=None) -> str:
+    """裏の「荒れそうなレース」の1行(場をまたいだ並び)。"""
     vn = (S.get("venues") or {}).get(r["c"], {}).get("name") or VENUES.get(r["c"], r["c"])
     href = f'{prefix}{S["ymd"]}/{r["c"]}/{r["no"]:02d}.html'
-    if pm is None:
-        meter = '<span class="dim">—</span>'
-        lvl = ""
-    else:
-        name, cls = ura_level(pm, base)
-        meter = (f'<span class="umeter {cls}"><i style="width:{min(100, pm * 250):.0f}%"></i></span>'
-                 f'<b class="upct">{pm * 100:.0f}<small>%</small></b>')
-        lvl = f'<span class="ulv {cls}">{name}</span>'
-    ul = u.get("ul")
-    line = (f'<span class="waku w{ul[0]}">{ul[0]}</span><span class="uline">{ul[1]}コース <span class="nw">{e(ul[2])}</span></span>' if ul else '<span class="dim">—</span>')
-    return (f'<tr data-deadline="{e(r.get("dl") or "")}" data-no="{r["no"]}"><td><a class="rno" href="{href}">{(e(vn) + " ") if show_venue else ""}{r["no"]}R</a>'
-            f'<span class="small">{e(r.get("nm") or "")}</span></td>'
-            f'<td class="num"><span class="dl">{e(r.get("dl") or "")}</span><span class="small cd"></span></td>'
-            f'<td class="uman">{meter}{lvl}</td><td class="uln">{line}</td></tr>')
+    lr = (((live_day or {}).get(r["c"]) or {}).get("result") or {}).get(str(r["no"])) or {}
+    return (f'<tr><td><a class="rno" href="{href}">{e(vn)} {r["no"]}R</a><span class="small">{e(r.get("nm") or "")}</span></td>'
+            f'<td class="num"><span class="dl">{e(r.get("dl") or "")}</span></td>'
+            f'<td class="uman">{ura_cell(r)}</td><td class="res">{res_cell(lr.get("tri"), lr.get("pay"))}</td></tr>')
 
 
-def ura_ranking(S, prefix, n=12) -> str:
+def ura_ranking(S, prefix, live_day=None, n=10) -> str:
+    """荒れそうなレース(全場。場のふだんの万舟率の何倍かの順)。上位 n レースと、残りは開いて見る。"""
     rs = [r for r in S.get("races", []) if (r.get("u") or {}).get("pm") is not None]
     rs.sort(key=lambda r: -((r["u"]["pm"]) / max(ura_base(r["c"]), 0.01)))
     if not rs:
         return '<p class="sub">まだ計算できていません。</p>'
-    pre = any((r.get("u") or {}).get("pre") for r in rs[:n])
-    return ('<div class="scroll"><table class="race-list ulist" data-date="' + e(S.get("date", "")) + '"><thead><tr><th>レース</th><th class="num">締切</th>'
-            '<th>万舟の見込み</th><th>裏本線</th></tr></thead><tbody>' + "".join(ura_row(r, S, prefix) for r in rs[:n]) + "</tbody></table></div>"
+    def table(lst):
+        return ('<div class="scroll"><table class="race-list ulist"><thead><tr><th>レース</th><th class="num">締切</th>'
+                '<th>荒れの見込み<small class="th2">万舟・裏本線</small></th><th>結果</th></tr></thead><tbody>'
+                + "".join(ura_row(r, S, prefix, live_day) for r in lst) + "</tbody></table></div>")
+    rest = rs[n:]
+    pre = any((r.get("u") or {}).get("pre") for r in rs)
+    return (table(rs[:n])
+            + (f'<details class="umore"><summary>残りの{len(rest)}レースも、荒れそうな順に見る</summary>{table(rest)}</details>' if rest else "")
             + ('<p class="note">展示の前のレースは、枠なりの進入・ふだんのSTで計算した目安です(レースのページでは、展示とオッズを入れて計算し直します)。</p>' if pre else ""))
 
 
+URA_DAY_NOTES = ["荒れの見込みの数字は、そのレースが万舟(3連単が1万円以上)になる見込みです。荒れ度は、その場のふだんの万舟率(過去1年)の何倍かで、1.5倍以上が大荒れ注意、1.15倍以上が荒れ気味です。",
+                 "裏本線は、表の本線(1着になる見込みが一番高い艇)以外の艇で、「その決着になって、しかも万舟になる」見込みが一番高い決着です。"]
+
+
 def build_ura_day(d, prog, dates, S, today, alerts=None, live=None, top=False):
-    """裏の今日のレース(ura/index.html)と、日ごとのページ(ura/{ymd}/index.html)。"""
+    """裏の今日のレース(ura/index.html)と、日ごとのページ(ura/{ymd}/index.html)。表と同じ並び(開催場から各レースへ)に、荒れの見込みを足す。"""
     ymd = d.strftime("%Y%m%d")
     pfx = "" if top else "../"
     nav = " ".join(f'<a class="chip{" on" if x == d else ""}" href="{pfx}{x:%Y%m%d}/index.html">{x.month}/{x.day}</a>' for x in dates)
     label = "今日" if d == today else ("明日" if d == today + dt.timedelta(days=1) else "")
-    body = ((f'<nav class="crumb"><a href="../index.html">今日の荒れ予報</a></nav>' if not top else "")
-            + f'<h1>{label}{"の" if label else ""}荒れ予報 {jdate(d)}</h1>'
-            '<p class="lead">全レースについて、万舟(3連単が1万円以上)になる見込みと、荒れるとしたら一番ありそうな決着(裏本線)を出しています。'
-            '当たる割合は低い代わりに、荒れたときを狙うための見方です。買い目は出しません。</p>'
-            f'<div class="chips">{nav}</div>'
-            f'<section><div class="row-head"><h2>荒れそうなレース</h2><span class="sub">場のふだんの万舟率と比べて高い順</span></div>{ura_ranking(S, pfx)}</section>'
-            f'<section><h2>開催場</h2>{day_cards(d, prog, pfx, alerts, live, ura=True, S=S)}</section>')
-    notes = ["荒れそうなレースは、万舟の見込みが、その場のふだんの万舟率(過去1年)の何倍かで並べています。荒れ度は1.5倍以上が大荒れ注意、1.15倍以上が荒れ気味です。",
-             "裏本線は、表の本線(1着になる見込みが一番高い艇)以外の艇で、「その決着になって、しかも万舟になる」見込みが一番高い決着です。"] + DAY_NOTES[:1]
+    rank = (f'<section><div class="row-head"><h2>荒れそうなレース</h2><span class="sub">場のふだんの万舟率と比べて高い順</span></div>'
+            f'{ura_ranking(S, pfx, live)}</section>')
+    if top:
+        head = (f'<h1>{label}{"の" if label else ""}レース {jdate(d)}</h1>'
+                '<p class="lead">全国の全レースを、荒れる(3連単が1万円以上の万舟になる)見込みと、荒れるとしたら一番ありそうな決着(裏本線)で見るモードです。'
+                '当たる割合は低い代わりに、荒れたときを狙う見方です。買い目は出しません。</p>')
+    else:
+        head = f'<nav class="crumb"><a href="../index.html">今日のレース</a></nav><h1>{jdate(d)}の開催</h1>'
+    body = (head + f'<div class="chips">{nav}</div>'
+            f'<section><h2>開催場</h2>{day_cards(d, prog, pfx, alerts, live, ura=True, S=S)}</section>' + rank)
     path = "ura/index.html" if top else f"ura/{ymd}/index.html"
-    write(path, page(f"{label}{'の' if label else ''}荒れ予報 {jdate(d)} | {SITE_NAME_URA}", f"{jdate(d)}のボートレース全レースの万舟の見込みと裏本線。",
-                     body, 1 if top else 2, path, f'<script src="{"../" if top else "../../"}assets/day.js"></script>', notes, mode="ura",
-                     alt="today.html" if top else f"{ymd}/index.html"))
+    title = (f"今日のレース(裏) | {SITE_NAME_URA} 荒れ予報と裏本線" if top else f"{jdate(d)}の開催(裏) | {SITE_NAME_URA}")
+    write(path, page(title, f"{jdate(d)}のボートレース全レースの、万舟になる見込みと裏本線。",
+                     body, 1 if top else 2, path, f'<script src="{"../" if top else "../../"}assets/day.js"></script>', URA_DAY_NOTES + DAY_NOTES,
+                     mode="ura", alt="today.html" if top else f"{ymd}/index.html"))
     return path
 
 
-def build_ura_venue(d, code, vprog, vinfo, S, vlive=None):
-    """裏の場ごとのレース一覧(ura/{ymd}/{code}/index.html)。"""
+def build_ura_venue(d, code, vprog, S, vlive=None):
+    """裏の場ごとのレース一覧(ura/{ymd}/{code}/index.html)。表の場のページと同じ列に、荒れの見込み(万舟・裏本線)を足す。"""
     ymd = d.strftime("%Y%m%d")
-    vname = vinfo["name"]
+    V = VENUE_LIST.get((ymd, code))
+    if not V:
+        return None
+    vname = VENUES.get(code, code)
     races = {r["no"]: r for r in S.get("races", []) if r["c"] == code}
     rows = []
-    for race in vprog["races"]:
-        r = races.get(race["no"])
-        if not r:
-            continue
-        lr = ((vlive or {}).get("result") or {}).get(str(race["no"]))
-        tri = (lr or {}).get("tri")
-        res = ('<span class="tri small-tri">' + "-".join(f'<span class="waku w{w}">{w}</span>' for w in tri) + "</span>"
-               + (f'<span class="small{" uman-hit" if lr.get("pay", 0) >= 10000 else ""}">{lr["pay"]:,}円</span>' if lr.get("pay") else "")) if tri else ""
-        row = ura_row(r, S, "../../", show_venue=False).replace(f'href="../../{ymd}/{code}/', 'href="')
-        rows.append(row.replace("</tr>", f'<td class="res">{res}</td></tr>'))
+    for x in V["rows"]:
+        nn = f'{x["no"]:02d}.html'
+        rows.append(f'<tr data-deadline="{e(x["dl"])}" data-no="{x["no"]}"><td><a class="rno" href="{nn}">{x["no"]}R</a></td>'
+                    f'<td class="num"><span class="dl{" moved" if x["moved"] else ""}">{e(x["dl"])}</span><span class="small cd"></span></td>'
+                    f'<td><a href="{nn}">{e(x["name"])}</a>' + (f'<span class="small">{x["dist"]}m</span>' if x["dist"] != 1800 else "")
+                    + (f'<span class="alrow">{x["al"]}</span>' if x["al"] else "")
+                    + f'</td><td class="uman">{ura_cell(races.get(x["no"]))}</td><td class="res">{res_cell(x["tri"], x["pay"])}</td>'
+                    f'<td><span class="waku w1">1</span> {e(x["w1"][0])} <span class="small">{e(x["w1"][1])}</span></td><td class="num">{x["c1"]}</td></tr>')
     st = URA.get("stats") or {}
     base = ura_base(code)
     rec = (st.get("recent") or {}).get(code) or []
@@ -1084,16 +1116,19 @@ def build_ura_venue(d, code, vprog, vinfo, S, vlive=None):
                     + "".join(f'<tr><td>{e(x[0])}</td><td class="num">{x[1]}</td><td>{e(x[2])}</td><td class="num">{x[3]:,}円</td>'
                               f'<td class="num">{x[4] or "—"}</td><td>{(str(x[5]) + "コース " if x[5] else "") + e(x[6] or "")}</td></tr>' for x in rec)
                     + "</tbody></table></div></section>")
-    body = (f'<nav class="crumb"><a href="../../index.html">今日の荒れ予報</a>›<a href="../index.html">{jdate(d)}</a></nav>'
+    body = (f'<nav class="crumb"><a href="../../index.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + cat_tag(venue_cat(ymd, code)) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
-            + f'<span class="tag">この場の万舟率 {base * 100:.0f}%(全国 {st.get("nat", 16):.0f}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
+            + f'<span class="tag">{e(V["tier"])}</span><span class="tag">この場の万舟率 {base * 100:.0f}%(全国 {st.get("nat", 16):.0f}%)</span>'
+            f'<span class="sub">{e(vprog.get("title", ""))}</span></div>'
             f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list ulist" data-date="{d.isoformat()}" data-live="{ymd}/{code}.json" data-code="{code}" data-dlurl="{ymd}/dl.json">'
-            '<thead><tr><th>R</th><th class="num">締切</th><th>万舟の見込み</th><th>裏本線</th><th>結果</th></tr></thead><tbody>' + "".join(rows)
+            '<thead><tr><th>R</th><th class="num">締切</th><th>レース</th><th>荒れの見込み<small class="th2">万舟・裏本線</small></th><th>結果</th><th>1号艇</th>'
+            '<th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
             + "</tbody></table></div></section>" + rec_html)
     path = f"ura/{ymd}/{code}/index.html"
-    notes = ["万舟の見込みは、ページを作ったときの計算です(展示の前のレースは、枠なりの進入・ふだんのSTの目安)。レースのページでは、展示とオッズを入れて計算し直します。",
+    notes = ["荒れの見込みは、ページを作ったときの計算です(展示の前のレースは、枠なりの進入・ふだんのSTの目安)。レースのページでは、展示とオッズを入れて計算し直します。",
+             "1号艇の1コース1着率は、直近1年に1コースに入ったときの成績です。締切までの時間は、この端末の時計で数えています。",
              "最近の万舟は、この場で3連単が1万円以上になったレース(新しい順)です。人気は3連単の人気の順位です。"]
-    write(path, page(f"{vname} {jdate(d)} 荒れ予報 | {SITE_NAME_URA}", f"{vname}の{jdate(d)}の全レースの万舟の見込みと裏本線。",
+    write(path, page(f"{vname} {jdate(d)} レース一覧(裏) | {SITE_NAME_URA}", f"{vname}の{jdate(d)}の全レースの、万舟になる見込みと裏本線。{vprog.get('title', '')}",
                      body, 3, path, '<script src="../../../assets/day.js"></script>', notes, mode="ura", alt=f"{ymd}/{code}/index.html"))
     return path
 
@@ -1111,8 +1146,9 @@ def build_ura_lists(dates, progs, today, alerts_by_day, urls):
         if d == shown:
             urls.append(build_ura_day(d, progs[d], dates, S, today, alerts_by_day.get(d), live_day, top=True))
         for code, vprog in progs[d]["venues"].items():
-            vinfo = {"name": VENUES.get(code, code)}
-            urls.append(build_ura_venue(d, code, vprog, vinfo, S, live_day.get(code)))
+            pth = build_ura_venue(d, code, vprog, S, live_day.get(code))
+            if pth:
+                urls.append(pth)
 
 
 def build_top(today, progs):
@@ -1136,7 +1172,7 @@ def build_top(today, progs):
             f'<span class="tsub">{label} {nv}場・{nr}レース</span><span class="tgo">今日のレースへ →</span></a>'
             '<a class="tpanel ura" href="ura/index.html"><span class="tk">裏</span><span class="tn">裏水面ノート</span>'
             '<span class="td">荒れを狙う裏本線。万舟になる見込みと、荒れるとしたら一番ありそうな決着を、風・波・展開・人気のずれから出します。</span>'
-            f'{hot}<span class="tgo">荒れ予報へ →</span></a></div>'
+            f'<span class="tsub">{label} {nv}場・{nr}レース</span>{hot}<span class="tgo">今日のレースへ →</span></a></div>'
             '<nav class="top-links"><a href="search.html">レース検索(表)</a><a href="ura/search.html">レース検索(裏)</a>'
             '<a href="seiseki.html">見立ての成績(表)</a><a href="ura/seiseki.html">見立ての成績(裏)</a><a href="about.html">このサイトについて</a></nav>')
     write("index.html", page(f"{SITE_NAME} | ボートレースの出走表と展開の見立て(表)・荒れ予報(裏)",

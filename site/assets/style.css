@@ -615,7 +615,7 @@ body.top{background:var(--bg);padding-left:0;padding-right:0}
   .ulist .umeter{display:none}
   .ulist .uman{min-width:0}
   .ulist .ulv{font-size:10.5px;padding:1px 6px}
-  .ulist .uln{flex-wrap:wrap;gap:3px}
+  .ulist .uln{flex-wrap:nowrap;align-items:flex-start;gap:4px}
   .ulist .uline{white-space:normal;font-size:12.5px;line-height:1.3}
   .ulist td,.ulist th{padding-left:5px;padding-right:5px}
 }
@@ -668,6 +668,12 @@ body.ura{
 .ulist td{vertical-align:middle}
 .ulist .rno{display:block}
 .uman{min-width:150px}
+.uman .ubox{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.uman .uln{margin-top:4px}
+small.th2{display:block;font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:0}
+.uman-tag.sm{font-size:10.5px;padding:1px 7px;margin-left:4px;vertical-align:middle}
+.umore{margin-top:8px}
+.umore>summary{cursor:pointer;font-weight:800;color:var(--accent);padding:8px 0}
 .umeter{display:inline-block;width:70px;height:8px;border-radius:4px;background:#2b2233;vertical-align:middle;margin-right:8px;overflow:hidden}
 .umeter>i{display:block;height:100%;background:linear-gradient(90deg,#ffd27a,#ff5470)}
 .upct{font-family:var(--mono);font-size:15px;color:var(--gold);margin-right:6px}
