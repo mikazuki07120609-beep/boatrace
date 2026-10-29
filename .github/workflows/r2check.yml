@@ -3,6 +3,7 @@ name: Cloudflare の置き場所の確認
 # Cloudflare R2 の設定がすんだら、手で動かして確かめる(ふだんは動かない)。
 #  1. 秘密の値で、確かめ用の小さなファイル(check.json)を R2 に送れるか
 #  2. data_base を入れたときは、公開のURLから読めるか(サイトから読むための CORS と、Cloudflare の中継の使い回し)
+# 結果は実行の注記(annotation)にも残す(実行の記録を読めないときも、API で確かめられる)。
 on:
   workflow_dispatch:
     inputs:
@@ -36,9 +37,12 @@ jobs:
           ORIGIN: ${{ github.event.inputs.origin }}
         run: |
           u="${BASE%/}/check.json?t=$(date +%s)"
+          args=()
+          if [ -n "$ORIGIN" ]; then args=(-H "Origin: $ORIGIN"); fi
           for i in 1 2; do
-            echo "---- $i 回目: $u"
-            curl -sS -D - -o body.txt ${ORIGIN:+-H "Origin: $ORIGIN"} "$u" | grep -iE "^(HTTP|content-type|cache-control|access-control-allow-origin|cf-cache-status|age)" || true
-            cat body.txt; echo
+            h=$(curl -sS -D - -o body.txt "${args[@]}" "$u" || true)
+            pick() { printf '%s\n' "$h" | grep -i "^$1:" | head -1 | tr -d '\r'; }
+            st=$(printf '%s\n' "$h" | head -1 | tr -d '\r')
+            echo "::notice title=公開のURL ${i}回目::${st} / $(pick access-control-allow-origin) / $(pick cf-cache-status) / $(pick cache-control) / $(head -c 120 body.txt | tr -d '\r\n')"
             sleep 2
           done

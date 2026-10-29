@@ -36,6 +36,21 @@ PAUSE_SEC = 600
 
 _sent: dict[str, str] = {}                     # 送ったファイルの指紋(キー → sha256)
 _fail = {"n": 0, "until": 0.0}
+_last_err = [""]
+_notes = {"ok": 0, "ng": 0}
+
+
+def _annotate(level: str, msg: str) -> None:
+    """GitHub Actions の中では、実行の注記(annotation)にも残す(実行の記録を読めないときも API で確かめられる)。
+    うまくいったことは1回の実行で1度だけ、失敗は3度まで。"""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    kind = "ok" if level == "notice" else "ng"
+    if _notes[kind] >= (1 if kind == "ok" else 3):
+        return
+    _notes[kind] += 1
+    msg = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::{level} title=Cloudflare R2::{msg}", flush=True)
 
 
 def enabled() -> bool:
@@ -99,6 +114,7 @@ def put_many(items: list[tuple[str, bytes]]) -> list[str]:
                 if ok:
                     done.append(key)
                 else:
+                    _last_err[0] = f"{key} {msg}"
                     print(f"Cloudflare に送れませんでした: {key} {msg}", flush=True)
                 break
             except (OSError, http.client.HTTPException) as ex:    # 切れたら1回だけつなぎ直す
@@ -108,6 +124,7 @@ def put_many(items: list[tuple[str, bytes]]) -> list[str]:
                     pass
                 conn = None
                 if attempt:
+                    _last_err[0] = f"{key} {ex}"
                     print(f"Cloudflare に送れませんでした: {key} {ex}", flush=True)
     try:
         conn and conn.close()
@@ -140,7 +157,10 @@ def mirror(pairs: list[tuple[str, Path | bytes]]) -> int:
         done = put_many(todo)
     for key in done:
         _sent[key] = marks[key]
+    if done:
+        _annotate("notice", f"送れています(はじめの{len(done)}件。例: {done[0]})")
     if len(done) < len(todo):
+        _annotate("warning", f"{len(todo) - len(done)}件を送れませんでした: {_last_err[0]}")
         _fail["n"] += 1
         if _fail["n"] >= PAUSE_AFTER:
             _fail["until"] = time.time() + PAUSE_SEC
@@ -167,6 +187,7 @@ def main() -> int:
         body = json.dumps({"ok": True, "at": dt.datetime.now(dt.timezone.utc).isoformat()}).encode("utf-8")
         done = put_many([("check.json", body)])
         print("送れました: check.json" if done else "送れませんでした")
+        _annotate("notice" if done else "error", "check.json を送れました" if done else f"送れませんでした: {_last_err[0]}")
         return 0 if done else 1
     print(__doc__)
     return 0
