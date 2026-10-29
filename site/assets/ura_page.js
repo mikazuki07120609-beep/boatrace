@@ -194,5 +194,7 @@
     last = { venue: ctx.venue, U: U };
     return U;
   }
-  window.SuimenUraPage = { render: render, pc: pc };
+  // 欠場などで見立てを出せないときも、この場の荒れ方(過去の集計)は出す
+  function venueOnly(ctx) { if (UP && UX) put("#uraData", venueData(null, ctx)); }
+  window.SuimenUraPage = { render: render, venue: venueOnly, pc: pc };
 })();

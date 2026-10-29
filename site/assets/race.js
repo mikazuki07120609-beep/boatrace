@@ -631,6 +631,16 @@
     if (!URA || !R || !R.M) return null;
     try { return window.SuimenUraPage.render(R, uraCtx(R)); } catch (e) { if (window.console) console.error(e); return null; }
   }
+  function uraAbsent(ab) {                                          // 裏: 欠場があるレースは、万舟の見込みを出さない
+    if (!URA) return;
+    var msg = esc(absentText(ab)) + "のため、このレースは万舟の見込みと裏本線を出せません(見立ては6艇そろったレースだけで計算しています)。";
+    var h = $("#uraHero");
+    if (h) h.innerHTML = '<p class="sub">' + msg + "</p>";
+    ["#uraCard", "#uraTac", "#uraOdds"].forEach(function (sel) { var el = $(sel); if (el) el.innerHTML = '<p class="wait">' + msg + "</p>"; });
+    try { window.SuimenUraPage.venue({ venue: V.code, vname: V.name }); } catch (e) {}
+    var pt = $("#points");
+    if (pt) pt.innerHTML = "<li>" + msg + "</li>";
+  }
   function uraScen(R, i) { return R.scen.filter(function (x) { return x.i === i; })[0] || null; }
   function pkText(x) { return x >= 0.995 ? "99%以上" : Math.round(x * 100) + "%"; }   // オッズが全部100倍以上の決着は、ほぼ必ず万舟
   // 裏: 荒れたときの展開(裏本線と、荒れたときにありそうな決着の順。最後に表の本線を比べて出す)
@@ -789,7 +799,7 @@
     renderTactics();
     renderBefore();
     var ab = absentWakus();
-    if (ab.length) { showAbsent(ab); navi(null); return; }
+    if (ab.length) { showAbsent(ab); uraAbsent(ab); navi(null); return; }
     restoreWait();
     var on = ready();
     setGated(on);
