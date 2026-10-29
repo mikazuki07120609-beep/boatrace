@@ -58,6 +58,13 @@ jobs:
           command -v dig >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils; }
           d="${SITE#https://}"; d="${d#http://}"; d="${d%%/*}"
           echo "::notice title=DNS ネームサーバー ${d}::$(dig +short NS "$d" @1.1.1.1 | tr '\n' ' ') / .com の登録元: $(dig +norecurse +short NS "$d" @a.gtld-servers.net | tr '\n' ' ')$(dig +norecurse NS "$d" @a.gtld-servers.net | awk '/AUTHORITY SECTION/{f=1;next} f&&NF{printf "%s ", $5}')"
+          # 管理しているネームサーバーに直接聞く(途中の使い回し(キャッシュ)をとおさない、いまの本当の中身)
+          ns1=$(dig +short NS "$d" @1.1.1.1 | head -1)
+          if [ -n "$ns1" ]; then
+            for n in "$d" "www.$d" "data.$d" '\064.'"$d"; do
+              echo "::notice title=DNS 直接 ${n} (${ns1})::A: $(dig +short A "$n" @"$ns1" | tr '\n' ' ') / CNAME: $(dig +short CNAME "$n" @"$ns1" | tr '\n' ' ')"
+            done
+          fi
           for n in "$d" "www.$d" "data.$d"; do
             for r in 1.1.1.1 8.8.8.8; do
               echo "::notice title=DNS ${n} (${r})::A: $(dig +short A "$n" @$r | tr '\n' ' ') / AAAA: $(dig +short AAAA "$n" @$r | tr '\n' ' ') / CNAME: $(dig +short CNAME "$n" @$r | tr '\n' ' ')"
