@@ -34,6 +34,34 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: python3 scripts/r2.py --check
+      - name: 同じ合鍵を AWS CLI でも試す(合鍵そのものが合っているかの切り分け)
+        if: ${{ always() }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+          AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
+          ACCT: ${{ secrets.R2_ACCOUNT_ID }}
+          RAW_SECRET: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RAW_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+        run: |
+          # 前後に空白や改行が入っていないか(値そのものは出さない)
+          t1=$(printf '%s' "$RAW_KEY" | tr -d '[:space:]'); t2=$(printf '%s' "$RAW_SECRET" | tr -d '[:space:]')
+          echo "::notice title=合鍵の前後の空白::Access Key ID ${#RAW_KEY}→${#t1}文字 / Secret ${#RAW_SECRET}→${#t2}文字"
+          export AWS_ACCESS_KEY_ID="$t1" AWS_SECRET_ACCESS_KEY="$t2"
+          ACCT=$(printf '%s' "$ACCT" | tr -d '[:space:]')
+          echo '{"cli":true}' > c.json
+          if out=$(aws s3api put-object --endpoint-url "https://${ACCT}.r2.cloudflarestorage.com" --bucket suimen-data --key check-cli.json --body c.json --content-type application/json 2>&1); then
+            echo "::notice title=AWS CLI::送れました $(printf '%s' "$out" | tr '\n' ' ' | head -c 200)"
+          else
+            echo "::warning title=AWS CLI::送れませんでした $(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
+          fi
+          if out=$(aws s3api list-objects-v2 --endpoint-url "https://${ACCT}.r2.cloudflarestorage.com" --bucket suimen-data --max-items 3 --query 'Contents[].Key' --output text 2>&1); then
+            echo "::notice title=AWS CLI 一覧::$(printf '%s' "$out" | tr '\n' ' ' | head -c 200)"
+          else
+            echo "::warning title=AWS CLI 一覧::読めませんでした $(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
+          fi
       - name: 公開のURLから読めるか(CORS と中継の使い回し)
         if: ${{ always() && github.event.inputs.data_base != '' }}
         env:
