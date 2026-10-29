@@ -125,6 +125,8 @@ jobs:
             const odds = await pg.$('.tabs [data-tab="odds"]'); if (odds) { await odds.click(); await pg.waitForTimeout(4000); }
             const dl = await pg.evaluate(() => { const t = document.getElementById("dlTag"); return t ? t.textContent : ""; });
             const helper = await pg.evaluate(() => typeof window.suimenGet);
+            const ura = await pg.evaluate(() => { const h = document.getElementById("uraHero"); return h ? h.innerText.replace(/\s+/g, " ").slice(0, 160) : ""; });
+            if (ura) console.log("::notice title=裏の見立て::" + ura);
             console.log("::notice title=ブラウザ " + process.env.PAGE + "::締切表示 " + dl + " / 読み込み係 " + helper);
             console.log("::notice title=ブラウザが読んだデータ::" + (seen.join(" | ") || "なし"));
             if (errs.length) console.log("::warning title=ブラウザのエラー::" + errs.join(" | ").slice(0, 600));
