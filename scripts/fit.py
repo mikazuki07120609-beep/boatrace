@@ -900,8 +900,13 @@ def conditional_st(th, sm, recs, S=120):
     return {"%d%s" % CLASSES[y]: [round(float(x), 4) for x in (v[0] / v[1])] + [v[1]] for y, v in acc.items() if v[1] >= 30}
 
 
+LAST_RECS = None            # 最後に作ったレースの記録(裏の学習 scripts/ura_fit.py が使い回す)
+
+
 def main() -> int:
+    global LAST_RECS
     recs, sts = build_records()
+    LAST_RECS = recs
     if len(recs) < 1000:
         print("学習に使えるレースが少ないので、学習しません:", len(recs))
         return 0

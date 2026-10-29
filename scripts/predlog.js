@@ -12,6 +12,7 @@ const ROOT = path.resolve(__dirname, "..");
 const SITE = path.join(ROOT, "_site");
 const LIVE = path.join(ROOT, "data", "live");
 const M = require(path.join(ROOT, "site", "assets", "model.js"));
+const UR = require(path.join(ROOT, "site", "assets", "ura.js"));
 
 function r3(x) { return x == null ? null : Math.round(x * 1000) / 1000; }
 
@@ -19,6 +20,8 @@ function main() {
   const mp = path.join(ROOT, "data", "model.json");
   if (!fs.existsSync(mp) || !fs.existsSync(SITE)) { console.log("見立てモデルかサイトがないので記録しません"); return; }
   const params = JSON.parse(fs.readFileSync(mp, "utf8"));
+  const up = path.join(ROOT, "data", "ura.json");
+  const UP = fs.existsSync(up) ? JSON.parse(fs.readFileSync(up, "utf8")) : null;
   const jst = new Date(Date.now() + 9 * 3600e3);           // UTCの値として読むと日本時間になる
   const today = jst.toISOString().slice(0, 10), hm = jst.toISOString().slice(11, 16);
   const day = today.replace(/-/g, "");
@@ -36,7 +39,7 @@ function main() {
       if (!BI || !BI.ready || D.result || D.live) continue;
       if (D.race.deadline && hm >= D.race.deadline) continue;
       const old = (log[v] || {})[String(D.race.no)];
-      if (old && old.before_at === BI.fetched && old.fitted === params.fitted) continue;
+      if (old && old.before_at === BI.fetched && old.fitted === params.fitted && (old.u || !UP)) continue;
       const order = BI.course || [];
       const wind = BI.weather && BI.weather.wind != null ? Math.round(BI.weather.wind) : 2;
       const race = {
@@ -58,6 +61,20 @@ function main() {
           .map(([i]) => [i, (R.order(i) || {}).order || null]).filter((x) => x[1])),
         st: R.st.slice().sort((a, b) => a.waku - b.waku).map((s) => [r3(s.mean), r3(s.pOut), r3(s.pDent)]),   // 枠番の順
       };
+      // 裏: 万舟の見込みと裏本線(レースのページの ura.js と同じ計算。オッズは入れない)。答え合わせは learn.py
+      if (UP && UP.proxy && UP.cal) {
+        try {
+          const B = race.boats.map((b) => ({ waku: b.waku, course: b.course }));
+          const U = UR.compute(R, B, { venue: D.venue.code, name: D.race.name, wind: BI.weather && BI.weather.wind != null ? Math.round(BI.weather.wind) : null,
+                                       wave: BI.weather && BI.weather.wave != null ? Math.round(BI.weather.wave) : null }, UP);
+          if (U) {
+            const pw = [0, 0, 0, 0, 0, 0];                          // 1着の見込み(枠番の順)
+            U.pc.forEach((p, c) => { const w = U.c2w[c + 1]; if (w) pw[w - 1] = r3(p); });
+            log[v][String(D.race.no)].u = { ura: UP.fitted || null, pm: r3(U.pMan), m: r3(U.m), ow: U.c2w[U.oc] || null,
+              ul: U.lead ? [U.lead.i, U.lead.b ? U.lead.b.waku : U.c2w[U.lead.c], r3(U.lead.p), r3(U.lead.pk)] : null, pw };
+          }
+        } catch (e) { /* 裏が計算できなくても、表の記録は残す */ }
+      }
       n++;
     }
   }

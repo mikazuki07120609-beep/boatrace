@@ -570,3 +570,134 @@ table.vt.rect td small{display:block;font-size:10px;color:var(--muted)}
 table.gridt.rall td,table.gridt.rall th{text-align:center;font-variant-numeric:tabular-nums}
 section details > summary h2{display:inline-flex;margin:0}
 section details > summary{cursor:pointer;list-style-position:inside}
+/* ===== 表と裏の切り替え ===== */
+.mode-sw{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:800;padding:4px 12px;border-radius:999px;text-decoration:none;
+  background:#17131f;color:#ffd27a;border:1px solid #3a2a40;letter-spacing:.06em;margin-right:auto}
+.mode-sw span{font-size:12px;opacity:.85}
+.ura .mode-sw{background:#eef5fb;color:#1478b8;border-color:#cfe3f1}
+/* ===== 最初のページ(表と裏を選ぶ): 真ん中で昼の水面と夜の水面に分かれる帯 ===== */
+body.top{background:var(--bg);padding-left:0;padding-right:0}
+.top .wrap{max-width:none;padding:0 0 28px;gap:24px}
+.top .top-brand,.top .top-links,.top footer{width:min(1040px,calc(100% - 32px));margin-left:auto;margin-right:auto}
+.top-brand{text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center;padding:34px 0 0}
+.top-brand .logo{font-size:32px}
+.top-brand .sub{color:var(--muted);margin:0}
+.top-pick{display:grid;grid-template-columns:1fr 1fr;box-shadow:0 18px 44px rgba(13,11,18,.16)}
+.tpanel{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px;text-decoration:none;min-height:330px;padding:44px 32px 36px;transition:filter .15s ease}
+.tpanel:hover{filter:brightness(1.05)}
+.tpanel>*{position:relative}
+.tpanel .tk{position:absolute;bottom:-34px;font-family:"Dela Gothic One",var(--pop);font-size:210px;line-height:1;pointer-events:none}
+.tpanel .tn{font-family:var(--pop);font-size:30px;letter-spacing:.04em}
+.tpanel .td{font-size:15px;line-height:1.85;max-width:28em}
+.tpanel .tsub{font-size:13.5px;font-weight:700}
+.tpanel .tgo{margin-top:auto;align-self:flex-start;font-weight:800;font-size:15px;padding:10px 20px;border-radius:999px}
+.tpanel.omote{background:linear-gradient(160deg,#ffffff 0,#e1f0fb 100%);color:#1d2a36;padding-left:max(32px,calc(50vw - 520px))}
+.tpanel.omote .tk{right:6px;color:#1478b8;opacity:.09}
+.tpanel.omote .tn{color:#1478b8}
+.tpanel.omote .tgo{background:#1478b8;color:#fff}
+.tpanel.ura{background:radial-gradient(120% 110% at 0% 0%,#4a1424 0,#1a1220 55%,#0d0b12 100%);color:#f3ede6;padding-right:max(32px,calc(50vw - 520px))}
+.tpanel.ura .tk{left:6px;color:#ff5470;opacity:.16}
+.tpanel.ura .tn{color:#ffd27a}.tpanel.ura .tsub b{color:#ffd27a}
+.tpanel.ura .tgo{background:#ff5470;color:#0d0b12}
+.tpanel.ura .td,.tpanel.ura .tsub,.tpanel.ura .tgo{align-self:flex-start}
+@media (max-width:700px){
+  .top-pick{grid-template-columns:1fr}
+  .tpanel{min-height:0;padding:34px 20px 30px}
+  .tpanel.omote{padding-left:20px}.tpanel.ura{padding-right:20px}
+  .tpanel .tk{font-size:150px;bottom:-26px}
+  .tpanel.ura .tk{left:auto;right:6px}
+}
+.top-links{display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:center;font-size:13.5px;font-weight:700}
+.uman-tag{display:inline-block;font-size:12.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:linear-gradient(90deg,#ffd27a,#ff5470);color:#0d0b12;letter-spacing:.06em}
+/* 裏の一覧: スマホでは、見込みの棒をはずして裏本線を見えるところに */
+@media (max-width:560px){
+  .ulist .umeter{display:none}
+  .ulist .uman{min-width:0}
+  .ulist .ulv{font-size:10.5px;padding:1px 6px}
+  .ulist .uln{flex-wrap:wrap;gap:3px}
+  .ulist .uline{white-space:normal;font-size:12.5px;line-height:1.3}
+  .ulist td,.ulist th{padding-left:5px;padding-right:5px}
+}
+/* ===== 裏水面ノート: 夜の水面(暗い地に赤と金) ===== */
+body.ura{
+  --bg:#0d0b12; --surface:#17131f; --ink:#f3ede6; --muted:#ab9fb8; --line:#2e2638; --line2:#3d3248; --head:#1f1929;
+  --accent:#ff5470; --accent-soft:#3a1622; --warn:#f2b84b; --good:#5fd39b; --red:#ff6b6b;
+  --rank1:#ff5a6e; --rank2:#6aa8ff; --gold:#ffd27a;
+  --tc-card:#ff5470; --tc-tac:#b48cff; --tc-before:#f2b84b; --tc-odds:#ff7a45; --tc-t1:#2ed3b7; --tc-navi:#9f7aea; --tc-data:#4fc3f7;
+  --b1:#f4f6f8; --b2:#000000; --rec-main:#ff5470; --rec-base:#6d6478;
+  color-scheme:dark;
+  background:radial-gradient(100% 60% at 50% -10%,#2a1120 0,#0d0b12 60%) fixed,#0d0b12}
+.ura .logo{color:var(--gold)}
+.ura .logo::before{background:radial-gradient(circle at 65% 35%,#0d0b12 0 38%,transparent 40%),radial-gradient(circle at 40% 45%,#ffd27a,#ff5470 75%);box-shadow:0 0 0 3px #3a1622}
+.ura section{box-shadow:0 2px 0 color-mix(in srgb,var(--pc,var(--accent)) 22%,transparent),0 8px 22px rgba(0,0,0,.35)}
+.ura .card{box-shadow:0 2px 0 #3a1622,0 8px 18px rgba(0,0,0,.35)}
+.ura table.gridt caption{color:color-mix(in srgb,var(--pc,var(--accent)) 70%,#fff)}
+.ura table.vt tr.grp th{color:color-mix(in srgb,var(--pc,var(--accent)) 70%,#fff)}
+.ura .tabs button.on{color:#0d0b12}
+.ura .chip.on{color:#0d0b12}
+.ura .t1hl{color:color-mix(in srgb,var(--hc) 55%,#fff)}
+.ura .t1hl .hb{color:#fff;background:linear-gradient(transparent 58%,color-mix(in srgb,var(--hbc) 45%,transparent) 58%)}
+.ura .hi{color:var(--gold)}
+/* 裏の見出しの枠(万舟の見込み・裏本線・理由) */
+.uhero{--pc:var(--accent);background:radial-gradient(140% 120% at 100% 0%,#3d1222 0,#17131f 60%);border-color:#4a2232}
+.uh{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px 20px;align-items:start}
+@media (max-width:640px){.uh{grid-template-columns:1fr}}
+.uh-k{font-size:12.5px;font-weight:800;color:var(--muted);letter-spacing:.06em;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.uh-st{font-weight:700;font-size:11.5px;color:var(--muted);opacity:.85}
+.uh-v{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.uh-v b{font-family:"Dela Gothic One",var(--pop);font-weight:400;font-size:58px;line-height:1;color:var(--gold);text-shadow:0 0 22px rgba(255,210,122,.25)}
+.uh-v small{font-size:22px;font-weight:800;color:var(--gold)}
+.uh-bar{position:relative;height:10px;border-radius:5px;background:#2b2233;margin:8px 0 4px}
+.uh-bar>i{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#ffd27a,#ff5470)}
+.uh-base{position:absolute;top:-4px;bottom:-4px;width:2px;background:#f3ede6;opacity:.75;border-radius:1px}
+.uh-sub{font-size:12.5px;color:var(--muted)}
+.uh-line{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:12px;background:#0d0b12aa;border:1px solid #4a2232}
+.uh-lv{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.uh-lv b{font-family:var(--pop);font-weight:400;font-size:22px;color:#fff}
+.uh-who{font-size:14px;color:var(--muted)}
+.uh-why{grid-column:1/-1;margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.uh-why li{padding:7px 10px 7px 28px;border-radius:10px;background:#ffffff08;position:relative;line-height:1.6}
+.uh-why li::before{content:"";position:absolute;left:11px;top:14px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.uh-val{grid-column:1/-1;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13.5px;padding:8px 10px;border-radius:10px;border:1px dashed #f2b84b88;color:var(--gold)}
+.uv-k{font-weight:800;font-size:12px;padding:1px 8px;border-radius:999px;background:#f2b84b;color:#0d0b12}
+.uh-wait{padding:6px 0}
+.ulv{display:inline-block;font-size:12px;font-weight:800;padding:2px 10px;border-radius:999px;letter-spacing:.04em;white-space:nowrap}
+.ulv.L3{background:#ff5470;color:#0d0b12}.ulv.L2{background:#ff9a5a;color:#0d0b12}.ulv.L1{background:#3b3146;color:#f3ede6}.ulv.L0{background:#25313b;color:#a9c3d6}
+/* 一覧(荒れそうなレース・場ごとのレース) */
+.ulist td{vertical-align:middle}
+.ulist .rno{display:block}
+.uman{min-width:150px}
+.umeter{display:inline-block;width:70px;height:8px;border-radius:4px;background:#2b2233;vertical-align:middle;margin-right:8px;overflow:hidden}
+.umeter>i{display:block;height:100%;background:linear-gradient(90deg,#ffd27a,#ff5470)}
+.upct{font-family:var(--mono);font-size:15px;color:var(--gold);margin-right:6px}
+.upct small{font-size:11px}
+.uln{display:flex;align-items:center;gap:6px}
+.uline{font-size:13.5px;font-weight:700}
+.uline .nw{white-space:nowrap}
+.uman-hit{color:var(--gold)!important;font-weight:800}
+.ubadges{display:flex;gap:6px;flex-wrap:wrap}
+.ubadge{font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;background:#2b2233;color:var(--muted)}
+.ubadge.hot{background:#3a1622;color:#ff8da0}
+/* 穴の材料・理由 */
+.utab td{vertical-align:middle}
+.utab tr.ulead td{background:#3a162255}
+.utab td,.utab th{padding:6px 5px}
+.utab .unc{text-align:left;max-width:180px}
+.utab .utag{white-space:normal}
+.utab .un{display:flex;flex-direction:column;align-items:flex-start;line-height:1.35}
+.utab .un .dim,.utab .num .dim{display:block;font-size:11px;color:var(--muted)}
+.utags{display:flex;flex-wrap:wrap;white-space:normal;margin-top:3px}
+.utab .num{white-space:nowrap}
+.utag{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;margin:2px 4px 2px 0;border-radius:999px;background:#2b2233;color:#e9e1f0;white-space:nowrap}
+.utag.t攻め{background:#4a1626;color:#ff9db0}.utag.t一撃{background:#4a2a12;color:#ffc27a}.utag.t足{background:#0f3b35;color:#7fe8d4}
+.utag.t機{background:#3d3212;color:#ffd27a}.utag.t弱{background:#1f2a35;color:#9fc0da}.utag.tF{background:#40380f;color:#ffe37a}
+.utag.t進入{background:#2d1d47;color:#c9a8ff}.utag.t凹み{background:#262130;color:#b7aec2}
+.points li.ust{color:#ffd9e0}
+.ukts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.ukts .gridt td,.ukts .gridt th{padding:4px 6px;font-size:12.5px;white-space:nowrap}
+.ukts .gridt td.dim{color:var(--muted);font-size:11.5px}
+.scen-row.omote{opacity:.75}
+.leadtag.omt{background:#25313b;color:#a9c3d6}
+.ubtag{font-style:normal;font-size:10.5px;font-weight:800;padding:0 6px;border-radius:999px;background:#ff5470;color:#0d0b12;margin-right:4px;align-self:flex-start}
+.upk{display:block;font-size:10.5px;color:var(--gold);text-align:right}
+.ura .pat .p{text-align:right;line-height:1.25}

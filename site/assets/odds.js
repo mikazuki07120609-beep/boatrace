@@ -38,6 +38,8 @@
   }
   function favCls(v, f) { return v != null && v > 0 && v === f.a ? " fav" : v != null && v > 0 && v === f.b ? " fav2" : ""; }
   function visible() { var p = pane(); return p && !p.hidden && !document.hidden; }
+  var URA = document.body.classList.contains("ura");   // 裏: オッズのタブを開いていなくても読む(人気とのずれを、万舟の見込みと裏本線に入れるため)
+  function fetching() { return URA ? !document.hidden : visible(); }
 
   function stamp() {
     var at = $("#odAt");
@@ -119,7 +121,10 @@
     return getData("odds", REL)
       .then(function (j) {
         if (j && j.dl && /^\d{1,2}:\d{2}$/.test(j.dl)) D.race.deadline = j.dl;          // 公式の今の締切(レースが遅れると変わる)
-        if (j && (!O || JSON.stringify(j) !== JSON.stringify(O))) { O = j; render(); } else if (!O) render();
+        if (j && (!O || JSON.stringify(j) !== JSON.stringify(O))) {
+          O = j; render();
+          try { document.dispatchEvent(new CustomEvent("suimen:odds", { detail: O })); } catch (e) {}
+        } else if (!O) render();
       })
       .catch(function () { if (!O) render(); });
   }
@@ -129,7 +134,7 @@
   }
   function tick() {
     clearTimeout(timer);
-    if (visible() && want() && Date.now() - lastFetch >= 25000) load();
+    if (fetching() && want() && Date.now() - lastFetch >= 25000) load();
     else if (visible() && !O) render();
     timer = setTimeout(tick, 5000);
   }
@@ -146,8 +151,8 @@
     var f = e.target.closest("#odBox [data-first]");
     if (f) { first = +f.getAttribute("data-first"); render(); }
   });
-  document.addEventListener("visibilitychange", function () { if (visible() && want()) load(); });
+  document.addEventListener("visibilitychange", function () { if (fetching() && want()) load(); });
   document.addEventListener("suimen:deadline", function (e) { if (e.detail) { D.race.deadline = e.detail; if (!O) render(); } });   // race.js が読んだ公式の締切
-  if (visible()) load(); else render();
+  if (visible() || (URA && (want() || minsLeft() < -1))) load(); else render();   // 裏: 締切のあとに開いたときも、締切時オッズを1回読む
   tick();
 })();

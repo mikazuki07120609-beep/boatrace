@@ -182,6 +182,14 @@ def main() -> int:
         fit.main()
     except ImportError as ex:
         print("学習をとばしました:", ex)
+    # 裏水面ノートの学習(1日1回。払戻金と見立てから、万舟の見込みの式と荒れの集計を作り直す)
+    try:
+        import ura_fit
+        if ura_fit.due():
+            import fit as _fit
+            ura_fit.main(getattr(_fit, "LAST_RECS", None))
+    except Exception as ex:  # noqa: BLE001  裏の学習に失敗しても、サイトの更新は続ける(前の学習結果を使う)
+        print("裏の学習をとばしました:", ex)
     # 前の日の見立て・映像と結果を比べて記録する(成績のページに使うので、サイトを作る前に)
     try:
         import learn

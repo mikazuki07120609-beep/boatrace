@@ -18,6 +18,8 @@
   };
   var NO = String(D.race.no);
   var BI = D.before || null, LR = D.live || null, OG = D.orig || null;     // 直前情報・レース直後の結果・場のオリジナル展示データ
+  var URA = document.body.classList.contains("ura") && !!window.SuimenUraPage;   // 裏水面ノートのページ(ura_page.js が裏の部分を描く)
+  var VW = null;                       // 同じ場の、いちばん新しい直前情報の風・波(展示の前の、裏の見込みの目安に使う)
   function $(s) { return document.querySelector(s); }
   function $$(s) { return [].slice.call(document.querySelectorAll(s)); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -455,6 +457,7 @@
     var t = tri.map(function (w) { return '<span class="waku w' + w + '">' + w + "</span>"; }).join('<span class="sep">-</span>');
     bar.innerHTML = '<span class="lbl">結果</span><span class="tri">' + t + "</span>" +
       (LR.pay ? '<b class="odds">' + (LR.pay / 100).toFixed(1) + "倍</b>" + (LR.pop ? '<span class="dim">' + LR.pop + "番人気</span>" : "") : "") +
+      (URA && LR.pay >= 10000 ? '<span class="uman-tag">万舟</span>' : "") +
       (LR.kimarite ? '<span class="tag">' + esc(LR.kimarite) + "</span>" : "") + (LR.note ? '<span class="sub">' + esc(LR.note) + "</span>" : "");
     bar.hidden = false;
   }
@@ -612,10 +615,80 @@
     return b.course + "コースは直近" + cs.n + "走で1着" + cs.w1 + "回(" + pct(cs.w1, cs.n) + "%)";
   }
   function patName(s) { return s.b.course + "コース" + s.kim; }
+  // ---- 裏水面ノート: ura_page.js に渡すもの(直前情報・オッズ・展示の順位など)
+  function uraCtx(R) {
+    var W = BI && BI.weather && BI.weather.wind != null ? BI.weather : null, pre = false;
+    var wind = W ? Math.round(W.wind) : (D.result && D.result.wind != null ? D.result.wind : null);
+    var wave = W && W.wave != null ? Math.round(W.wave) : (D.result && D.result.wave != null ? D.result.wave : null);
+    if (wind == null && VW) { wind = Math.round(VW.wind); wave = VW.wave != null ? Math.round(VW.wave) : null; pre = true; }
+    var exRank = null, exs = R.B.filter(function (b) { return b.ex != null && b.ex > 6 && b.ex < 7.6; });
+    if (exs.length >= 4) { exRank = {}; exs.forEach(function (b) { exRank[b.waku] = 1 + exs.filter(function (x) { return x.ex < b.ex - 1e-9; }).length; }); }
+    R.B.forEach(function (b) { b.mgGrade = (b.mg || {}).grade || null; });
+    return { venue: V.code, vname: V.name, no: D.race.no, name: D.race.name, B: R.B, wind: wind, wave: wave, weatherPre: pre, exRank: exRank,
+             place1: V.place && V.place[0] ? V.place[0][0] : null, odds: window.SuimenOdds || null, BI: BI, ready: beforeReady(), finished: finished(), nt: D.nt };
+  }
+  function uraRender(R) {
+    if (!URA || !R || !R.M) return null;
+    try { return window.SuimenUraPage.render(R, uraCtx(R)); } catch (e) { if (window.console) console.error(e); return null; }
+  }
+  function uraScen(R, i) { return R.scen.filter(function (x) { return x.i === i; })[0] || null; }
+  function pkText(x) { return x >= 0.995 ? "99%以上" : Math.round(x * 100) + "%"; }   // オッズが全部100倍以上の決着は、ほぼ必ず万舟
+  // 裏: 荒れたときの展開(裏本線と、荒れたときにありそうな決着の順。最後に表の本線を比べて出す)
+  function renderUraScen(R, lead) {
+    var U = R.U, tot = U.scen.reduce(function (a, s) { return a + s.s; }, 0) || 1;
+    var list = U.cands.slice(0, 5), om = null;
+    U.scen.forEach(function (s) { if (s.c === U.oc && s.k !== "抜き" && (!om || s.p > om.p)) om = s; });
+    var max = Math.max.apply(null, list.map(function (c) { return c.s / tot; }).concat([0.01]));
+    var rows = list.map(function (c, j) {
+      var b = c.b, isL = U.lead && c.i === U.lead.i;
+      return '<div class="scen-row' + (isL ? " lead" : "") + '"><span class="waku w' + b.waku + '">' + b.waku + "</span><div><div>" + c.c + "コース" + esc(c.k) +
+        (isL ? '<span class="leadtag">裏本線</span>' : "") + '<span class="sub"> ・' + esc(b.name) + "</span></div>" +
+        '<div class="bar"><i style="width:' + (c.s / tot / max * 100).toFixed(1) + '%"></i></div>' +
+        '<div class="sub">この決着になる見込み ' + (c.p * 100).toFixed(c.p < 0.1 ? 1 : 0) + "%・そのとき万舟 " + pkText(c.pk) + "</div></div>" +
+        '<span class="pct">' + Math.round(c.s / tot * 100) + "%</span></div>";
+    });
+    if (om) rows.push('<div class="scen-row omote"><span class="waku w' + om.b.waku + '">' + om.b.waku + "</span><div><div>" + om.c + "コース" + esc(om.k) +
+      '<span class="leadtag omt">表の本線</span><span class="sub"> ・' + esc(om.b.name) + "</span></div>" +
+      '<div class="sub">この決着になる見込み ' + Math.round(om.p * 100) + "%・そのとき万舟 " + pkText(om.pk) + "</div></div>" +
+      '<span class="pct">' + Math.round(om.s / tot * 100) + "%</span></div>");
+    var sc = $("#scen");
+    if (sc) sc.innerHTML = rows.join("");
+    var sl = $("#scenLead");
+    if (sl) sl.textContent = U.lead ? "荒れるとしたら一番ありそうなのは「" + U.lead.c + "コース" + U.lead.k + "」。表の本線(" + U.oc + "コース)以外で、その決着になって、しかも万舟になる見込みが一番高い形です。" +
+      "右の数字は、万舟になったとしたら、その決着だった割合の目安です。" : "";
+    var p2box = $("#scen2");
+    if (p2box) {
+      var byCw = {};
+      R.B.forEach(function (b) { byCw[b.course] = b; });
+      var wins = R.B.slice().map(function (b) {
+        return { b: b, v: U.scen.filter(function (s) { return s.c === b.course; }).reduce(function (a, s) { return a + s.s; }, 0) / tot };
+      }).sort(function (a, b) { return b.v - a.v; }).map(function (x) {
+        return '<span class="cand' + (lead && x.b === lead.b ? " on" : "") + '"><span class="waku w' + x.b.waku + '">' + x.b.waku + "</span>" + Math.round(x.v * 100) + "%</span>";
+      }).join("");
+      var o = lead && lead.ord;
+      function cands(pp) {
+        return Object.keys(pp).map(Number).sort(function (a, b) { return pp[b] - pp[a]; }).slice(0, 3).map(function (c) {
+          var b = byCw[c]; return '<span class="cand"><span class="waku w' + b.waku + '">' + b.waku + "</span>" + Math.round(pp[c] * 100) + "%</span>";
+        }).join("");
+      }
+      p2box.innerHTML = '<div class="p2row"><span class="lbl">荒れたときの1着</span>' + wins + "</div>" +
+        (o ? '<div class="p2row"><span class="lbl">裏本線の2着</span>' + cands(o.p2) + '</div><div class="p2row"><span class="lbl">裏本線の3着</span>' + cands(o.p3) + "</div>" : "");
+    }
+  }
   // 本線: 1着になる見込み(勝ち方を全部足したもの)が一番高い艇の、一番起こりやすい勝ち方。
   // 1号艇の逃げ1つより、ほかの艇の勝ち方を足した方が高ければ、その艇を本線にする(1号艇以外の本線もはっきり出す)
   function leadScen(R) {
     if (!R || !R.scen || !R.scen.length) return null;
+    if (URA && R.U && R.U.lead) {                                   // 裏: 表の本線の艇以外で、その決着になって万舟になる見込みが一番高い決着
+      var us = uraScen(R, R.U.lead.i);
+      if (us) {
+        if (!us.ord && R.M) {
+          var o0 = R.M.order(us.i);
+          if (o0) { us.ord = o0; us.ordW = o0.order.map(function (c) { var bb = R.B.filter(function (x) { return x.course === c; })[0]; return bb ? bb.waku : c; }); }
+        }
+        return us;
+      }
+    }
     var best = null;
     R.B.forEach(function (b) { if (!best || (b.share || 0) > (best.share || 0) + 1e-9) best = b; });
     var ss = best ? R.scen.filter(function (x) { return x.b === best; }) : [];
@@ -720,8 +793,12 @@
     restoreWait();
     var on = ready();
     setGated(on);
-    if (!on) { navi(null); return; }                                  // 展開ナビは展示の前でも出す(枠なり・ふだんのST)
+    if (!on) {                                                        // 展開ナビは展示の前でも出す(枠なり・ふだんのST)
+      if (URA) { var R0 = analyze(); R0.U = uraRender(R0); }           // 裏: 展示の前の目安(枠なり・ふだんのST)
+      navi(null); return;
+    }
     var R = analyze(), B = R.B, scen = R.scen;
+    if (URA) R.U = uraRender(R);
     navi(R);
     renderAlerts(R);
     function byCourse(c) { return B.filter(function (b) { return b.course === c; })[0]; }
@@ -729,6 +806,8 @@
     renderStart(R);
     // 展開
     var lead = leadScen(R);
+    if (URA && R.U) renderUraScen(R, lead);
+    else {
     var top = scen.slice(0, 6), max = top.length ? top[0].p : 1;
     if (lead && top.indexOf(lead) < 0) top = top.slice(0, 5).concat([lead]);
     $("#scen").innerHTML = top.map(function (s) {
@@ -755,6 +834,7 @@
       }).join("");
       p2box.innerHTML = '<div class="p2row"><span class="lbl">1着の見込み</span>' + wins + "</div>" +
         (o ? '<div class="p2row"><span class="lbl">本線の2着</span>' + cands(o.p2) + '</div><div class="p2row"><span class="lbl">本線の3着</span>' + cands(o.p3) + "</div>" : "");
+    }
     }
     // ポイント
     var pts = [];
@@ -812,9 +892,10 @@
     if (R.strong && R.wind === "head") pts.push("向かい風" + R.wspd + "m。内が伸びにくく、まくりが決まりやすい条件(目安)。");
     if (R.strong && R.wind === "tail") pts.push("追い風" + R.wspd + "m。1マークで流れやすく、差しが入りやすい条件(目安)。");
     if (R.wspd >= 6) pts.push("風速" + R.wspd + "mは強め。STが全体に遅れ、ばらつきも大きくなる。旋回の上手さと経験の差が出やすい。");
-    $("#points").innerHTML = pts.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("");
+    if (!URA) $("#points").innerHTML = pts.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("");
     // 各艇
-    $("#boats").innerHTML = B.slice().sort(function (a, b) { return a.course - b.course; }).map(function (b) {
+    var boatsBox = $("#boats");
+    if (boatsBox) boatsBox.innerHTML = B.slice().sort(function (a, b) { return a.course - b.course; }).map(function (b) {
       var c = b.course - 1, k = V.kimarite[c] || [];
       var best = k.map(function (p, j) { return [p, KIM[j]]; }).filter(function (x) { return x[0] > 0; }).sort(function (a, b) { return b[0] - a[0]; })[0];
       var li = [];
@@ -849,7 +930,7 @@
     if (second) lines.push("対抗の展開は" + second.b.course + "コース" + second.b.name + "の「" + second.kim + "」。");
     pts.slice(1, 3).forEach(function (p) { lines.push(p); });
     lines.push("", "※データから見た展開の目安です。舟券の推奨ではありません。", "#ボートレース #" + V.name);
-    $("#post").value = lines.join("\n");
+    if (!URA) $("#post").value = lines.join("\n");
     updateView(R);
   }
 
@@ -958,8 +1039,8 @@
     box.innerHTML = pats.map(function (s, i) {
       var on = !custom && i === patIdx;
       return '<button type="button" class="pat' + (on ? " on" : "") + '" data-i="' + i + '" aria-pressed="' + on + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + "</span>" +
-        '<span class="pn">' + s.b.course + "コース " + s.kim + "</span>" +
-        '<span class="p">' + s.p.toFixed(0) + "%</span></button>";
+        '<span class="pn">' + (URA && i === 0 && lastR && lastR.U && lastR.U.lead && lastR.U.lead.i === s.i ? '<i class="ubtag">裏本線</i>' : "") + s.b.course + "コース " + s.kim + "</span>" +
+        '<span class="p">' + s.p.toFixed(s.p < 10 ? 1 : 0) + "%" + (URA && lastR && lastR.U ? '<small class="upk">万舟' + pkText((lastR.U.scen[s.i] || {}).pk || 0) + "</small>" : "") + "</span></button>";
     }).join("");
   }
   var pendingR = null;
@@ -980,8 +1061,13 @@
     if (pane && pane.hidden) { pendingR = R; return; }                   // 1S1Mのタブを開いたときに作る(ページを軽くするため)
     pendingR = null;
     var ld = leadScen(R);
+    if (URA && R.U) {                                                   // 裏: 裏本線から、荒れたときにありそうな順(その決着になって万舟になる見込み)
+      pats = ld && ld.kim !== "抜き" && ld.kim !== "恵まれ" ? [ld] : [];
+      R.U.cands.forEach(function (c) { var s = uraScen(R, c.i); if (s && pats.length < 4 && pats.indexOf(s) < 0 && s.kim !== "抜き" && s.kim !== "恵まれ") pats.push(s); });
+    } else {
     pats = R.scen.filter(function (s) { return s.kim !== "抜き" && s.kim !== "恵まれ" && s !== ld; }).slice(0, ld ? 3 : 4);
     if (ld && ld.kim !== "抜き" && ld.kim !== "恵まれ") pats.unshift(ld);                    // 本線(1着の見込みが一番高い艇)を最初に
+    }
     if (!pats.length) return;
     var pk = pats.map(function (s) { return s.b.waku + s.kim; }).join(",");
     if (pk !== patKey) { patKey = pk; patIdx = 0; }
@@ -990,7 +1076,7 @@
     if (sig === viewSig) return;
     viewSig = sig;
     if (!view) {
-      view = Turn1.mount(canvas, { entries: cur.ents, scen: cur.sc, title: viewTitle(), kimarite: V.kimarite, brand: "水面ノート", fixedST: !!cur.fixed,
+      view = Turn1.mount(canvas, { entries: cur.ents, scen: cur.sc, title: viewTitle(), kimarite: V.kimarite, brand: URA ? "裏水面ノート" : "水面ノート", fixedST: !!cur.fixed,
                                    onEnd: function () { var b = $("#t1Pause"); if (b) b.textContent = "再生"; } });
       watch(canvas);
       paintNote();
@@ -1366,6 +1452,14 @@
         if (D.race.deadline0 === nd) delete D.race.deadline0;
         try { document.dispatchEvent(new CustomEvent("suimen:deadline", { detail: nd })); } catch (e) {}
       }
+      if (URA && j.before) {                                       // 裏: 先のレースの直前情報の風・波(このレースの展示の前の目安)
+        var lw = null;
+        Object.keys(j.before).forEach(function (k) {
+          var x = j.before[k] || {}, w = x.weather;
+          if (w && w.wind != null && (!lw || String(x.fetched || "") > lw.at)) lw = { wind: w.wind, wave: w.wave, at: String(x.fetched || "") };
+        });
+        if (lw && JSON.stringify(lw) !== JSON.stringify(VW)) { VW = lw; if (!ready()) ch = true; }
+      }
       if (no && JSON.stringify(no) !== JSON.stringify(OG)) { OG = no; ch = true; }
       if (nb && JSON.stringify(nb) !== JSON.stringify(BI)) { BI = nb; ch = true; }
       if (nr && JSON.stringify(nr) !== JSON.stringify(LR)) { LR = nr; ch = true; }
@@ -1433,6 +1527,16 @@
   setupViewControls();
   setupNavi();
   setupTactics();
+  if (URA) {                                                          // 裏: オッズ(odds.js)が来たら、人気とのずれを入れて描き直す(20秒に1回まで)
+    var oddsAt = 0, oddsTimer = null;
+    document.addEventListener("suimen:odds", function (ev) {
+      window.SuimenOdds = ev.detail;
+      clearTimeout(oddsTimer);
+      var wait = Math.max(0, 20000 - (Date.now() - oddsAt));
+      oddsTimer = setTimeout(function () { oddsAt = Date.now(); render(); }, wait);
+    });
+  }
+  window.SuimenRace = { render: function () { render(); } };
   render();
   if (!(finished() && LR)) poll();
   schedule();

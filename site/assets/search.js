@@ -8,6 +8,7 @@
       .then(function (r) { return r.ok ? r.json() : null; });
   };
   var AL_LV = { 3: "特別警報", 2: "警報", 1: "注意報" };
+  var URA = document.body.classList.contains("ura");     // 裏水面ノートの検索(荒れの材料で探す。万舟の見込みの高い順にも並べる)
   var PTS = { 1: 10, 2: 8, 3: 6, 4: 4, 5: 2, 6: 1 };
   var S = null, LIVE = {}, BORDER = {}, SPAN = {}, spanTried = false, liveTimer = null, loadSeq = 0;
   var ON = {};                                        // 選んでいる条件
@@ -174,6 +175,66 @@
         var bi = beforeOf(r), w = bi && bi.weather ? bi.weather.wind : null; return w != null && w >= 5 ? ["風速" + w + "m"] : null; } }
     ]]
   ];
+  function uOf(r) { return r.u || null; }
+  function manText(r) {
+    var u = uOf(r); if (!u) return null;
+    return '<b class="upct">' + Math.round(u.pm * 100) + '<small>%</small></b><span class="ulv ' + ({ "大荒れ注意": "L3", "荒れ気味": "L2", "ふつう": "L1", "平穏": "L0" }[u.lv] || "L1") + '">' + esc(u.lv) + "</span>" +
+      (u.pre ? '<span class="dim">(展示前の目安)</span>' : "");
+  }
+  function ratioText(r) { var u = uOf(r); return "この場のふだんの万舟率の " + u.r.toFixed(1) + "倍"; }
+  function uraLine(r) { var u = uOf(r); return u && u.ul ? "裏本線 " + waku(u.ul[0]) + " " + u.ul[1] + "コース" + esc(u.ul[2]) + '<span class="dim">(見込み' + (u.ul[3] * 100).toFixed(u.ul[3] < 0.1 ? 1 : 0) + "%・そのとき万舟" + Math.round(u.ul[4] * 100) + "%)</span>" : null; }
+  function exRank(r, w) {
+    var bi = beforeOf(r); if (!bi || !bi.ex) return null;
+    var xs = r.e.map(function (e) { var x = bi.ex[String(e.w)]; return x != null && x > 6 && x < 7.6 ? x : null; });
+    var me = xs[r.e.map(function (e) { return e.w; }).indexOf(w)];
+    if (me == null || xs.filter(function (x) { return x != null; }).length < 4) return null;
+    return 1 + xs.filter(function (x) { return x != null && x < me - 1e-9; }).length;
+  }
+  var URA_GROUPS = [
+    ["荒れの見込み", [
+      { id: "uHigh", label: "大荒れ注意(場のふだんの1.5倍以上)", test: function (r) { var u = uOf(r); return u && u.r >= 1.5 ? [ratioText(r)] : null; } },
+      { id: "uMid", label: "荒れ気味以上(1.15倍以上)", test: function (r) { var u = uOf(r); return u && u.r >= 1.15 ? [ratioText(r)] : null; } },
+      { id: "u25", label: "万舟の見込み25%以上", test: function (r) { var u = uOf(r); return u && u.pm >= 0.25 ? [ratioText(r)] : null; } },
+      { id: "uOut", label: "裏本線が4〜6コース", test: function (r) { var u = uOf(r); return u && u.ul && u.ul[1] >= 4 ? [u.ul[1] + "コースの" + esc(u.ul[2])] : null; } },
+      { id: "inWeak", label: "1コースの1着の見込み45%以下", test: function (r) { return r.lead && r.lead[4] <= 0.45 ? ["1コースの1着の見込み " + Math.round(r.lead[4] * 100) + "%" + (r.pre ? '<span class="dim">(展示前の見立て)</span>' : "")] : null; } },
+      { id: "in", label: "イン飛び警報", test: function (r) {
+        var lv = (r.al || {})["in"]; return lv ? ['<span class="al al-in' + lv + ' sm">イン飛び ' + AL_LV[lv] + "</span>"] : null; } },
+      { id: "kado", label: "カドまくり警報", test: function (r) {
+        var lv = (r.al || {}).kado; return lv ? ['<span class="al al-kado' + lv + ' sm">カドまくり ' + AL_LV[lv] + "</span>"] : null; } }
+    ]],
+    ["選手・メンバー", [
+      { id: "b1", label: "1号艇がB級", test: function (r) {
+        var e = r.e.filter(function (x) { return x.w === 1; })[0]; return e && /^B/.test(e.k || "") ? [waku(1) + " " + esc(e.n) + " " + esc(e.k)] : null; } },
+      { id: "f1", label: "1号艇がF持ち", test: function (r) {
+        var e = r.e.filter(function (x) { return x.w === 1; })[0]; return e && e.f > 0 ? [waku(1) + " " + esc(e.n) + ' <span class="fon">F' + e.f + "</span>(スタートを控えやすい)"] : null; } },
+      { id: "a1out", label: "4〜6号艇にA1級", test: function (r) {
+        var hit = r.e.filter(function (e) { return e.w >= 4 && e.k === "A1"; });
+        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + " A1"; }) : null; } },
+      { id: "flat", label: "A級が1人もいない(B級だけ)", test: function (r) { return r.e.every(function (e) { return /^B/.test(e.k || ""); }) ? ["6人ともB級"] : null; } },
+      { id: "motorOut", label: "4〜6号艇のモーターがS以上", test: function (r) {
+        var g = motorGrades(r), hit = r.e.map(function (e, i) { return [e, g[i]]; }).filter(function (x) { return x[0].w >= 4 && (x[1] === "S" || x[1] === "S+"); });
+        return hit.length ? hit.map(function (x) { return waku(x[0].w) + ' <b class="g ' + (x[1] === "S+" ? "gSp" : "gS") + '">' + x[1] + "</b>"; }) : null; } }
+    ]],
+    ["水面・直前情報", [
+      { id: "wind4", label: "風速4m以上", live: true, test: function (r) {
+        var bi = beforeOf(r), w = bi && bi.weather ? bi.weather.wind : null; return w != null && w >= 4 ? ["風速" + w + "m"] : null; } },
+      { id: "wave5", label: "波5cm以上", live: true, test: function (r) {
+        var bi = beforeOf(r), w = bi && bi.weather ? bi.weather.wave : null; return w != null && w >= 5 ? ["波" + w + "cm"] : null; } },
+      { id: "shinnyu", label: "前づけ・進入が動いた", live: true, test: function (r) {
+        var bi = beforeOf(r); if (!bi || !bi.course || bi.course.length !== 6) return null;
+        if (!bi.course.some(function (w, i) { return w !== i + 1; })) return null;
+        return ["展示の進入 " + bi.course.join("") + (bi.course.some(function (w, i) { return w > i + 1 && w >= 3; }) ? "(前づけ)" : "")]; } },
+      { id: "exOuter", label: "展示タイム1位が4〜6号艇", live: true, test: function (r) {
+        var b = exBest(r); return b && b.w >= 4 ? [waku(b.w) + " 展示1位 " + b.x.toFixed(2)] : null; } },
+      { id: "ex1slow", label: "1号艇の展示タイムが5位以下", live: true, test: function (r) {
+        var k = exRank(r, 1); return k != null && k >= 5 ? [waku(1) + " 展示タイム" + k + "位"] : null; } },
+      { id: "tilt", label: "チルトを跳ねた選手", live: true, test: function (r) {
+        var bi = beforeOf(r); if (!bi || !bi.tilt) return null;
+        var hit = r.e.filter(function (e) { var v = bi.tilt[String(e.w)]; return v != null && v >= 0.5; });
+        return hit.length ? hit.map(function (e) { return waku(e.w) + " " + esc(e.n) + " チルト+" + bi.tilt[String(e.w)].toFixed(1); }) : null; } }
+    ]]
+  ];
+  if (URA) GROUPS = URA_GROUPS;
   var CONDS = [];
   GROUPS.forEach(function (g) { CONDS = CONDS.concat(g[1]); });
 
@@ -203,7 +264,11 @@
       if (conds.length && (mode === "and" ? hits < conds.length : hits === 0)) return;
       rows.push({ r: r, why: why });
     });
-    rows.sort(function (a, b) { return toMin(a.r.dl) - toMin(b.r.dl) || (a.r.c < b.r.c ? -1 : a.r.c > b.r.c ? 1 : a.r.no - b.r.no); });
+    var bySort = URA && $("#sSort") && $("#sSort").value === "man";
+    rows.sort(function (a, b) {
+      if (bySort) { var d = ((uOf(b.r) || {}).r || 0) - ((uOf(a.r) || {}).r || 0); if (Math.abs(d) > 1e-9) return d; }
+      return toMin(a.r.dl) - toMin(b.r.dl) || (a.r.c < b.r.c ? -1 : a.r.c > b.r.c ? 1 : a.r.no - b.r.no);
+    });
     count.textContent = (conds.length || q ? "当てはまるレース " : "レース ") + rows.length + "件";
     jumpText = conds.length || q ? "当てはまるレース " + rows.length + "件を見る ↓" : "";
     paintJump();
@@ -216,10 +281,12 @@
     }
     list.innerHTML = rows.map(function (x) {
       var r = x.r, V = S.venues[r.c] || {}, res = resultOf(r), done = finished(r);
-      var tri = res && res.tri ? '<span class="small-tri">' + res.tri.map(waku).join("") + "</span>" : done ? '<span class="dim">結果待ち</span>' : "";
+      var tri = res && res.tri ? '<span class="small-tri">' + res.tri.map(waku).join("") + "</span>" + (URA && res.pay >= 10000 ? '<span class="uman-tag">万舟 ' + Number(res.pay).toLocaleString() + "円</span>" : "") : done ? '<span class="dim">結果待ち</span>' : "";
       return '<a class="scard' + (done ? " done" : "") + '" href="' + S.ymd + "/" + r.c + "/" + String(r.no).padStart(2, "0") + '.html">' +
         '<span class="shead"><b>' + esc(V.name || r.c) + " " + r.no + 'R</b><span class="sdl">' + esc(r.dl || "") + "</span>" +
         '<span class="snm">' + esc(r.nm || "") + "</span>" + tri + "</span>" +
+        (URA && uOf(r) ? '<span class="swhy"><span class="wy"><span class="wl">万舟の見込み</span><span class="wi">' + manText(r) + "</span>" +
+          (uraLine(r) ? '<span class="wi">' + uraLine(r) + "</span>" : "") + "</span></span>" : "") +
         (x.why.length ? '<span class="swhy">' + x.why.map(function (y) {
           return '<span class="wy">' + (y.label ? '<span class="wl">' + esc(y.label) + "</span>" : "") +
             y.w.map(function (t) { return '<span class="wi">' + t + "</span>"; }).join("") + "</span>";
@@ -250,7 +317,7 @@
     S = null; LIVE = {}; spanTried = false;
     $$("#sDates [data-ymd]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-ymd") === day); });
     $("#sList").innerHTML = '<p class="sub">読み込み中…</p>';
-    fetch(day + "/search.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    fetch((URA ? "../" : "") + day + "/search.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (seq !== loadSeq) return;
       if (!j) { $("#sList").innerHTML = '<p class="sub">この日のデータがまだありません。</p>'; return; }
       S = j;
@@ -267,7 +334,7 @@
   var jumpText = "", countSeen = true;
   function paintJump() { var b = $("#sJump"); if (b) { b.textContent = jumpText; b.hidden = !jumpText || countSeen; } }
   function save() {
-    try { localStorage.setItem("suimen.search", JSON.stringify({ c: Object.keys(ON).filter(function (k) { return ON[k]; }), m: ($("input[name=sMode]:checked") || {}).value })); } catch (e) {}
+    try { localStorage.setItem(URA ? "suimen.search.ura" : "suimen.search", JSON.stringify({ c: Object.keys(ON).filter(function (k) { return ON[k]; }), m: ($("input[name=sMode]:checked") || {}).value, s: $("#sSort") ? $("#sSort").value : undefined })); } catch (e) {}
   }
   function setup() {
     $("#sConds").innerHTML = GROUPS.map(function (g) {
@@ -277,9 +344,10 @@
       }).join("") + "</div></div>";
     }).join("");
     try {                                               // 前に選んだ条件を戻す(この端末だけ)
-      var saved = JSON.parse(localStorage.getItem("suimen.search") || "{}");
+      var saved = JSON.parse(localStorage.getItem(URA ? "suimen.search.ura" : "suimen.search") || "{}");
       (saved.c || []).forEach(function (id) { ON[id] = true; });
       if (saved.m) { var m = document.querySelector('input[name=sMode][value="' + saved.m + '"]'); if (m) m.checked = true; }
+      if (saved.s && $("#sSort") && /^(man|dl)$/.test(saved.s)) $("#sSort").value = saved.s;
     } catch (e) {}
     function paint() { $$("#sConds .tog").forEach(function (b) { b.setAttribute("aria-pressed", ON[b.getAttribute("data-id")] ? "true" : "false"); }); }
     paint();
@@ -287,7 +355,7 @@
       b.addEventListener("click", function () { var id = b.getAttribute("data-id"); ON[id] = !ON[id]; paint(); save(); render(); });
     });
     $("#sClear").addEventListener("click", function () { ON = {}; $("#sName").value = ""; paint(); save(); render(); });
-    $$("input[name=sMode], #sUpcoming, #sVenue").forEach(function (el) { el.addEventListener("change", function () { save(); render(); }); });
+    $$("input[name=sMode], #sUpcoming, #sVenue, #sSort").forEach(function (el) { el.addEventListener("change", function () { save(); render(); }); });
     $("#sName").addEventListener("input", render);
     $$("#sDates [data-ymd]").forEach(function (b) { b.addEventListener("click", function () { load(b.getAttribute("data-ymd")); }); });
     var on = $("#sDates .on") || $("#sDates [data-ymd]");
