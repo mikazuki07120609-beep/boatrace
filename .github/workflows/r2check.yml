@@ -17,6 +17,9 @@ on:
       site:
         description: "サイトのURL(開けるかの確認。例: https://example.com/)"
         default: ""
+      keys:
+        description: "データの公開URLから読んでみるキー(空白区切り。例: live/20261029/01.json odds/20261029/01/12.json)"
+        default: ""
 
 jobs:
   check:
@@ -83,6 +86,19 @@ jobs:
             st=$(printf '%s\n' "$h" | head -1 | tr -d '\r')
             echo "::notice title=データの公開URL ${i}回目::${st} / $(pick access-control-allow-origin) / $(pick cf-cache-status) / $(pick cache-control) / $(head -c 120 body.txt | tr -d '\r\n') $(head -c 160 err.txt | tr -d '\r\n')"
             sleep 2
+          done
+      - name: 取り込みが送ったデータを読んでみる
+        if: ${{ always() && github.event.inputs.data_base != '' && github.event.inputs.keys != '' }}
+        env:
+          BASE: ${{ github.event.inputs.data_base }}
+          KEYS: ${{ github.event.inputs.keys }}
+        run: |
+          for k in $KEYS; do
+            h=$(curl -sS -D - -o d.json "${BASE%/}/$k?t=$(date +%s)" 2>err.txt || true)
+            st=$(printf '%s\n' "$h" | head -1 | tr -d '\r')
+            lm=$(printf '%s\n' "$h" | grep -i '^last-modified:' | head -1 | tr -d '\r')
+            info=$(python3 -c "import json,sys; d=json.load(open('d.json')); print('updated', d.get('updated') or d.get('at') or d.get('t'), '/ keys', ','.join(sorted(d.keys()))[:120])" 2>/dev/null || head -c 100 d.json)
+            echo "::notice title=データ ${k}::${st} / ${lm} / ${info} $(head -c 120 err.txt | tr -d '\r\n')"
           done
       - name: DNS が今どこを指しているか
         if: ${{ always() && github.event.inputs.site != '' }}
