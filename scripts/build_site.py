@@ -16,7 +16,7 @@ from stats import VENUE_DAYS, category_resolver, collect, venue_table
 
 SITE_NAME = "水面ノート"
 # サイトのURL(canonical・OGP・サイトマップ)。独自ドメインにしたら、ここを書きかえる(試すときは環境変数 SITE_URL で上書き)
-BASE_URL = os.environ.get("SITE_URL") or "https://mikazuki07120609-beep.github.io/boatrace/"
+BASE_URL = os.environ.get("SITE_URL") or "https://suimennote.com/"
 PAST_DAYS = 0          # 今日より前に何日分のページを残すか(終わった日のページは出さない。今日と明日だけ)
 # ページが開いている間に読みに行く直前情報・結果・締切の変更・オッズの置き場所。
 # DATA_BASE(Cloudflare R2 の公開URL。例 https://data.example.com/)を先に読み、空のとき・読めないときは GitHub から読む

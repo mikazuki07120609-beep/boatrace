@@ -33,7 +33,7 @@ import r2
 
 LIVE = DATA / "live"
 URL = "https://www.boatrace.jp/owpc/pc/race/{page}?rno={no}&jcd={jcd}&hd={ymd}"
-UA = "suimen-note/1.0 (+https://mikazuki07120609-beep.github.io/boatrace/)"
+UA = "suimen-note/1.0 (+https://suimennote.com/)"
 WAIT_SEC = 2              # 読むたびにあける秒数
 CYCLE_SEC = 60            # 一回りの間隔(出たらすぐ取り込めるよう、1分ごと)
 BEFORE_FROM = 25          # 締切の何分前から直前情報を読みに行くか(展示はおおむね締切の10〜18分前に出る)

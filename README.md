@@ -2,7 +2,7 @@
 
 全国のボートレースの出走表を毎日自動で更新し、選手のコース別成績とレース場の特徴から「展開の見立て」と解説文を作るサイトです。買い目は出しません。
 
-公開ページ: https://mikazuki07120609-beep.github.io/boatrace/
+公開ページ: https://suimennote.com/(これまでの https://mikazuki07120609-beep.github.io/boatrace/ からは自動で転送されます)
 
 ## しくみ
 

@@ -25,7 +25,7 @@ from common import DATA, PROGRAM, VENUES, load_json, save_json, today_jst
 
 GRADES = DATA / "grades.json"
 FEM = DATA / "fem.json"
-UA = "suimen-note/1.0 (+https://mikazuki07120609-beep.github.io/boatrace/)"
+UA = "suimen-note/1.0 (+https://suimennote.com/)"
 INDEX_URL = "https://www.boatrace.jp/owpc/pc/race/index?hd={ymd}"
 FAN_URL = "https://www.boatrace.jp/static_extra/pc_static/download/data/kibetsu/{name}.lzh"
 WAIT_SEC = 2.5
