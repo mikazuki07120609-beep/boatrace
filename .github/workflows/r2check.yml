@@ -109,11 +109,14 @@ jobs:
           PAGE: ${{ github.event.inputs.page }}
         run: |
           mkdir -p /tmp/pw && cd /tmp/pw
-          npm init -y >/dev/null && npm i -s playwright@1.56.0 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1
+          # ブラウザは、実行の場所に入っている Google Chrome を使う(Playwright のブラウザは入れない)
+          if ! npm i --no-save --silent playwright@1.56.0 >npm.log 2>&1; then
+            echo "::warning title=ブラウザの準備::$(tail -c 300 npm.log | tr '\r\n' '  ')"; exit 1
+          fi
           cat > look.js <<'JS'
           const { chromium } = require("playwright");
           (async () => {
-            const b = await chromium.launch(); const pg = await b.newPage();
+            const b = await chromium.launch({ channel: "chrome" }); const pg = await b.newPage();
             const seen = []; const errs = [];
             pg.on("response", (r) => { const u = r.url(); if (/data\.suimennote\.com|raw\.githubusercontent\.com/.test(u)) seen.push(r.status() + " " + u.replace(/\?t=\d+/, "").replace("https://", "")); });
             pg.on("requestfailed", (r) => { const u = r.url(); if (/data\.suimennote\.com|raw\.githubusercontent\.com/.test(u)) seen.push("失敗 " + (r.failure() || {}).errorText + " " + u.replace(/\?t=\d+/, "").replace("https://", "")); });
@@ -128,7 +131,7 @@ jobs:
             await b.close();
           })();
           JS
-          node look.js
+          node look.js 2>err.txt || echo "::warning title=ブラウザの実行::$(tail -c 400 err.txt | tr '\r\n' '  ')"
       - name: DNS が今どこを指しているか
         if: ${{ always() && github.event.inputs.site != '' }}
         env:
