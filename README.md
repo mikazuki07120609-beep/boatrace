@@ -31,7 +31,7 @@
 
 - R2 のキー: `live/YYYYMMDD/{場コード}.json`・`live/YYYYMMDD/dl.json`・`odds/YYYYMMDD/{場コード}/{レース番号2けた}.json`(バケット名 `suimen-data`)
 - リポジトリの秘密の値(Settings → Secrets and variables → Actions): `R2_ACCOUNT_ID`・`R2_ACCESS_KEY_ID`・`R2_SECRET_ACCESS_KEY`。ないときは GitHub にだけ入れます。
-- ページが読む公開のURLは `scripts/build_site.py` の `DATA_BASE`(空なら GitHub だけを読む)。サイトのURLは同じファイルの `BASE_URL`。
+- ページが読む公開のURLは `scripts/build_site.py` の `DATA_BASE`(いまは https://data.suimennote.com/。空なら GitHub だけを読む)。サイトのURLは同じファイルの `BASE_URL`。
 - 設定がすんだら、Actions の「Cloudflare の置き場所の確認」(`r2check.yml`)を手で動かして確かめます。
 
 ## 手元で動かす
