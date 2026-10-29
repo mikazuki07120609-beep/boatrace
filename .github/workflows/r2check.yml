@@ -1,17 +1,21 @@
 name: Cloudflare の置き場所の確認
 
-# Cloudflare R2 の設定がすんだら、手で動かして確かめる(ふだんは動かない)。
+# Cloudflare R2・独自ドメインの設定がすんだら、手で動かして確かめる(ふだんは動かない)。
 #  1. 秘密の値で、確かめ用の小さなファイル(check.json)を R2 に送れるか
 #  2. data_base を入れたときは、公開のURLから読めるか(サイトから読むための CORS と、Cloudflare の中継の使い回し)
+#  3. site を入れたときは、サイトのURLが開けるか(HTTPS・中身)と、これまでのURLから転送されるか
 # 結果は実行の注記(annotation)にも残す(実行の記録を読めないときも、API で確かめられる)。
 on:
   workflow_dispatch:
     inputs:
       data_base:
-        description: "公開のURL(例: https://data.example.com/)。空なら送るところまで"
+        description: "データの公開URL(例: https://data.example.com/)。空なら送るところまで"
         default: ""
       origin:
-        description: "サイトのURL(CORS の確認用。例: https://example.com)"
+        description: "サイトのオリジン(CORS の確認用。例: https://example.com)"
+        default: ""
+      site:
+        description: "サイトのURL(開けるかの確認。例: https://example.com/)"
         default: ""
 
 jobs:
@@ -31,7 +35,7 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: python3 scripts/r2.py --check
       - name: 公開のURLから読めるか(CORS と中継の使い回し)
-        if: ${{ github.event.inputs.data_base != '' }}
+        if: ${{ always() && github.event.inputs.data_base != '' }}
         env:
           BASE: ${{ github.event.inputs.data_base }}
           ORIGIN: ${{ github.event.inputs.origin }}
@@ -40,9 +44,21 @@ jobs:
           args=()
           if [ -n "$ORIGIN" ]; then args=(-H "Origin: $ORIGIN"); fi
           for i in 1 2; do
-            h=$(curl -sS -D - -o body.txt "${args[@]}" "$u" || true)
+            h=$(curl -sS -D - -o body.txt "${args[@]}" "$u" 2>err.txt || true)
             pick() { printf '%s\n' "$h" | grep -i "^$1:" | head -1 | tr -d '\r'; }
             st=$(printf '%s\n' "$h" | head -1 | tr -d '\r')
-            echo "::notice title=公開のURL ${i}回目::${st} / $(pick access-control-allow-origin) / $(pick cf-cache-status) / $(pick cache-control) / $(head -c 120 body.txt | tr -d '\r\n')"
+            echo "::notice title=データの公開URL ${i}回目::${st} / $(pick access-control-allow-origin) / $(pick cf-cache-status) / $(pick cache-control) / $(head -c 120 body.txt | tr -d '\r\n') $(head -c 160 err.txt | tr -d '\r\n')"
             sleep 2
+          done
+      - name: サイトのURLが開けるか
+        if: ${{ always() && github.event.inputs.site != '' }}
+        env:
+          SITE: ${{ github.event.inputs.site }}
+        run: |
+          for u in "$SITE" "https://www.${SITE#https://}" "https://mikazuki07120609-beep.github.io/boatrace/"; do
+            h=$(curl -sS -D - -o page.html "$u" 2>err.txt || true)
+            st=$(printf '%s\n' "$h" | head -1 | tr -d '\r')
+            loc=$(printf '%s\n' "$h" | grep -i '^location:' | head -1 | tr -d '\r')
+            t=$(grep -o '<title>[^<]*' page.html 2>/dev/null | head -1 | sed 's/<title>//')
+            echo "::notice title=サイト ${u}::${st} / ${loc} / ${t} $(head -c 160 err.txt | tr -d '\r\n')"
           done
