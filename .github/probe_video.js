@@ -10,7 +10,14 @@ const fs = require("fs");
   const b = await chromium.launch({ channel: "chrome", args: ["--autoplay-policy=no-user-gesture-required"] });
   const pg = await b.newPage({ viewport: { width: 960, height: 540 } });
   pg.on("console", (m) => log.push("console: " + m.text().slice(0, 300)));
-  pg.on("response", (r) => { const u = r.url(); if (/m3u8|\.ts\b|\.m4s|\.mp4|playback\.api/.test(u)) log.push("response: " + r.status() + " " + u.slice(0, 200)); });
+  pg.on("response", async (r) => {
+    const u = r.url();
+    if (!/m3u8|\.ts\b|\.m4s|\.mp4|playback\.api/.test(u)) return;
+    let body = "";
+    if (r.status() >= 400) { try { body = (await r.text()).slice(0, 400); } catch (e) {} }
+    log.push("response: " + r.status() + " " + u.slice(0, 200) + (body ? " body=" + body : ""));
+  });
+  pg.on("request", (q) => { if (/playback\.api/.test(q.url())) log.push("request headers: " + JSON.stringify(q.headers()).slice(0, 400)); });
   await pg.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
   // 公式のリプレイのページ(プレーヤーを中に埋め込んだページ)のときは、中のプレーヤーの画面を見る
   await pg.waitForTimeout(6000);
