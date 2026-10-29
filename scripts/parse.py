@@ -13,6 +13,28 @@ RE_K_RACE = re.compile(
     r"^\s*(\d{1,2})R\s+(.+?)\s+H(\d{3,4})m\s+(\S+)\s+風\s+(\S+)\s+(\d+)m\s+波\s+(\d+)cm")
 RE_K_ENTRY = re.compile(r"^\s{2}(\S{1,2})\s+([1-6])\s(\d{4})\s(.{8})\s*(\d+)\s+(\d+)\s+(.*)$")
 RE_DAY = re.compile(r"第\s*(\d+)日")
+# 払戻金(各レースの着順の下): 「単勝 1 130」「3連単 1-2-6 740 人気 2」。拡連複・同着は、名前のない続きの行が来る
+RE_PAY = re.compile(r"^\s{4,}(単勝|複勝|2連単|2連複|拡連複|3連単|3連複)\s+(.*)$")
+RE_PAY_CONT = re.compile(r"^\s{10,}(\d-\d(?:-\d)?)\s+(\d+)\s+人気\s+(\d+)")
+PAY_KEY = {"単勝": "tan", "複勝": "fuku", "2連単": "2t", "2連複": "2f", "拡連複": "kf", "3連単": "3t", "3連複": "3f"}
+
+
+def _pay_items(label: str, rest: str) -> list:
+    """払戻金の行の中身。単勝・複勝は [[枠, 円], …]、ほかは [[組み合わせ, 円, 人気], …]。不成立・特払いなどは空。"""
+    toks = rest.split()
+    if not toks:
+        return []
+    if label in ("単勝", "複勝"):
+        out, i = [], 0
+        while i + 1 < len(toks):
+            if re.fullmatch(r"[1-6]", toks[i]) and toks[i + 1].isdigit():
+                out.append([int(toks[i]), int(toks[i + 1])])
+                i += 2
+            else:
+                i += 1
+        return out
+    m = re.match(r"(\d-\d(?:-\d)?)\s+(\d+)(?:\s+人気\s+(\d+))?", rest.strip())
+    return [[m.group(1), int(m.group(2)), int(m.group(3)) if m.group(3) else None]] if m else []
 
 
 def _num(s: str):
@@ -96,16 +118,30 @@ def parse_results(text: str) -> dict:
     venues = {}
     for code, lines in _blocks(text, "K"):
         title, day = _series(lines, "競走成績")
-        races, cur = [], None
+        races, cur, pay_label = [], None, None
         for line in lines:
             h = RE_K_RACE.match(line)
             if h:
                 cur = {"no": int(h.group(1)), "name": h.group(2).replace("　", " ").strip(),
                        "distance": int(h.group(3)), "weather": h.group(4).replace("　", "").strip(),
                        "wind_dir": h.group(5).replace("　", "").strip(), "wind": int(h.group(6)),
-                       "wave": int(h.group(7)), "kimarite": None, "entries": []}
+                       "wave": int(h.group(7)), "kimarite": None, "entries": [], "pay": {}}
                 races.append(cur)
+                pay_label = None
                 continue
+            if cur is not None:
+                zl = zen2han(line)
+                pm = RE_PAY.match(zl)
+                if pm:
+                    pay_label = PAY_KEY[pm.group(1)]
+                    items = _pay_items(pm.group(1), pm.group(2))
+                    if items:
+                        cur["pay"].setdefault(pay_label, []).extend(items)
+                    continue
+                pc = RE_PAY_CONT.match(zl)
+                if pc and pay_label:
+                    cur["pay"].setdefault(pay_label, []).append([pc.group(1), int(pc.group(2)), int(pc.group(3))])
+                    continue
             if cur is not None and "ﾚｰｽﾀｲﾑ" in line:
                 k = line.split("ﾚｰｽﾀｲﾑ", 1)[1].replace("　", "").strip()
                 cur["kimarite"] = KIM_MAP.get(k, k or None)
