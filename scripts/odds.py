@@ -262,8 +262,14 @@ def compact_final(rec: dict) -> dict:
     """締切時オッズを、決まった並びの数字の並びにして小さくする(並びは ORDER_3T など)。"""
     def lst(d, order):
         return [d.get(k) for k in order] if d else None
-    return {"t": rec.get("at"), "3t": lst(rec.get("3t"), ORDER_3T), "2t": lst(rec.get("2t"), ORDER_2T), "2f": lst(rec.get("2f"), ORDER_2F),
-            "tan": [(rec.get("tan") or {}).get(str(i)) for i in range(1, 7)], "fuku": [(rec.get("fuku") or {}).get(str(i)) for i in range(1, 7)]}
+    out = {"t": rec.get("at"), "3t": lst(rec.get("3t"), ORDER_3T), "2t": lst(rec.get("2t"), ORDER_2T), "2f": lst(rec.get("2f"), ORDER_2F),
+           "tan": [(rec.get("tan") or {}).get(str(i)) for i in range(1, 7)], "fuku": [(rec.get("fuku") or {}).get(str(i)) for i in range(1, 7)]}
+    f = rec.get("first") or {}
+    if f.get("tan"):                       # 締切の約15分前の単勝・3連単(締切前の売れ方の変化の答え合わせに使う)
+        out["t0"] = f.get("at")
+        out["tan0"] = [f["tan"].get(str(i)) for i in range(1, 7)]
+        out["3t0"] = lst(f.get("3t"), ORDER_3T)
+    return out
 
 
 def race_jobs(prog: dict, base: Path, day: dt.date, now: dt.datetime, state: dict) -> list:
@@ -332,6 +338,8 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
         old = load_json(path, None)
         if old and any(old.get(k) for k in ("3t", "2t", "tan")):
             rec["prev"] = {k: old.get(k) for k in ("t", "at", "3t", "2t", "2f", "tan", "fuku") if old.get(k) is not None}
+            # 締切前の売れ方の変化を見るため、このレースで最初に取り込んだオッズ(締切の約15分前)も残す
+            rec["first"] = old.get("first") or {k: old.get(k) for k in ("t", "at", "tan", "3t") if old.get(k) is not None}
         rec["dl"] = (state.get("dl", {}).get(code) or {}).get(str(no)) or next((r.get("deadline") for r in prog["venues"][code]["races"] if r["no"] == no), None)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(rec, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

@@ -123,7 +123,10 @@
     if (!U.pop) return '<p class="wait">締切の15分前から、オッズ(人気)と見立ての1着の見込みを並べ、人気しすぎの艇と、人気より見立てが上の艇を探します。</p>';
     var rows = U.pop.rows.slice().sort(function (a, b) { return a.rank - b.rank; }).map(function (r) {
       var mark = r.ratio >= 1.3 && r.pw >= 0.05 && r.b.course !== U.oc ? '<span class="utag t攻め">見立てが上</span>' : r.pm - r.pw >= 0.08 ? '<span class="utag t弱">人気しすぎ</span>' : "";
+      var mvc = r.mv == null ? '<span class="dim">—</span>' : (r.mv <= 0.8 ? '<span class="umv dn">' + r.f0.toFixed(1) + "→<b>" + r.odds.toFixed(1) + "</b></span>" :
+        r.mv >= 1.3 ? '<span class="umv up">' + r.f0.toFixed(1) + "→" + r.odds.toFixed(1) + "</span>" : '<span class="dim">' + r.f0.toFixed(1) + "→" + r.odds.toFixed(1) + "</span>");
       return "<tr><td class=\"num\">" + r.rank + "</td><td>" + wk(r.b.waku) + " " + esc(surname(r.b.name)) + "</td><td class=\"num\">" + r.odds.toFixed(1) + "</td>" +
+        '<td class="num">' + mvc + "</td>" +
         '<td class="num">' + pc(r.pm) + '</td><td class="num"><b>' + pc(r.pw) + "</b></td><td>" + mark + "</td></tr>";
     }).join("");
     var c100 = 0, p100 = 0, O = ctx.odds && ctx.odds["3t"];
@@ -134,10 +137,11 @@
         if (od >= 100) { c100++; p100 += U.T[(a - 1) * 36 + (b - 1) * 6 + (c - 1)]; }
       }
     }
-    return '<div class="scroll"><table class="gridt"><thead><tr><th class="num">人気</th><th>艇</th><th class="num">単勝</th><th class="num">人気からの<br>見込み</th>' +
+    return '<div class="scroll"><table class="gridt"><thead><tr><th class="num">人気</th><th>艇</th><th class="num">単勝</th><th class="num">締切前の<br>動き</th><th class="num">人気からの<br>見込み</th>' +
       '<th class="num">見立ての<br>1着</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
       (O ? '<p class="sub">3連単で100倍以上の組み合わせは120通り中 <b>' + c100 + "通り</b>。見立てでは、そのどれかで決まる見込みが <b>" + pc(p100) + "</b>(これが万舟の見込みのもとです)。</p>" : "") +
-      '<p class="note">人気からの見込みは、単勝オッズの逆数を6艇で合計1にしたもの。見立てが人気の1.3倍以上の艇を「見立てが上」、人気からの見込みが見立てより8ポイント以上高い艇を「人気しすぎ」にしています。</p>';
+      '<p class="note">人気からの見込みは、単勝オッズの逆数を6艇で合計1にしたもの。見立てが人気の1.3倍以上の艇を「見立てが上」、人気からの見込みが見立てより8ポイント以上高い艇を「人気しすぎ」にしています。' +
+      "締切前の動きは、このレースで最初に取り込んだ単勝オッズ(締切の約15分前)から今までの変化で、赤は2割以上下がった(売れた)艇です。</p>";
   }
   // この場の荒れ方
   function venueData(U, ctx) {

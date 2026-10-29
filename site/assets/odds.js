@@ -57,14 +57,41 @@
     return "このレースのオッズは取り込めていません。";
   }
 
+  // 締切前の売れ方: このレースで最初に取り込んだオッズ(締切の約15分前)から、大きく下がった(売れた)艇・組と、上がった艇
+  function firstMoves() {
+    var F = O && O.first;
+    if (!F || !F.tan || !O.tan) return "";
+    var t0 = String(F.at || F.t || "").slice(0, 5), dn = [], up = [], t3 = [];
+    [1, 2, 3, 4, 5, 6].forEach(function (w) {
+      var a = F.tan[w], b = O.tan[w];
+      if (!(a > 0) || !(b > 0) || a < 1.5) return;
+      var r = b / a;
+      if (r <= 0.8) dn.push({ w: w, a: a, b: b, r: r });
+      else if (r >= 1.3) up.push({ w: w, a: a, b: b, r: r });
+    });
+    dn.sort(function (x, y) { return x.r - y.r; });
+    up.sort(function (x, y) { return y.r - x.r; });
+    if (F["3t"] && O["3t"]) Object.keys(O["3t"]).forEach(function (k) {
+      var a = F["3t"][k], b = O["3t"][k];
+      if (a > 0 && b > 0 && b <= 300 && b / a <= 0.7) t3.push({ k: k, a: a, b: b, r: b / a });
+    });
+    t3.sort(function (x, y) { return x.r - y.r; });
+    var items = dn.map(function (x) { return '<span class="odmv dn">' + wk(x.w) + "単勝 " + fmt(x.a) + "→" + fmt(x.b) + "倍<b>売れた</b></span>"; })
+      .concat(t3.slice(0, 3).map(function (x) { var c = x.k.split("-"); return '<span class="odmv dn">' + wk(c[0]) + wk(c[1]) + wk(c[2]) + " " + fmt(x.a) + "→" + fmt(x.b) + "倍</span>"; }))
+      .concat(up.slice(0, 2).map(function (x) { return '<span class="odmv up">' + wk(x.w) + "単勝 " + fmt(x.a) + "→" + fmt(x.b) + "倍<b>売れなくなった</b></span>"; }));
+    return '<div class="odmove"><span class="odmk">締切前の動き<small>' + esc(t0) + "から</small></span>" +
+      (items.length ? items.join("") : '<span class="dim">大きな動きはありません</span>') + "</div>";
+  }
+
   // ---- 表示
   function render() {
     stamp();
     if (!O) { box.innerHTML = '<p class="wait">' + esc(waitText()) + "</p>"; return; }
     var P = O.prev || {};
-    if (kind === "3t") box.innerHTML = view3t(O["3t"] || {}, P["3t"] || {});
-    else if (kind === "2t") box.innerHTML = view2(O["2t"] || {}, P["2t"] || {}, O["2f"] || {}, P["2f"] || {});
-    else box.innerHTML = viewTf(O.tan || {}, P.tan || {}, O.fuku || {});
+    var mv = firstMoves();
+    if (kind === "3t") box.innerHTML = mv + view3t(O["3t"] || {}, P["3t"] || {});
+    else if (kind === "2t") box.innerHTML = mv + view2(O["2t"] || {}, P["2t"] || {}, O["2f"] || {}, P["2f"] || {});
+    else box.innerHTML = mv + viewTf(O.tan || {}, P.tan || {}, O.fuku || {});
   }
   function view3t(T, PT) {
     var keys = Object.keys(T).filter(function (k) { return T[k] != null && T[k] > 0; }).sort(function (a, b) { return T[a] - T[b]; });

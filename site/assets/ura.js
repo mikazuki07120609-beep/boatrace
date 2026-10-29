@@ -110,7 +110,8 @@
       if (s > 0 && inv.filter(function (v) { return v > 0; }).length >= 5) {
         var rows = B.map(function (b, j) {
           var pm = inv[j] / s, pw = pc[b.course - 1];
-          return { b: b, odds: O.tan[String(b.waku)], pm: pm, pw: pw, ratio: pm > 0 ? pw / pm : null };
+          var f0 = O.first && O.first.tan ? O.first.tan[String(b.waku)] : null, od = O.tan[String(b.waku)];
+          return { b: b, odds: od, pm: pm, pw: pw, ratio: pm > 0 ? pw / pm : null, f0: f0 > 0 ? f0 : null, mv: f0 > 0 && od > 0 ? od / f0 : null };
         });
         var order = rows.slice().sort(function (a, b) { return b.pm - a.pm; });
         order.forEach(function (r, j) { r.rank = j + 1; });
@@ -193,6 +194,10 @@
     if (U.pop) {
       U.pop.over.slice(0, 1).forEach(function (r) {
         out.push({ w: 4.5, t: r.b.waku + "号艇は単勝" + r.odds.toFixed(1) + "倍(人気からの見込み " + pc(r.pm) + ")で、見立て(" + pc(r.pw) + ")より売れています。崩れたときの配当がふくらみます。" });
+      });
+      // 締切前に単勝が大きく下がった(売れた)艇(表の本線の艇を除く)
+      U.pop.rows.filter(function (r) { return r.mv != null && r.mv <= 0.7 && r.f0 >= 3 && r.b.course !== U.oc; }).sort(function (a, b) { return a.mv - b.mv; }).slice(0, 1).forEach(function (r) {
+        out.push({ w: 4.2, t: r.b.waku + "号艇は締切前に単勝が大きく売れています(約15分前 " + r.f0.toFixed(1) + "倍→" + r.odds.toFixed(1) + "倍)。" });
       });
       U.pop.value.slice(0, 2).forEach(function (r) {
         out.push({ w: 4.4, t: r.b.waku + "号艇は" + r.rank + "番人気(単勝" + r.odds.toFixed(1) + "倍・人気からの見込み " + pc(r.pm) + ")ですが、見立てでは1着 " + pc(r.pw) + "。人気より見立てが上です。" });

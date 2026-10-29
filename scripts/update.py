@@ -179,6 +179,12 @@ def main() -> int:
             log.append(f"グレード・女子レーサーの取り込みをとばしました: {ex}")
 
     print("\n".join(log))
+    if not a.offline:
+        try:                                  # 潮位表(潮の満ち引きの差がある場の、今年の分。なければ気象庁から)
+            import tide
+            tide.ensure(today)
+        except Exception as ex:  # noqa: BLE001
+            print("潮位表の取り込みをとばしました:", ex)
     # 見立ての学習と答え合わせ(numpy・scipy が必要。ない環境では前回の学習結果をそのまま使う)
     try:
         import fit

@@ -708,3 +708,14 @@ small.th2{display:block;font-size:10.5px;color:var(--muted);font-weight:700;lett
 .ubtag{font-style:normal;font-size:10.5px;font-weight:800;padding:0 6px;border-radius:999px;background:#ff5470;color:#0d0b12;margin-right:4px;align-self:flex-start}
 .upk{display:block;font-size:10.5px;color:var(--gold);text-align:right}
 .ura .pat .p{text-align:right;line-height:1.25}
+/* 締切前の売れ方(オッズのタブ・裏の人気と見立てのずれ) */
+.odmove{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px;font-size:13px}
+.odmk{font-weight:800;color:var(--muted);margin-right:2px}
+.odmk small{font-weight:700;margin-left:4px}
+.odmv{display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:999px;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+.odmv .waku{width:18px;height:18px;font-size:11px}
+.odmv b{font-family:var(--body);font-size:11px;margin-left:4px}
+.odmv.dn{background:color-mix(in srgb,var(--rank1) 14%,var(--surface));color:var(--rank1)}
+.odmv.up{background:color-mix(in srgb,var(--rank2) 14%,var(--surface));color:var(--rank2)}
+.umv{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+.umv.dn{color:var(--rank1)}.umv.up{color:var(--rank2)}
