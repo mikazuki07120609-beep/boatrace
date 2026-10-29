@@ -1,0 +1,60 @@
+name: 払戻金の取り込み(過去分)
+
+# 公式の競走成績ファイル(K)から、レースごとの払戻金(3連単・3連複・2連単・2連複・単勝)と人気を読み取り、
+# data/pays/YYYYMMDD.json に置く(裏水面ノートの「荒れ」の学習と答え合わせに使う)。
+#  mode=sample   : 1日分の成績ファイルのテキストを probe ブランチに置く(読み取り方を確かめるため)
+#  mode=backfill : まだ data/pays にない日を、新しい日から順に days 日分まで取り込む(1ファイルごとに間をあける)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "sample か backfill"
+        default: "backfill"
+      date:
+        description: "sample のときの日付(YYYYMMDD)"
+        default: ""
+      days:
+        description: "backfill で1回に取り込む日数"
+        default: "200"
+
+concurrency:
+  group: pays
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  pays:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 解凍ツールを入れる
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lhasa
+      - name: 1日分のテキストを probe ブランチに置く
+        if: ${{ github.event.inputs.mode == 'sample' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          D: ${{ github.event.inputs.date }}
+        run: |
+          python3 scripts/fetch.py --kind K --date "$D" --out probe_out
+          cd probe_out
+          git init -q && git checkout -q -b probe
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "成績ファイルの見本 $D" || true
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" probe
+      - name: 過去の払戻金を取り込んで送る
+        if: ${{ github.event.inputs.mode == 'backfill' }}
+        env:
+          DAYS: ${{ github.event.inputs.days }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/pays.py --backfill "$DAYS" --commit-every 25
