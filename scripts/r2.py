@@ -83,6 +83,25 @@ def _host() -> str:
     return f"{os.environ['R2_ACCOUNT_ID'].strip()}.r2.cloudflarestorage.com"
 
 
+def _secret() -> str:
+    """Secret Access Key(64けたの16進)。Cloudflare の「Token value」が入っていたときは、
+    その SHA-256 が Secret Access Key になる(Cloudflare の説明書どおり)ので、そこから作る。"""
+    s = os.environ["R2_SECRET_ACCESS_KEY"].strip()
+    if len(s) == 64 and all(c in "0123456789abcdef" for c in s):
+        return s
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def shapes() -> str:
+    """秘密の値の形(文字数と、16進かどうか)。値そのものは出さない。"""
+    out = []
+    for k in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
+        v = (os.environ.get(k) or "").strip()
+        hexy = bool(v) and all(c in "0123456789abcdefABCDEF" for c in v)
+        out.append(f"{k} {len(v)}文字・{'16進' if hexy else '16進以外もあり'}")
+    return " / ".join(out)
+
+
 def _put(conn: http.client.HTTPSConnection, key: str, body: bytes) -> tuple[bool, str]:
     host = _host()
     path = "/" + urllib.parse.quote(BUCKET, safe="") + "/" + urllib.parse.quote(key, safe="/-_.~")
@@ -90,8 +109,7 @@ def _put(conn: http.client.HTTPSConnection, key: str, body: bytes) -> tuple[bool
     ph = hashlib.sha256(body).hexdigest()
     headers = {"host": host, "x-amz-date": when.strftime("%Y%m%dT%H%M%SZ"), "x-amz-content-sha256": ph,
                "content-type": CONTENT_TYPE, "cache-control": CACHE_CONTROL}
-    headers["authorization"] = sign("PUT", host, path, headers, ph, os.environ["R2_ACCESS_KEY_ID"].strip(),
-                                    os.environ["R2_SECRET_ACCESS_KEY"].strip(), when)
+    headers["authorization"] = sign("PUT", host, path, headers, ph, os.environ["R2_ACCESS_KEY_ID"].strip(), _secret(), when)
     headers["content-length"] = str(len(body))
     conn.request("PUT", path, body=body, headers=headers)
     r = conn.getresponse()
@@ -184,6 +202,7 @@ def main() -> int:
         if not enabled():
             print("R2 の秘密の値がありません(R2_ACCOUNT_ID・R2_ACCESS_KEY_ID・R2_SECRET_ACCESS_KEY)")
             return 1
+        print(("::notice title=Cloudflare R2 秘密の値の形::" if os.environ.get("GITHUB_ACTIONS") == "true" else "秘密の値の形: ") + shapes(), flush=True)
         body = json.dumps({"ok": True, "at": dt.datetime.now(dt.timezone.utc).isoformat()}).encode("utf-8")
         done = put_many([("check.json", body)])
         print("送れました: check.json" if done else "送れませんでした")
