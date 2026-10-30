@@ -127,6 +127,17 @@ jobs:
             const helper = await pg.evaluate(() => typeof window.suimenGet);
             const ura = await pg.evaluate(() => { const h = document.getElementById("uraHero"); return h ? h.innerText.replace(/\s+/g, " ").slice(0, 160) : ""; });
             if (ura) console.log("::notice title=裏の見立て::" + ura);
+            const st = await pg.$('.tabs [data-tab="start"]');
+            if (st) {
+              await st.click(); await pg.waitForTimeout(1500);
+              const s = await pg.evaluate(() => {
+                const q = (x) => document.querySelector(x), n = (x) => document.querySelectorAll(x).length;
+                const run = [...document.querySelectorAll("#runLead li")].map((li) => li.textContent).join(" ");
+                return ((q("#stState") || {}).textContent || "") + " / 隊形 " + n("#slitBox .slr:not(.slax)") + "艇 / 根拠 " + n("#edgeBox .edb") + "艇 / 形 " +
+                  n("#runBox tbody tr") + "つ / " + run.slice(0, 200);
+              });
+              console.log("::notice title=スタートのタブ::" + s);
+            }
             console.log("::notice title=ブラウザ " + process.env.PAGE + "::締切表示 " + dl + " / 読み込み係 " + helper);
             console.log("::notice title=ブラウザが読んだデータ::" + (seen.join(" | ") || "なし"));
             if (errs.length) console.log("::warning title=ブラウザのエラー::" + errs.join(" | ").slice(0, 600));
