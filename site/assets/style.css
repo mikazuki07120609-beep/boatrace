@@ -8,7 +8,7 @@
   --body:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
   --mono:"M PLUS Rounded 1c","Hiragino Sans",ui-monospace,monospace;
   --rank1:#e53935; --rank2:#1e6fe0; --pink:#ff4f9a;
-  --tc-card:#1e88e5; --tc-before:#fb8c00; --tc-odds:#e53977; --tc-t1:#00a676; --tc-navi:#8e44d9; --tc-data:#0097a7; --tc-tac:#3f51b5;
+  --tc-card:#1e88e5; --tc-before:#fb8c00; --tc-odds:#e53977; --tc-t1:#00a676; --tc-navi:#8e44d9; --tc-data:#0097a7; --tc-tac:#3f51b5; --tc-start:#6a9f1e;
   --b1:#ffffff; --b1t:#14212b; --b2:#1b1b1b; --b2t:#ffffff; --b3:#d7282f; --b3t:#ffffff;
   --b4:#1d5fbf; --b4t:#ffffff; --b5:#f2cf1d; --b5t:#14212b; --b6:#1f9a4b; --b6t:#ffffff;
   --rec-main:#1478b8; --rec-base:#9aa7b2;
@@ -199,15 +199,16 @@ footer .notes{margin:6px 0 0;padding-left:1.1em;display:flex;flex-direction:colu
 .cand{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono)}
 .cand .waku{width:22px;height:22px;font-size:12px}
 /* タブ(出走表・直前情報・1S1M展開・データ) */
-.tabs{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:5px;border-radius:16px;background:var(--surface);position:sticky;top:0;z-index:5;
+.tabs{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:5px;border-radius:16px;background:var(--surface);position:sticky;top:0;z-index:5;
   box-shadow:0 2px 0 #cfe3f2,0 6px 14px rgba(30,60,90,.10)}
 .tabs button{--tc:var(--accent);border:0;border-radius:11px;background:color-mix(in srgb,var(--tc) 11%,var(--surface));padding:10px 2px;font-weight:800;font-size:14px;
   color:color-mix(in srgb,var(--tc) 85%,#000);white-space:nowrap;line-height:1.35}
 .tabs button.on{background:var(--tc);color:#fff;box-shadow:0 3px 0 color-mix(in srgb,var(--tc) 70%,#000)}
 .tabs [data-tab=card]{--tc:var(--tc-card)}.tabs [data-tab=before]{--tc:var(--tc-before)}.tabs [data-tab=odds]{--tc:var(--tc-odds)}
 .tabs [data-tab=t1]{--tc:var(--tc-t1)}.tabs [data-tab=navi]{--tc:var(--tc-navi)}.tabs [data-tab=data]{--tc:var(--tc-data)}.tabs [data-tab=tac]{--tc:var(--tc-tac)}
+.tabs [data-tab=start]{--tc:var(--tc-start)}
 .tabs br.tb{display:none}
-#pane-tac{--pc:var(--tc-tac)}
+#pane-tac{--pc:var(--tc-tac)}#pane-start{--pc:var(--tc-start)}
 #pane-card{--pc:var(--tc-card)}#pane-before{--pc:var(--tc-before)}#pane-odds{--pc:var(--tc-odds)}#pane-t1{--pc:var(--tc-t1)}#pane-navi{--pc:var(--tc-navi)}#pane-data{--pc:var(--tc-data)}
 .pane{display:flex;flex-direction:column;gap:18px}
 ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -248,11 +249,13 @@ table.vt td.top .days em{border-color:rgba(255,255,255,.6)}
 .ex1{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:13px;margin:10px 0 6px}
 .ex1 span{font-family:var(--mono)}
 table.ex1t thead th{font-family:var(--mono);font-size:13px}
+/* タブが8つなので、狭い画面では4つずつ2段にする */
+@media (max-width:640px){
+  .tabs{grid-template-columns:repeat(4,1fr);gap:3px;padding:4px}
+  .tabs button{font-size:13px;padding:7px 0;letter-spacing:-.03em;line-height:1.2}
+}
 @media (max-width:480px){
   section{padding:12px 8px}
-  .tabs{gap:3px;padding:4px}
-  .tabs button{font-size:12px;padding:6px 0;letter-spacing:-.05em;line-height:1.2;white-space:normal}
-  .tabs br.tb{display:inline}
 }
 table.vt thead th.w1{background:var(--b1);color:var(--b1t)}table.vt thead th.w2{background:var(--b2);color:var(--b2t)}
 table.vt thead th.w3{background:var(--b3);color:var(--b3t)}table.vt thead th.w4{background:var(--b4);color:var(--b4t)}
@@ -619,12 +622,91 @@ body.top{background:var(--bg);padding-left:0;padding-right:0}
   .ulist .uline{white-space:normal;font-size:12.5px;line-height:1.3}
   .ulist td,.ulist th{padding-left:5px;padding-right:5px}
 }
+/* ===== スタートのタブ ===== */
+.stlink{--pc:var(--tc-start);padding:10px 14px}
+.stlink a{font-weight:800;color:color-mix(in srgb,var(--tc-start) 80%,#000)}
+.stkey{margin:0;padding:9px 12px;border-radius:10px;font-size:13px;line-height:1.65;background:color-mix(in srgb,var(--tc-start) 9%,var(--surface));
+  border-left:4px solid var(--tc-start)}
+/* スリットの隊形 */
+.slit{display:flex;flex-direction:column;gap:7px}
+.slr{display:grid;grid-template-columns:16px 24px minmax(3.8em,7em) minmax(0,1fr) 4.4em;align-items:center;gap:6px;font-size:13px}
+.slr .waku{width:24px;height:24px;font-size:13px}
+.slc{font-family:var(--mono);color:var(--muted);text-align:right;font-weight:800;font-size:12px}
+.sln{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:800;line-height:1.3}
+.slt{position:relative;height:28px;border-radius:7px;background:linear-gradient(90deg,var(--head),color-mix(in srgb,var(--tc-start) 12%,var(--head)));overflow:visible}
+.slband{position:absolute;top:9px;height:10px;border-radius:5px;opacity:.5}
+.slband.w1{box-shadow:inset 0 0 0 1.5px var(--b1t);opacity:.7}
+.slmid{position:absolute;top:0;bottom:0;width:0;border-left:1.5px dashed color-mix(in srgb,var(--muted) 70%,transparent)}
+.slm{position:absolute;top:3px;width:22px;height:22px;margin-left:-11px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:12px;
+  font-weight:800;box-shadow:0 0 0 2px var(--surface),0 1px 3px rgba(0,0,0,.25);z-index:2}
+.slm.w1{box-shadow:0 0 0 1.5px var(--b1t),0 0 0 3px var(--surface)}
+.sle{position:absolute;top:8px;width:11px;height:11px;margin-left:-5.5px;transform:rotate(45deg);border:2px solid var(--ink);background:var(--surface);border-radius:2px;z-index:1}
+.sla{position:absolute;top:1px;width:26px;height:26px;margin-left:-13px;border-radius:50%;border:2.5px solid var(--rank1);z-index:3}
+.slv{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25}
+.slv b{font-family:var(--mono);font-size:15px}
+.sltag,.slreal{font-style:normal;font-size:10.5px;font-weight:800;padding:0 4px;border-radius:4px;white-space:nowrap}
+.sltag.out{background:var(--rank1);color:#fff}
+.sltag.dent{background:var(--rank2);color:#fff}
+.slreal{color:var(--rank1);padding:0}
+.slax .slt{height:16px;background:none}
+.sll{position:absolute;top:0;font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap}
+.sllg{display:flex;flex-wrap:wrap;gap:4px 14px;margin:2px 0 0;font-size:12px;color:var(--muted)}
+.sllg span{display:inline-flex;align-items:center;gap:5px}
+.sllg .k{display:inline-block;flex:none}
+.sllg i.k.band{width:20px;height:8px;border-radius:4px;background:color-mix(in srgb,var(--muted) 45%,transparent)}
+.sllg b.k{width:16px;height:16px;border-radius:50%;background:var(--ink);color:var(--surface);font-size:10px;display:grid;place-items:center;font-family:var(--mono)}
+.sllg i.k.est{width:9px;height:9px;transform:rotate(45deg);border:2px solid var(--ink);border-radius:2px}
+.sllg i.k.act{width:14px;height:14px;border-radius:50%;border:2.5px solid var(--rank1)}
+.sllg i.k.mid{width:0;height:14px;border-left:1.5px dashed var(--muted)}
+/* 一撃と出遅れの根拠 */
+.edges{display:flex;flex-direction:column;gap:8px}
+.edb{border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:5px}
+.edh{display:flex;align-items:center;gap:8px;font-size:14px;line-height:1.3}
+.edh .dim{margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--muted);white-space:nowrap}
+.edl{display:grid;grid-template-columns:5.4em minmax(0,1fr);gap:8px;align-items:start;font-size:13px;line-height:1.55}
+.edk{font-weight:800;font-size:11.5px;display:flex;align-items:baseline;justify-content:space-between;gap:4px;padding:1px 6px;border-radius:6px;white-space:nowrap}
+.edk b{font-family:var(--mono);font-size:14px}
+.edk.out{background:color-mix(in srgb,var(--rank1) 11%,var(--surface));color:var(--rank1)}
+.edk.dent{background:color-mix(in srgb,var(--rank2) 11%,var(--surface));color:var(--rank2)}
+.edl.on .edk.out{background:var(--rank1);color:#fff}
+.edl.on .edk.dent{background:var(--rank2);color:#fff}
+.edl.on .edw{font-weight:800}
+.edw .dim{color:var(--muted)}
+.edc{display:block;color:var(--muted);font-size:12px}
+/* スリットから1マークまで */
+.runpts li{line-height:1.65}
+table.gridt.slitrun th[scope=row]{text-align:left;font-weight:800;white-space:normal;min-width:6.5em;font-size:13px;background:color-mix(in srgb,var(--head) 60%,var(--surface))}
+table.gridt.slitrun th[scope=row] .sh{display:block;font-family:var(--mono);font-size:14px;color:color-mix(in srgb,var(--tc-start) 80%,var(--ink))}
+table.gridt.slitrun thead .dim{font-size:11px;color:var(--muted);font-weight:700}
+table.gridt.slitrun td.man{font-weight:800;color:var(--gold,var(--ink))}
+table.gridt.slitrun td.rk{text-align:left;white-space:normal;min-width:8em;font-size:13px}
+table.gridt.slitrun td.rk .waku{width:20px;height:20px;font-size:11px;margin-right:4px;vertical-align:-4px}
+table.gridt.slitrun td.rk.top{font-weight:800;background:color-mix(in srgb,var(--rank1) 9%,var(--surface))}
+table.gridt.slitrun td.nige{font-weight:800}
+table.gridt.slitrun thead th{font-size:12px;line-height:1.3}
+/* 展開の見立ての各行の、その決着になりやすいスリット */
+.slitn{font-size:12px;color:color-mix(in srgb,var(--tc-start) 75%,var(--ink));font-weight:700;margin-top:2px}
+table.gridt.strec th[scope=row]{text-align:left;white-space:normal;font-size:13px;background:color-mix(in srgb,var(--head) 60%,var(--surface))}
+table.gridt.strec td{text-align:left;white-space:normal}
+table.gridt.strec td .dim{display:block;font-size:12px;color:var(--muted);font-weight:500}
+@media (prefers-color-scheme: dark){
+  .stlink a{color:var(--tc-start)}
+  .slm.w2{box-shadow:0 0 0 1.5px #6b7c88,0 0 0 3px var(--surface)}
+  .slband.w2{box-shadow:inset 0 0 0 1px #6b7c88;opacity:.8}
+}
+.ura .slband.w2{box-shadow:inset 0 0 0 1px #8a7f96;opacity:.8}
+@media (max-width:480px){
+  .slr{grid-template-columns:14px 22px minmax(2.6em,4.4em) minmax(0,1fr) 4em;gap:5px}
+  .slr .waku{width:22px;height:22px;font-size:12px}
+  .sln .fn{display:none}
+  .edl{grid-template-columns:5em minmax(0,1fr)}
+}
 /* ===== 裏水面ノート: 夜の水面(暗い地に赤と金) ===== */
 body.ura{
   --bg:#0d0b12; --surface:#17131f; --ink:#f3ede6; --muted:#ab9fb8; --line:#2e2638; --line2:#3d3248; --head:#1f1929;
   --accent:#ff5470; --accent-soft:#3a1622; --warn:#f2b84b; --good:#5fd39b; --red:#ff6b6b;
   --rank1:#ff5a6e; --rank2:#6aa8ff; --gold:#ffd27a;
-  --tc-card:#ff5470; --tc-tac:#b48cff; --tc-before:#f2b84b; --tc-odds:#ff7a45; --tc-t1:#2ed3b7; --tc-navi:#9f7aea; --tc-data:#4fc3f7;
+  --tc-card:#ff5470; --tc-tac:#b48cff; --tc-before:#f2b84b; --tc-odds:#ff7a45; --tc-t1:#2ed3b7; --tc-navi:#9f7aea; --tc-data:#4fc3f7; --tc-start:#a3e635;
   --b1:#f4f6f8; --b2:#000000; --rec-main:#ff5470; --rec-base:#6d6478;
   color-scheme:dark;
   background:radial-gradient(100% 60% at 50% -10%,#2a1120 0,#0d0b12 60%) fixed,#0d0b12}
@@ -635,6 +717,9 @@ body.ura{
 .ura table.gridt caption{color:color-mix(in srgb,var(--pc,var(--accent)) 70%,#fff)}
 .ura table.vt tr.grp th{color:color-mix(in srgb,var(--pc,var(--accent)) 70%,#fff)}
 .ura .tabs button.on{color:#0d0b12}
+.ura .stlink a{color:var(--tc-start)}
+.ura .slitn{color:color-mix(in srgb,var(--tc-start) 70%,#fff)}
+.ura .slm.w2{box-shadow:0 0 0 1.5px #8a7f96,0 0 0 3px var(--surface)}
 .ura .chip.on{color:#0d0b12}
 .ura .t1hl{color:color-mix(in srgb,var(--hc) 55%,#fff)}
 .ura .t1hl .hb{color:#fff;background:linear-gradient(transparent 58%,color-mix(in srgb,var(--hbc) 45%,transparent) 58%)}

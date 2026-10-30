@@ -418,7 +418,8 @@ RACE_NOTES = [
     "直線速度(推定)は展示タイム(直線150m)から出した速さです。一周タイム(推定)は、その場の標準の一周に、モーター(直近60日)と選手(直近1年)のレースのペース"
     "(同じレースの同じ着順の平均と比べた速さ)と、展示タイムの差を足したもの。まわり足(推定)は、そのペースのうち展示タイム(直線の速さ)では説明できない分で、マイナスほど旋回が速い目安です。"
     "どちらも公式の計測ではなく、レースタイムから計算した推定です。展示タイム1位の選手の成績は、このレースで展示タイムが一番速かった選手(同タイムは全員)が、直近1年に展示タイム1位だったレースの、コース別の回数と1着・2着・3着になった割合です。下の小さい数字は、全国(全選手)で展示タイム1位だった艇の、直近半年のコース別の割合です(回数が20回に満たないときは出しません)。",
-    "1周1マークの映像・スタートの見立て(直前情報のタブ)・展開の見立ては、スタート展示の進入とSTが出てから計算します。スタートの見立ては、選手の平均ST・ばらつき・フライング持ち・コース・"
+    "スタートのタブ(スタートの見立て・スリットの隊形・一撃と出遅れの根拠・スリットから1マークまで)は、展示の前は枠なりの進入・ふだんのSTの目安で出し、スタート展示のあとに計算し直します。"
+    "1周1マークの映像・展開の見立ては、スタート展示の進入とSTが出てから計算します。スタートの見立ては、選手の平均ST・ばらつき・フライング持ち・コース・"
     "そのコースでのSTのくせ(その選手のそのコースの平均ST)・展示タイム・風・展示STから、"
     "過去のレースで実際に起きたスタートのずれ方を当てはめた400通りのスタートで計算し、展開の見立てはそれぞれのスタートでどのコースがどの決まり手で1着になりやすいかを平均したものです。"
     "展開の見立てには、レースの種類(優勝戦・準優勝戦・ドリーム戦・選抜戦・特選・予選・一般・進入固定)による1号艇の勝ちやすさの違いも入れています。式の重みは毎晩学習し直しています。",
@@ -538,8 +539,18 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                    '<div id="beforeBox"><p class="wait">展示航走のあと(締切の10〜15分前ごろ)に自動で入ります。</p></div>'
                    '<p class="note">赤はその項目で1位、青は2位の艇です。推定の数字は、過去のレースのタイムと展示タイムから計算した目安です。</p></section>'
                    '<section class="ex1sec"><div id="ex1Box"></div></section>'
-                   '<section class="gated" aria-labelledby="h-st"><h2 id="h-st">スタートの見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
-                   '<div id="stBox"></div><ul class="points" id="stNotes"></ul></div></section>')
+                   '<section class="stlink"><p class="sub">スタートの見立て(予想ST・一撃・出遅れ)と、スリットから1マークまでの展開は、<a href="#start" data-go="start">スタートのタブ</a>にあります。</p></section>')
+    start_html = ('<section aria-labelledby="h-st"><div class="row-head"><h2 id="h-st">スタートの見立て</h2><span class="sub" id="stState"></span></div>'
+                  + start_proof() +
+                  '<div id="stBox"><p class="wait">計算しています…</p></div><ul class="points" id="stNotes"></ul></section>'
+                  '<section aria-labelledby="h-slit"><div class="row-head"><h2 id="h-slit">スリットの隊形</h2><span class="sub">予想ST</span></div>'
+                  '<div id="slitBox"><p class="wait">計算しています…</p></div>'
+                  '<p class="note">右ほど早いスタート(スリットで前に出る)。帯は、10回に4回はこの間に入る幅です。点線は6艇の予想STの平均。</p></section>'
+                  '<section aria-labelledby="h-edge"><h2 id="h-edge">一撃スタートと出遅れの根拠</h2><div id="edgeBox"><p class="wait">計算しています…</p></div>'
+                  '<p class="note">一撃は両隣の艇のどちらより0.05秒以上早いスタート、出遅れ(凹み)は両隣のどちらより0.05秒以上遅いスタートになる見込みです。'
+                  '根拠のカッコの中は、予想STを早く(−)・遅く(+)する分です。' + e(start_check()) + '</p></section>'
+                  '<section aria-labelledby="h-run"><h2 id="h-run">スリットから1マークまで</h2><ul class="points runpts" id="runLead"></ul><div id="runBox"></div>'
+                  '<p class="note">スタートの見立てで作った400通りのスリットを、形ごとに分けて、そのときに1マークで一番多い決着を数えたものです。</p></section>')
     view = ('<section class="t1" aria-labelledby="h-t1"><div class="row-head"><h2 id="h-t1">1周1マーク展開シミュレーション</h2></div>'
             '<p class="wait" id="t1Wait">スタート展示の進入とSTが出たら、それをもとに作ります。</p>'
             '<h3 class="t1hl" id="t1Head" hidden aria-live="polite"></h3>'
@@ -625,6 +636,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     tabs = ('<nav class="tabs" role="tablist" aria-label="このレースの情報">'
             '<button type="button" role="tab" data-tab="card">出走表</button><button type="button" role="tab" data-tab="tac">戦法</button>'
             '<button type="button" role="tab" data-tab="before">直前<br class="tb">情報</button>'
+            '<button type="button" role="tab" data-tab="start">スタート</button>'
             '<button type="button" role="tab" data-tab="odds">オッズ</button>'
             '<button type="button" role="tab" data-tab="t1">1S1M<br class="tb">展開</button><button type="button" role="tab" data-tab="navi">展開<br class="tb">ナビ</button>'
             '<button type="button" role="tab" data-tab="data">データ</button></nav>')
@@ -647,6 +659,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
             + '<div class="pane" id="pane-card">' + card + "</div>"
             + '<div class="pane" id="pane-tac">' + tac_html + "</div>"
             + '<div class="pane" id="pane-before">' + before_html + "</div>"
+            + '<div class="pane" id="pane-start">' + start_html + "</div>"
             + '<div class="pane" id="pane-odds">' + odds_html + "</div>"
             + '<div class="pane" id="pane-t1">' + view + analysis + "</div>"
             + '<div class="pane" id="pane-navi">' + navi + "</div>"
@@ -693,6 +706,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
              + '<div class="pane" id="pane-card">' + u_card + "</div>"
              + '<div class="pane" id="pane-tac">' + u_tac + "</div>"
              + '<div class="pane" id="pane-before">' + u_before + "</div>"
+             + '<div class="pane" id="pane-start">' + start_html + "</div>"
              + '<div class="pane" id="pane-odds">' + u_odds + "</div>"
              + '<div class="pane" id="pane-t1">' + u_view + u_analysis + "</div>"
              + '<div class="pane" id="pane-navi">' + navi + "</div>"
@@ -755,6 +769,27 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
 
 
 GRADES_ALL: dict = {}   # 開催のグレード(data/grades.json。main で読み込む)
+EVAL: dict = {}         # data/eval.json の latest(学習に使っていない直近の日での見立ての確かめ。main で読み込む)
+
+
+def start_proof() -> str:
+    """スタートのタブの頭に出す、スタートの大事さ(data/eval.json の数字)。"""
+    ev = EVAL
+    if not ev or ev.get("top1") is None or ev.get("top1_with_st") is None:
+        return ""
+    s = (f'スタートが分かれば、見立ての一番手の決着が当たる割合は{ev["top1"]:.1f}%から{ev["top1_with_st"]:.1f}%に上がります'
+         f'(学習に使っていない直近30日・{ev.get("races") or 0:,}レース)。1マークの決着を一番大きく動かすのが、スタートです。')
+    return f'<p class="stkey">{e(s)}</p>'
+
+
+def start_check() -> str:
+    """一撃・出遅れの見込みと、実際に起きた割合(data/eval.json の数字)。"""
+    o, dn = EVAL.get("out"), EVAL.get("dent")
+    if not (o and dn and len(o) == 2 and len(dn) == 2):
+        return ""
+    return (f"直近30日の確かめ: 一撃の見込みは平均{o[0]:.1f}%で、実際に起きたのは{o[1]:.1f}%。"
+            f"出遅れの見込みは平均{dn[0]:.1f}%で、実際は{dn[1]:.1f}%。")
+
 
 
 def venue_cat(ymd: str, code: str):
@@ -917,6 +952,27 @@ def record_sum(days: list) -> dict:
     return out
 
 
+def start_record_html() -> str:
+    """見立ての成績のページの「スタートの見立ての確かめ」(data/eval.json の latest)。"""
+    ev = EVAL
+    if not ev or ev.get("top1") is None:
+        return ""
+    rows = []
+    if ev.get("st_rmse") is not None:
+        rows.append(("予想STと実際のSTの差", f'{ev["st_rmse"]:.3f}秒', "平均的なずれ(2乗の平均の平方根)"))
+    o, dn = ev.get("out"), ev.get("dent")
+    if o and len(o) == 2:
+        rows.append(("一撃スタート", f"見込み {o[0]:.1f}% → 実際 {o[1]:.1f}%", "両隣のどちらより0.05秒以上早いスタート"))
+    if dn and len(dn) == 2:
+        rows.append(("出遅れ(凹み)", f"見込み {dn[0]:.1f}% → 実際 {dn[1]:.1f}%", "両隣のどちらより0.05秒以上遅いスタート"))
+    if ev.get("top1_with_st") is not None:
+        rows.append(("一番起こりやすいとした決着", f'{ev["top1"]:.1f}% → STが分かれば {ev["top1_with_st"]:.1f}%', "実際のSTを先に知っていたとしたときの当たる割合"))
+    body = "".join(f'<tr><th scope="row">{e(a)}</th><td><b>{e(b)}</b><span class="dim">{e(c)}</span></td></tr>' for a, b, c in rows)
+    return ('<section class="rsec"><h2>スタートの見立ての確かめ</h2>'
+            f'<p class="sub">{e(ev.get("label") or "学習に使っていない直近の日")}({ev.get("races", 0):,}レース)で、スタートの見立てを実際のスタートと比べたものです。</p>'
+            f'<div class="gridt-wrap"><table class="gridt strec"><tbody>{body}</tbody></table></div></section>')
+
+
 def build_record():
     """見立ての成績のページ(seiseki.html)。"""
     days = record_days()
@@ -986,6 +1042,7 @@ def build_record():
             '<div id="recChart" class="rchart" role="img" aria-label="日ごとの、本線の艇が1着になった割合と、1号艇(1コース)が1着になった割合の折れ線グラフ。数字は下の表にもあります。"></div>'
             f"{t7}"
             f'<details class="rdet"><summary>全部の日を見る({len(days)}日)</summary>{tall}</details></section>'
+            + start_record_html() +
             f'<section><h2>見方</h2><ul class="points">{notes}</ul>'
             '<p class="note">本線の並びは、本線の決着パターンになったときの2着〜6着の見立てです。見立ては締切前に最後に記録したもので、欠場のあるレースなど見立てを出さなかったレースは数えていません。</p></section>'
             f'<section><h2>見立ての変更</h2><ul class="points">{changes}</ul></section>'
@@ -1498,6 +1555,8 @@ def main():
         "window.SUIMEN_PARAMS = " + (json.dumps(model, ensure_ascii=False, separators=(",", ":")) if model else "null") + ";\n",
         encoding="utf-8")
     # 裏の学習(scripts/ura_fit.py)。ページが読む分だけ(答え合わせの細かい数字は除く)
+    EVAL.clear()
+    EVAL.update(((load_json(DATA / "eval.json", {}) or {}).get("latest")) or {})
     URA.clear()
     URA.update(load_json(DATA / "ura.json", {}) or {})
     URA_RACERS.update(load_json(DATA / "ura_racers.json", {}) or {})

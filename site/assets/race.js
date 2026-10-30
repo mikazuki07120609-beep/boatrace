@@ -705,7 +705,8 @@
       return '<div class="scen-row' + (isL ? " lead" : "") + '"><span class="waku w' + b.waku + '">' + b.waku + "</span><div><div>" + c.c + "コース" + esc(c.k) +
         (isL ? '<span class="leadtag">裏本線</span>' : "") + '<span class="sub"> ・' + esc(b.name) + "</span></div>" +
         '<div class="bar"><i style="width:' + (c.s / tot / max * 100).toFixed(1) + '%"></i></div>' +
-        '<div class="sub">この決着になる見込み ' + (c.p * 100).toFixed(c.p < 0.1 ? 1 : 0) + "%・そのとき万舟 " + pkText(c.pk) + "</div></div>" +
+        '<div class="sub">この決着になる見込み ' + (c.p * 100).toFixed(c.p < 0.1 ? 1 : 0) + "%・そのとき万舟 " + pkText(c.pk) + "</div>" +
+        (R.M ? '<div class="slitn">スリット: ' + esc(slitText(R.M.postST(c.i), c.c) || "—") + "</div>" : "") + "</div>" +
         '<span class="pct">' + Math.round(c.s / tot * 100) + "%</span></div>";
     });
     if (om) rows.push('<div class="scen-row omote"><span class="waku w' + om.b.waku + '">' + om.b.waku + "</span><div><div>" + om.c + "コース" + esc(om.k) +
@@ -783,10 +784,17 @@
     if (est != null) out.push("展示ST" + (est < 0 ? "F" + st2(-est) : st2(est)) + (Math.abs(q.est || 0) >= 0.003 ? "(" + sgn(q.est) + "秒)" : ""));
     return out;
   }
-  function renderStart(R) {
+  function renderStart(R, pre) {
     var box = $("#stBox"), notes = $("#stNotes");
     if (!box) return;
-    if (!R.M) { box.innerHTML = '<p class="wait">学習済みの見立てがまだありません。</p>'; return; }
+    var stt = $("#stState");
+    if (stt) stt.textContent = pre ? "展示の前の目安(枠なり・ふだんのST)" : beforeReady() ? "スタート展示のあとの計算" : "実際の進入で計算(展示STなし)";
+    if (!R.M) {
+      box.innerHTML = '<p class="wait">学習済みの見立てがまだありません。</p>';
+      startSecs(false);
+      return;
+    }
+    startSecs(true);
     var B = R.B.slice().sort(function (a, b) { return a.course - b.course; }), M = R.M;
     R.nbMean = avg(B.map(function (b) { return (b.stf.parts || {}).nb || 0; }));
     // 一撃スタートのときに一番起こりやすい決着パターン
@@ -815,6 +823,219 @@
       (Math.abs(R.nbMean) >= 0.004 ? "<li>" + esc("メンバー全体が" + (R.nbMean < 0 ? "スタートの早い選手ぞろいで、そろって早いスタートになりやすい" : "スタートの遅めの選手が多く、そろって遅めのスタートになりやすい") +
         "(隣の艇につられる分、平均" + sgn(R.nbMean) + "秒)。") + "</li>" : "") +
       (Math.abs(ven) >= 0.005 ? "<li>" + esc(V.name + "は、全体にSTが" + (ven < 0 ? "早く" : "遅く") + "出やすい場です(" + sgn(ven) + "秒)。") + "</li>" : "");
+    try { renderSlit(R, pre); renderEdges(R, pre); renderSlitRun(R, pre); } catch (e) { if (window.console) console.error(e); }
+  }
+
+  // ---- スタートのタブ: スリットの隊形(予想STの図)
+  function slitText(t, focus) { return window.Turn1 && Turn1.slitText ? Turn1.slitText(t, focus) : ""; }
+  function actualST(waku) {                                          // 終わったレースの実際のST(フライングは負の数)
+    var r = resEntry(waku);
+    if (r && r.st != null && isFinite(r.st)) return r.flying ? -Math.abs(r.st) : r.st;
+    if (LR && LR.st && LR.st[String(waku)] != null && isFinite(LR.st[String(waku)])) return LR.st[String(waku)];
+    return null;
+  }
+  function actualRun(B) {                                            // 実際のST(1〜6コース)と、1着の艇・決まり手
+    if (!finished()) return null;
+    var t = B.map(function (b) { return actualST(b.waku); });
+    if (t.filter(function (x) { return x != null; }).length < 6) return null;
+    var win = null, kim = null;
+    if (D.result && D.result.entries) {
+      var w = D.result.entries.filter(function (x) { return x.rank === 1; })[0];
+      if (w) win = w.waku;
+      kim = D.result.kimarite || null;
+    } else if (LR && LR.tri && LR.tri.length) { win = LR.tri[0]; kim = LR.kimarite || null; }
+    var wb = win != null ? B.filter(function (b) { return b.waku === win; })[0] : null;
+    return { t: t, win: wb, kim: kim };
+  }
+  function renderSlit(R, pre) {
+    var box = $("#slitBox");
+    if (!box || !R.M) return;
+    var B = R.B.slice().sort(function (a, b) { return a.course - b.course; }), A = pre ? null : actualRun(B);
+    var est = B.map(function (b) { return pre ? null : estOf(b.waku); });
+    var vals = [];
+    B.forEach(function (b, j) { vals.push(b.stf.lo, b.stf.hi); if (A) vals.push(Math.max(0, A.t[j])); if (est[j] != null) vals.push(Math.max(0, est[j])); });
+    var lo = Math.max(-0.01, Math.min.apply(null, vals) - 0.02), hi = Math.max(Math.max.apply(null, vals) + 0.02, lo + 0.14);
+    function x(st) { return Math.max(0, Math.min(100, (hi - st) / (hi - lo) * 100)); }        // 早いほど右
+    var fieldM = avg(B.map(function (b) { return b.stf.mean; })), mid = '<i class="slmid" style="left:' + x(fieldM).toFixed(1) + '%"></i>';
+    box.innerHTML = '<div class="slit">' + B.map(function (b, j) {
+      var s = b.stf, tag = s.pOut >= 0.12 ? '<i class="sltag out">一撃 ' + Math.round(s.pOut * 100) + "%</i>" : s.pDent >= 0.15 ? '<i class="sltag dent">凹み ' + Math.round(s.pDent * 100) + "%</i>" : "";
+      var xe = est[j] != null ? '<i class="sle" style="left:' + x(Math.max(0, est[j])).toFixed(1) + '%" title="展示ST"></i>' : "";
+      var xa = A ? '<i class="sla" style="left:' + x(Math.max(0, A.t[j])).toFixed(1) + '%" title="実際のST"></i>' : "";
+      var nm = String(b.name || "").split(/[\s\u3000]+/);
+      return '<div class="slr"><span class="slc">' + b.course + '</span><span class="waku w' + b.waku + '">' + b.waku + '</span><span class="sln" title="' + esc(b.name) + '">' + esc(nm[0]) +
+        (nm.length > 1 ? '<span class="fn"> ' + esc(nm.slice(1).join(" ")) + "</span>" : "") + femMark(b) + "</span>" +
+        '<div class="slt">' + mid + '<i class="slband w' + b.waku + '" style="left:' + x(s.hi).toFixed(1) + "%;width:" + Math.max(1.5, x(s.lo) - x(s.hi)).toFixed(1) + '%"></i>' + xe +
+        '<b class="slm w' + b.waku + '" style="left:' + x(s.mean).toFixed(1) + '%">' + b.waku + "</b>" + xa + "</div>" +
+        '<span class="slv"><b>' + st2(s.mean) + "</b>" + (A ? '<i class="slreal">実際 ' + st2(A.t[j]) + "</i>" : tag) + "</span></div>";
+    }).join("") + '<div class="slr slax"><span class="slc"></span><span></span><span class="sln"></span><div class="slt">' +
+      '<span class="sll" style="left:0">← 遅い</span><span class="sll" style="right:0">早い →</span></div><span class="slv"></span></div></div>' +
+      '<p class="sllg"><span><i class="k band"></i>予想STの幅</span><span><b class="k">1</b>予想ST</span>' + (est.some(function (v) { return v != null; }) ? '<span><i class="k est"></i>展示ST</span>' : "") +
+      (A ? '<span><i class="k act"></i>実際のST</span>' : "") + '<span><i class="k mid"></i>6艇の平均</span></p>';
+  }
+
+  // ---- 一撃スタートと出遅れの根拠(艇ごと)。pro: 見込みを上げる材料、con: 下げる材料
+  function edgeWhy(b, B, pre) {
+    var s = b.stf, q = s.parts || {}, i = b.course - 1, o = { pro: [], con: [] }, d = { pro: [], con: [] };
+    var nb = [B[i - 1], B[i + 1]].filter(Boolean), two = nb.length === 2, ryo = two ? "両隣" : "隣";
+    var fieldM = avg(B.map(function (x) { return x.stf.mean; }));
+    function list(xs) { return xs.map(function (x) { return x.course + "コース" + st2(x.stf.mean); }).join("・"); }
+    var faster = nb.filter(function (x) { return x.stf.mean <= s.mean - 0.01; }), slower = nb.filter(function (x) { return x.stf.mean >= s.mean + 0.01; });
+    var mz = B.some(function (x) { return x.waku > x.course && x.waku >= 3; });
+    if (slower.length === nb.length) o.pro.push("予想STが" + ryo + "より早い(" + st2(s.mean) + "、" + ryo + "は" + list(nb) + ")");
+    else if (faster.length) o.con.push(list(faster) + "のほうが予想STが早い");
+    if (faster.length === nb.length) d.pro.push("予想STが" + ryo + "より遅い(" + st2(s.mean) + "、" + ryo + "は" + list(nb) + ")");
+    else if (slower.length) d.con.push(list(slower) + "より予想STが早い");
+    if (two && nb.every(function (x) { return x.stf.mean >= fieldM + 0.008; })) o.pro.push("両隣がスタートの遅めの選手");
+    if (two && nb.every(function (x) { return x.stf.mean <= fieldM - 0.008; })) d.pro.push("両隣がスタートの早い選手");
+    if (s.scale >= 1.15) { o.pro.push("STのばらつきが大きく、一発がある"); d.pro.push("STのばらつきが大きく、出遅れもある"); }
+    else if (s.scale <= 0.85) { o.con.push("STが安定していて、飛び出しは少ない"); d.con.push("STが安定していて、大きく遅れにくい"); }
+    if (!pre) {
+      if ((q.est || 0) <= -0.003) o.pro.push("展示STが早かった(" + sgn(q.est) + "秒)");
+      if ((q.est || 0) >= 0.003) d.pro.push("展示STで遅れた(" + sgn(q.est) + "秒)");
+      if ((q.exd || 0) <= -0.003) o.pro.push("展示タイムが速く、行き足が良さそう(" + sgn(q.exd) + "秒)");
+      if ((q.exd || 0) >= 0.003) d.pro.push("展示タイムが遅め(" + sgn(q.exd) + "秒)");
+    }
+    if ((q.cdev || 0) <= -0.004) o.pro.push(b.course + "コースではふだんよりSTが早い(" + sgn(q.cdev) + "秒)");
+    if ((q.cdev || 0) >= 0.004) d.pro.push(b.course + "コースではふだんよりSTが遅い(" + sgn(q.cdev) + "秒)");
+    if ((q.rec || 0) <= -0.004) o.pro.push("最近のSTが早め(" + sgn(q.rec) + "秒)");
+    if ((q.rec || 0) >= 0.004) d.pro.push("最近のSTが遅め(" + sgn(q.rec) + "秒)");
+    var fq = (q.f || 0) + (q.f2 || 0);
+    if (s.fp > 0 && fq >= 0.003) { d.pro.push("今期F" + s.fp + "持ちで、慎重になりやすい(" + sgn(fq) + "秒)"); o.con.push("F持ちで踏み込みにくい"); }
+    if ((q.mz || 0) >= 0.004) d.pro.push("前づけで起こしが深くなる(" + sgn(q.mz) + "秒)");
+    if (b.course === 4 && !mz && s.pOut >= 0.06) o.pro.push("カド(4コース)は助走が長く、内の3艇より前に出やすい位置");
+    return { out: o, dent: d };
+  }
+  function renderEdges(R, pre) {
+    var box = $("#edgeBox");
+    if (!box || !R.M) return;
+    var B = R.B.slice().sort(function (a, b) { return a.course - b.course; });
+    var nat = avg(B.map(function (b) { return b.stf.pOut; })), natD = avg(B.map(function (b) { return b.stf.pDent; }));
+    function line(kind, p, w, hi) {
+      var txt = w.pro.length ? esc(w.pro.join("・")) : '<span class="dim">目立った材料なし</span>';
+      if (w.con.length) txt += '<span class="edc">ただし ' + esc(w.con.join("・")) + "</span>";
+      return '<div class="edl' + (hi ? " on" : "") + '"><span class="edk ' + kind + '">' + (kind === "out" ? "一撃" : "出遅れ") + "<b>" + Math.round(p * 100) + "%</b></span>" +
+        '<span class="edw">' + txt + "</span></div>";
+    }
+    box.innerHTML = '<div class="edges">' + B.map(function (b) {
+      var s = b.stf, w = edgeWhy(b, B, pre);
+      return '<div class="edb"><div class="edh"><span class="waku w' + b.waku + '">' + b.waku + "</span><b>" + b.course + "コース " + esc(b.name) + femMark(b) + "</b>" +
+        '<span class="dim">予想ST ' + st2(s.mean) + "</span></div>" + line("out", s.pOut, w.out, s.pOut >= Math.max(0.12, nat * 1.5)) + line("dent", s.pDent, w.dent, s.pDent >= Math.max(0.15, natD * 1.5)) + "</div>";
+    }).join("") + "</div>" +
+      '<p class="sub edsum">このレースの6艇の平均: 一撃 ' + Math.round(nat * 100) + "%・出遅れ " + Math.round(natD * 100) + "%</p>";
+  }
+
+  // ---- スリットから1マークまで: 400通りのスリットを形で分け、そのときの1マークの決着を数える
+  function formsOf(mz) {
+    function mean(a) { return (a[0] + a[1] + a[2]) / 3; }
+    return [
+      { id: "inDent", name: "1コースが凹む", test: function (t) { return t[0] >= t[1] + 0.05; } },
+      { id: "kado", name: mz ? "4コースが一撃" : "カド(4コース)が一撃", test: function (t) { return t[3] <= Math.min(t[0], t[1], t[2]) - 0.05; } },
+      { id: "naka", name: "3コースが内より出る", test: function (t) { return t[2] <= Math.min(t[0], t[1]) - 0.05; } },
+      { id: "outer", name: "5・6コースが出る", test: function (t) { return Math.min(t[4], t[5]) <= Math.min(t[0], t[1], t[2], t[3]) - 0.05; } },
+      { id: "dent2", name: "2コースが凹む(壁がない)", test: function (t) { return t[1] >= Math.max(t[0], t[2]) + 0.05; } },
+      { id: "in1", name: "1コースが先行", test: function (t) { return t[0] <= Math.min(t[1], t[2], t[3], t[4], t[5]) - 0.03; } },
+      { id: "flat", name: "ほぼ横一線", test: function (t) { return Math.max.apply(null, t) - Math.min.apply(null, t) <= 0.05; } },
+      { id: "inS", name: "内の3艇がそろって先行", test: function (t) { return mean(t) <= mean(t.slice(3)) - 0.02; } },
+      { id: "outS", name: "外の3艇がそろって先行", test: function (t) { return mean(t.slice(3)) <= mean(t) - 0.02; } },
+      { id: "other", name: "少しずつずれる", test: function () { return true; } }
+    ];
+  }
+  function slitForms(R) {
+    var M = R.M;
+    if (!M || !M.samples || !M.probs) return [];
+    var mz = R.B.some(function (b) { return b.waku > b.course && b.waku >= 3; }), F = formsOf(mz), nc = M.p.length;
+    var acc = F.map(function () { return { n: 0, p: new Array(nc).fill(0) }; });
+    M.samples.forEach(function (t, s) {
+      for (var f = 0; f < F.length; f++) if (F[f].test(t)) { var a = acc[f], pr = M.probs[s]; a.n++; for (var i = 0; i < nc; i++) a.p[i] += pr[i]; break; }
+    });
+    var S = M.samples.length;
+    return F.map(function (x, f) { var a = acc[f]; return { F: x, share: a.n / S, p: a.n ? a.p.map(function (v) { return v / a.n; }) : null }; })
+      .filter(function (x) { return x.p && x.share >= 0.03; }).sort(function (a, b) { return b.share - a.share; });
+  }
+  var KDESC = { "逃げ": "1コースが先に回って逃げる", "抜き": "1コースが先に回り、道中で前に出る",
+                "捲り": "内の艇の前へ絞り込み、外から全速で捲る", "差し": "内の艇が先に回るのを待って、その内を差す", "捲り差し": "内の艇の前を横切って、さらに内を差す" };
+  function clsName(M, i) { var ck = M.classes[i]; return ck[0] + "コース" + ck[1]; }
+  function clsBadge(M, i, byC) { var b = byC[M.classes[i][0]]; return b ? '<span class="waku w' + b.waku + '">' + b.waku + "</span>" : ""; }
+  function topIdx(p, skip) { var bi = -1; p.forEach(function (v, i) { if (i !== skip && (bi < 0 || v > p[bi])) bi = i; }); return bi; }
+  function renderSlitRun(R, pre) {
+    var box = $("#runBox"), lead = $("#runLead"), M = R.M;
+    if (!box || !M) return;
+    var B = R.B.slice().sort(function (a, b) { return a.course - b.course; }), byC = {};
+    B.forEach(function (b) { byC[b.course] = b; });
+    var forms = slitForms(R), U = URA && R.U && R.U.scen ? R.U : null, manK = 1;
+    if (U) {                                                         // 形ごとの万舟の見込み: 平均がレース全体の見込み(上の数字)と同じになるようにそろえる
+      var base = 0;
+      M.p.forEach(function (v, i) { base += v * ((U.scen[i] || {}).pk || 0); });
+      manK = base > 0 && U.pMan != null ? U.pMan / base : 1;
+    }
+    var rows = forms.slice(0, 7).map(function (f) {
+      var b1 = topIdx(f.p.map(function (v, i) { return i <= 1 ? -1 : v; })), man = null;   // 1コース(逃げ・抜き)以外で一番多い決着
+      if (U) { man = 0; f.p.forEach(function (v, i) { man += v * ((U.scen[i] || {}).pk || 0); }); man = Math.min(0.95, man * manK); f.man = man; }
+      var nige = f.p[0], top = f.p[b1] > nige;
+      return '<tr><th scope="row">' + esc(f.F.name) + '<b class="sh">' + Math.round(f.share * 100) + "%</b></th>" +
+        (U ? '<td class="num man">' + (man != null ? Math.round(man * 100) + "%" : "—") + "</td>" : "") +
+        '<td class="num' + (nige >= 0.5 ? " nige" : "") + '">' + Math.round(nige * 100) + "%</td>" +
+        '<td class="rk' + (top ? " top" : "") + '">' + clsBadge(M, b1, byC) + esc(clsName(M, b1)) + " <b>" + Math.round(f.p[b1] * 100) + "%</b>" + "</td></tr>";
+    }).join("");
+    box.innerHTML = '<div class="gridt-wrap"><table class="gridt slitrun"><thead><tr><th>スリットの形<br><span class="dim">(起こりやすさ)</span></th>' +
+      (U ? '<th class="num">万舟の<br>見込み</th>' : "") + '<th class="num">1コースの<br>逃げ</th><th>逃げ以外で<br>一番多い決着</th>' + "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+    // 文章: スリットの形 → 攻める艇 → 1コースの凹み → 壁 → 本線のときのスリット → (終わったレース)実際のスリット
+    var out = [], st = B.map(function (b) { return b.stf.mean; }), top = forms[0];
+    var fast = B.slice().sort(function (a, b) { return a.stf.mean - b.stf.mean; })[0];
+    if (top) out.push("スリットは「" + top.F.name + "」になりやすく(" + Math.round(top.share * 100) + "%)、予想STが一番早いのは" + fast.course + "コースの" + fast.name + "(" + st2(fast.stf.mean) + ")。");
+    var att = B.filter(function (b) { return b.course >= 2; }).sort(function (a, b) { return b.stf.pOut - a.stf.pOut; })[0];
+    if (att && att.stf.pOut >= 0.06) {
+      var wb = M.whenBoat(att.course - 1, "out");
+      if (wb) {
+        var ai = -1;
+        wb.p.forEach(function (v, i) { if (M.classes[i][0] === att.course && M.classes[i][1] !== "抜き" && (ai < 0 || v > wb.p[ai])) ai = i; });
+        var ti = topIdx(wb.p), ck = ai >= 0 ? M.classes[ai] : null;
+        if (ck) out.push(att.course + "コースが一撃(" + Math.round(att.stf.pOut * 100) + "%)なら、「" + clsName(M, ai) + "」(" + KDESC[ck[1]] + ")が全体の" + Math.round(M.p[ai] * 100) + "%から" +
+          Math.round(wb.p[ai] * 100) + "%に上がります" + (ti !== ai ? "。それでも一番多いのは「" + clsName(M, ti) + "」(" + Math.round(wb.p[ti] * 100) + "%)。" : "。"));
+      }
+    }
+    var b1 = byC[1];
+    if (b1 && b1.stf.pOut >= 0.12) {
+      var wo = M.whenBoat(0, "out");
+      if (wo) out.push("1コースが2コースより0.05秒以上早く出れば(" + Math.round(b1.stf.pOut * 100) + "%)、逃げは全体の" + Math.round(M.p[0] * 100) + "%から" + Math.round(wo.p[0] * 100) + "%に上がります。");
+    }
+    if (b1 && b1.stf.pDent >= 0.06) {
+      var wd = M.whenBoat(0, "dent");
+      if (wd) {
+        var di = topIdx(wd.p, 0);
+        out.push("1コースが凹めば(" + Math.round(b1.stf.pDent * 100) + "%)、逃げは全体の" + Math.round(M.p[0] * 100) + "%から" + Math.round(wd.p[0] * 100) + "%に下がり、「" + clsName(M, di) + "」が" + Math.round(wd.p[di] * 100) + "%に上がります。");
+      }
+    }
+    if (st[1] <= st[2] - 0.015) out.push("2コースが3コースより早く(" + st2(st[1]) + "・" + st2(st[2]) + ")、3コースが捲りに行くには2コースが壁になります。");
+    else if (st[2] <= st[1] - 0.015) out.push("3コースが2コースより早く(" + st2(st[2]) + "・" + st2(st[1]) + ")、2コースを叩いて捲りに行く余地があります。");
+    if (st[3] <= Math.min(st[0], st[1], st[2]) - 0.015) out.push("4コースが内の3艇より早く(" + st2(st[3]) + ")、カドからの攻めが有力です。");
+    if (U && U.pMan != null) {                                       // 裏: 万舟の見込みが一番上がるスリットの形
+      var hiF = forms.slice(0, 7).filter(function (f) { return f.man != null; }).sort(function (a, b) { return b.man - a.man; })[0];
+      if (hiF && hiF.man >= U.pMan * 1.3) out.push("荒れるのは、スリットが「" + hiF.F.name + "」(" + Math.round(hiF.share * 100) + "%)になったとき。万舟の見込みは、このレース全体の" +
+        Math.round(U.pMan * 100) + "%から" + Math.round(hiF.man * 100) + "%に上がります。");
+    }
+    var main = leadScen(R);
+    if (main && main.i != null && M.postST) {
+      var nt = slitText(M.postST(main.i), main.b ? main.b.course : null);
+      if (nt) out.push((URA ? "裏本線" : "本線") + "(" + patName(main) + ")になりやすいスリットは「" + nt + "」の形です。");
+    }
+    var A = pre ? null : actualRun(B);
+    if (A) {
+      var at = slitText(A.t, A.win ? A.win.course : null);
+      out.push("実際のスリットは「" + (at || "—") + "」" + (A.win ? "で、1着は" + A.win.course + "コースの" + A.win.name + (A.kim ? "(" + A.kim + ")" : "") : "") + "でした。");
+    }
+    if (lead) lead.innerHTML = out.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+  }
+  function startSecs(on) {                                           // スリットの隊形・根拠・スリットから1マークまでの3つの欄
+    ["#slitBox", "#edgeBox", "#runBox"].forEach(function (q) { var el = $(q), sec = el && el.closest ? el.closest("section") : null; if (sec) sec.hidden = !on; });
+  }
+  function startAbsent(ab) {                                         // 欠場があるレース: スタートのタブは説明だけにする
+    var who = absentText(ab), box = $("#stBox");
+    if (box) box.innerHTML = '<p class="wait absent-note">' + esc(who) + "のため、このレースはスタートの見立てを出せません(見立ては6艇そろったレースだけで計算しています)。</p>";
+    ["#stNotes", "#runLead"].forEach(function (s) { var el = $(s); if (el) el.innerHTML = ""; });
+    startSecs(false);
+    var stt = $("#stState");
+    if (stt) stt.textContent = "";
   }
 
   // 警戒アラート(イン飛び・カドまくり)。スタート展示のあとは、展示の進入と予想ST(展示STを含む)で計算し直す。式は scripts/alerts.py と同じ
@@ -850,12 +1071,14 @@
     renderTactics();
     renderBefore();
     var ab = absentWakus();
-    if (ab.length) { showAbsent(ab); uraAbsent(ab); navi(null); return; }
+    if (ab.length) { showAbsent(ab); uraAbsent(ab); startAbsent(ab); navi(null); return; }
     restoreWait();
     var on = ready();
     setGated(on);
-    if (!on) {                                                        // 展開ナビは展示の前でも出す(枠なり・ふだんのST)
-      if (URA) { var R0 = analyze(); R0.U = uraRender(R0); uraReview(R0); }   // 裏: 展示の前の目安(枠なり・ふだんのST)
+    if (!on) {                                                        // 展開ナビ・スタートのタブは展示の前でも出す(枠なり・ふだんのST)
+      var R0 = analyze();
+      if (URA) { R0.U = uraRender(R0); uraReview(R0); }                 // 裏: 展示の前の目安(枠なり・ふだんのST)
+      renderStart(R0, true);
       navi(null); return;
     }
     var R = analyze(), B = R.B, scen = R.scen;
@@ -864,7 +1087,7 @@
     renderAlerts(R);
     function byCourse(c) { return B.filter(function (b) { return b.course === c; })[0]; }
     var p1 = V.place[0][0], t = tier(p1);
-    renderStart(R);
+    renderStart(R, false);
     // 展開
     var lead = leadScen(R);
     if (URA && R.U) renderUraScen(R, lead);
@@ -872,9 +1095,10 @@
     var top = scen.slice(0, 6), max = top.length ? top[0].p : 1;
     if (lead && top.indexOf(lead) < 0) top = top.slice(0, 5).concat([lead]);
     $("#scen").innerHTML = top.map(function (s) {
+      var sn = R.M && s.i != null ? slitText(R.M.postST(s.i), s.b.course) : "";
       return '<div class="scen-row' + (s === lead ? " lead" : "") + '"><span class="waku w' + s.b.waku + '">' + s.b.waku + '</span><div><div>' + patName(s) +
         (s === lead ? '<span class="leadtag">本線</span>' : "") + '<span class="sub"> ・' + esc(s.b.name) + '</span></div><div class="bar"><i style="width:' + (s.p / max * 100).toFixed(1) +
-        '%"></i></div></div><span class="pct">' + s.p.toFixed(0) + "%</span></div>";
+        '%"></i></div>' + (sn ? '<div class="slitn">スリット: ' + esc(sn) + "</div>" : "") + '</div><span class="pct">' + s.p.toFixed(0) + "%</span></div>";
     }).join("");
     var b1L = byCourse(1), nige = scen.filter(function (x) { return x.b === b1L && x.kim === "逃げ"; })[0];
     $("#scenLead").textContent = !lead ? "" : lead.b.course === 1 ? "本線は「" + patName(lead) + "」。上位6つの決着パターンと、起こりやすさの目安です。" :
@@ -1154,7 +1378,7 @@
   }
   // 画面に見えたら再生し、見えなくなったら止める(電池と動作の重さのため)
   function watch(canvas) {
-    if (reduceMotion) { view.seek(2.6); $("#t1Pause").textContent = "再生"; return; }
+    if (reduceMotion) { view.seek(3.3); $("#t1Pause").textContent = "再生"; return; }
     if (!("IntersectionObserver" in window)) { view.play(); started = true; return; }
     new IntersectionObserver(function (es) {
       es.forEach(function (e) {
@@ -1583,6 +1807,17 @@
     window.addEventListener("resize", tabsH);
   }
   setupTabs();
+  document.addEventListener("click", function (ev) {                 // 本文の中の「〜のタブ」へのリンク
+    var a = ev.target && ev.target.closest ? ev.target.closest("[data-go]") : null;
+    if (!a) return;
+    ev.preventDefault();
+    var name = a.getAttribute("data-go"), pane = $("#pane-" + name), bar = $(".tabs");
+    showTab(name, true);
+    if (pane) {                                                       // 開いたタブの頭が画面の上に隠れていたら、そこまで戻す
+      var y = pane.getBoundingClientRect().top + window.scrollY - (bar ? bar.offsetHeight : 0) - 10;
+      if (y < window.scrollY) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    }
+  });
   copyBtn("#btnCopy", "#post", "#copyMsg");
   copyBtn("#btnCopyR", "#review", "#copyMsgR");
   setupViewControls();
