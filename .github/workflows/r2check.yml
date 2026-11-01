@@ -127,6 +127,12 @@ jobs:
             const helper = await pg.evaluate(() => typeof window.suimenGet);
             const ura = await pg.evaluate(() => { const h = document.getElementById("uraHero"); return h ? h.innerText.replace(/\s+/g, " ").slice(0, 160) : ""; });
             if (ura) console.log("::notice title=裏の見立て::" + ura);
+            const loc = await pg.evaluate(() => {
+              const g = document.querySelector("#cardBox tr.gloc"); if (!g) return "";
+              const r = g.nextElementSibling, r2 = r && r.nextElementSibling;
+              return g.innerText.trim() + " / " + (r ? r.innerText.replace(/\s+/g, " ") : "") + " / " + (r2 ? r2.innerText.replace(/\s+/g, " ") : "");
+            });
+            if (loc) console.log("::notice title=出走表の当地::" + loc.slice(0, 300));
             const st = await pg.$('.tabs [data-tab="start"]');
             if (st) {
               await st.click(); await pg.waitForTimeout(1500);
