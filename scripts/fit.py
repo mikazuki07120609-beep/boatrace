@@ -31,6 +31,7 @@ MOTOR_DAYS = 180
 # ---- 見立ての式の定数(model.js と同じ)
 PTS_MEAN, PTS_K = 31 / 6, 10       # 着順点の平均(1レース31点を6艇で分ける)と、走数が少ない選手を平均に寄せる強さ
 LOC_K = 8                          # 当地の着順点を、その選手の全体の平均に寄せる強さ(走数)
+LOCC_K = 6                         # 当地のこのコースの1着率を、その選手のこのコースの1着率に寄せる強さ(走数)
 REC_K, TAC_K, LS_K = 10, 3, 2
 VEN_M, VEN_KM = 300, 40            # 場の傾向を全国の傾向で補う強さ(レース数・勝ち数)
 U = 0.05                           # STの差の単位(秒)
@@ -52,7 +53,7 @@ PARAMS = ([f"d_{c}{k}" for c, k in CLASSES] + [f"str_{k}" for k in KIMS] + ["rec
           + [f"sa{j}_{g}" for g in range(4) for j in (1, 2, 3)]
           + [f"ms{j}_{g}" for g in range(4) for j in (1, 2, 3)]
           + ["w_nige", "w_mk", "w_sa", "w_ms", "loc", "nb_ms", "nb_sa"]
-          + [f"kd_{k}" for k in KINDS] + ["kd_fixed"])
+          + [f"kd_{k}" for k in KINDS] + ["kd_fixed", "locc"])
 PI = {n: i for i, n in enumerate(PARAMS)}
 NP = len(PARAMS)
 REG = np.array([2.0 if n.startswith("d_") else 0.5 for n in PARAMS])
@@ -102,8 +103,19 @@ def period_start(d: dt.date) -> dt.date:
     return dt.date(d.year - 1, 11, 1)
 
 
-def snapshot_racer(r: dict, d: dt.date, course: int) -> dict:
+def local_st(r: dict, vcode) -> list:
+    """当地(この場)でのSTの[合計, 本数]。コースごとの平均ST(ページと同じく小数2けたに丸めたもの)×本数を足す(model.js と同じ)。"""
+    tot = n = 0
+    for cs in ((r.get("vc") or {}).get(vcode) or {}).values():
+        if cs.get("st_n", 0) > 0:
+            tot += round(cs["st_sum"] / cs["st_n"], 2) * cs["st_n"]
+            n += cs["st_n"]
+    return [tot, n]
+
+
+def snapshot_racer(r: dict, d: dt.date, course: int, vcode=None) -> dict:
     cs = r.get("c", {}).get(str(course), {})
+    lc = ((r.get("vc") or {}).get(vcode) or {}).get(str(course), {}) if vcode else {}
     ps = period_start(d).isoformat()
     cst = [round(cs["st_sum"] / cs["st_n"], 2), cs["st_n"]] if cs.get("st_n", 0) > 0 else [None, 0]
     return {"pts": list(r.get("pts", [0, 0])), "stx": list(r.get("stx", [0, 0.0, 0.0])), "cst": cst,
@@ -112,7 +124,9 @@ def snapshot_racer(r: dict, d: dt.date, course: int) -> dict:
             "cb": list(r.get("cb", [0, 0])),
             "cs": {"n": cs.get("n", 0), "w1": cs.get("w1", 0), "w2": cs.get("w2", 0), "w3": cs.get("w3", 0),
                    "km": {k: v for k, v in cs.get("km", {}).items() if v > 0},
-                   "ls": {k: v for k, v in cs.get("ls", {}).items() if v > 0} if course == 1 else {}}}
+                   "ls": {k: v for k, v in cs.get("ls", {}).items() if v > 0} if course == 1 else {}},
+            "lc": {"n": lc.get("n", 0), "w1": lc.get("w1", 0)},          # 当地のこのコースの[走数, 1着]
+            "vst": local_st(r, vcode) if vcode else [0, 0]}
 
 
 def table_copy(vs: dict | None) -> dict:
@@ -201,6 +215,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
             sts.append({"d": d, "v": vcode, "no": race["no"], "c": c, "waku": e.get("waku"), "st": e["st"], "stx": list(r.get("stx", [0, 0.0, 0.0])),
                         "cst": cst, "exd": exd6[c - 1], "kind": race_kind(race.get("name")),
                         "toban": e["toban"], "rname": race.get("name"), "r8": list(r.get("rs", []))[-RECENT_N:], "nb": nbs,
+                        "vst": local_st(r, vcode),
                         "fp": sum(1 for x in r.get("f", []) if x >= period_start(d).isoformat()),
                         "wind": race.get("wind"), "n6": len(vals), "mz": mz})
     win = next((e for e in ents if e.get("rank") == 1), None)
@@ -217,7 +232,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
     for c in range(1, 7):
         e = by[c]
         r = acc.racer(e["toban"])
-        b = snapshot_racer(r, d, c)
+        b = snapshot_racer(r, d, c, vcode)
         b["lv"] = list(r.get("v", {}).get(vcode, [0, 0]))                  # この場での[着順点, 走数](当地の相性)
         b.update({"c": c, "toban": e["toban"], "st": e["st"] if valid_st(e) else None, "rank": e.get("rank"),
                   "ex": e.get("ex"), "motor": motor_rate(motor, vcode, e.get("motor"), d)})
@@ -294,6 +309,9 @@ def static_terms(rec):
         base = pc[c - 1]
         rate = (b["cs"]["w1"] + REC_K * base) / (b["cs"]["n"] + REC_K)
         terms.append((PI["rec"], i, math.log(rate / base)))
+        lc = b.get("lc") or {}                            # 当地のこのコース: この場でのこのコースの1着率が、このコースの1着率よりどれだけ高いか
+        if lc.get("n"):
+            terms.append((PI["locc"], i, math.log(((lc["w1"] + LOCC_K * rate) / (lc["n"] + LOCC_K)) / rate)))
         if mmean is not None and mots[c - 1] is not None:
             terms.append((PI["mot"], i, (mots[c - 1] - mmean) / 10))
         if ex_ok:                                         # 展示タイム(6艇の平均より速いほど、そのコースの決着が起きやすい。捲りは別に上乗せ)
@@ -441,9 +459,12 @@ def start_row(s, K, m_pop, vens):
     st_c, sn = s.get("cst") or [None, 0]
     cdev = (st_c * sn + CST_K * mr) / (sn + CST_K) - mr if st_c is not None and sn > 0 else 0.0
     exd = s.get("exd") or 0.0                       # 展示タイムが6艇の平均より速い分(0.05秒単位)。ダッシュ勢は行き足につながる
+    # 当地のST: この選手のこの場での平均STが、全体の平均STよりどれだけ早い・遅いか(本数が少ないほど0に寄せる)
+    vs, vn = s.get("vst") or [0, 0]
+    vdev = (vs + VST_K * mr) / (vn + VST_K) - mr if vn > 0 else 0.0
     return ([1.0, mr] + [1.0 if s["c"] == c else 0.0 for c in range(2, 7)]
             + [1.0 if s["fp"] > 0 else 0.0, max(0, (s["wind"] or 0) - 3), 1.0 if s["fp"] >= 2 else 0.0, rec, nb,
-               mz if s["c"] <= 4 else 0.0, mz if s["c"] >= 5 else 0.0, cdev, exd, exd if s["c"] >= 4 else 0.0]
+               mz if s["c"] <= 4 else 0.0, mz if s["c"] >= 5 else 0.0, cdev, exd, exd if s["c"] >= 4 else 0.0, vdev]
             + [1.0 if s["v"] == v else 0.0 for v in vens[1:]])
 
 
@@ -456,8 +477,9 @@ def ex_devs(exs) -> list:
 
 
 REC_ST_K = 4              # 直近の平均STを、1年の平均に寄せる強さ(走数)
-START_NAMES = ["a", "b"] + [f"c{c}" for c in range(2, 7)] + ["f", "wind", "f2", "rec", "nb", "mz_in", "mz_out", "cdev", "exd", "exd_d"]
+START_NAMES = ["a", "b"] + [f"c{c}" for c in range(2, 7)] + ["f", "wind", "f2", "rec", "nb", "mz_in", "mz_out", "cdev", "exd", "exd_d", "vdev"]
 CST_K = 10                # コース別の平均STを、その選手の全体の平均STに寄せる強さ(本数)
+VST_K = 10                # 当地の平均STを、その選手の全体の平均STに寄せる強さ(本数)
 
 
 def maeduke(by: dict) -> bool:
@@ -488,7 +510,7 @@ def fit_start(sts):
     ven[vens[0]] = 0.0
     sd_pop = float(np.sqrt(np.mean([((s["stx"][2] - s["stx"][1] ** 2 / s["stx"][0]) / s["stx"][0]) for s in sts if s["stx"][0] >= 10])))
     sm = {"K": K, "m_pop": round(m_pop, 4), "coef": {n: round(float(v), 5) for n, v in zip(START_NAMES, coef[:nb_])},
-          "ven": ven, "REC_K": REC_ST_K, "CST_K": CST_K, "sd_pop": round(sd_pop, 4), "rmse": round(rmse, 4), "n": len(sts)}
+          "ven": ven, "REC_K": REC_ST_K, "CST_K": CST_K, "VST_K": VST_K, "sd_pop": round(sd_pop, 4), "rmse": round(rmse, 4), "n": len(sts)}
     # 予想からのずれ(実際のST − 予想ST)を、選手のばらつきの大きさで割って、レースごとに6艇分まとめて残す。
     # 本番前の見立てでは、過去のレースのずれ方をそのまま今日の6艇に当てはめる
     # (全員そろって遅れる日、スロー勢・ダッシュ勢でそろってずれる日、たまに大きく出遅れる艇がいる、といった形をそのまま使える)。
@@ -540,7 +562,7 @@ def fit_est(sm, sts) -> None:
         k = (s["d"], s["v"], s["no"], s.get("waku"))
         if k in ex:
             row = start_row(s, K, m_pop, [None])
-            mu = sum(sm["coef"][n] * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(s["v"], 0.0)
+            mu = sum(sm["coef"].get(n, 0.0) * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(s["v"], 0.0)
             by.setdefault((s["d"], s["v"], s["no"]), []).append((max(-0.02, min(0.35, ex[k])), s["st"], mu))
     xs, ys = [], []
     for rows in by.values():
@@ -581,10 +603,11 @@ def start_means(sm, rec):
     exd = ex_devs([b.get("ex") for b in B])
     for i, b in enumerate(B):
         s = {"stx": b["stx"], "r8": b.get("r8") or [], "fp": b["fp"], "c": b["c"], "wind": rec["wind"], "v": rec["v"],
-             "nb": [B[j]["stx"] for j in (i - 1, i + 1) if 0 <= j < 6], "mz": rec.get("mz"), "cst": b.get("cst"), "exd": exd[i]}
+             "nb": [B[j]["stx"] for j in (i - 1, i + 1) if 0 <= j < 6], "mz": rec.get("mz"), "cst": b.get("cst"), "exd": exd[i],
+             "vst": b.get("vst")}
         row = start_row(s, sm["K"], sm["m_pop"], [None])
         co = sm["coef"]
-        out.append(sum(co[n] * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(rec["v"], 0.0))
+        out.append(sum(co.get(n, 0.0) * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(rec["v"], 0.0))
     return out
 
 
@@ -940,7 +963,7 @@ def main() -> int:
         return 1
     model = {"version": 1, "fitted": today_jst().isoformat(), "train": {"from": min(r["d"] for r in recs).isoformat(),
                                                                        "to": last.isoformat(), "races": D.n},
-             "const": {"PTS_MEAN": PTS_MEAN, "PTS_K": PTS_K, "REC_K": REC_K, "TAC_K": TAC_K, "LS_K": LS_K, "LOC_K": LOC_K,
+             "const": {"PTS_MEAN": PTS_MEAN, "PTS_K": PTS_K, "REC_K": REC_K, "TAC_K": TAC_K, "LS_K": LS_K, "LOC_K": LOC_K, "LOCC_K": LOCC_K,
                        "VEN_M": VEN_M, "VEN_KM": VEN_KM, "U": U},
              "classes": ["%d%s" % ck for ck in CLASSES],
              "dev": {n: round(float(v), 4) for n, v in zip(PARAMS, th)},

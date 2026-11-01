@@ -211,6 +211,8 @@ def _racer(racers: dict, e: dict, kim, rmean, d: dt.date, sign: int, ctx: dict |
                                        "rst": [0, 0.0, 0.0], "f": [], "rs": [], "cb": [0, 0], "nk": [0, 0]})
     ctx = ctx or {}
     _cs_add(r["c"].setdefault(c, _cs_new()), e, kim, sign, ctx)
+    if vcode:                                                    # 当地(この場)でのコースごとの成績(コース成績と同じ形)
+        _cs_add(r.setdefault("vc", {}).setdefault(vcode, {}).setdefault(c, _cs_new()), e, kim, sign, ctx)
     # 道中: ゴールで僅差だった相手との勝ち負け(競り合い)、抜きで勝った・抜かれて2着
     t_me = race_time(e.get("time")) if rank else None
     if t_me is not None:
@@ -263,6 +265,7 @@ def finish(racers: dict) -> dict:
                   "r8": [round(x, 2) for x in r.get("rs", [])[-RECENT_N:]],
                   "cb": list(r.get("cb", [0, 0])), "nk": list(r.get("nk", [0, 0])),
                   "v": {k: list(a) for k, a in r.get("v", {}).items() if a[1] > 0},
+                  "vc": {k: g for k, g in ((k, _cs_out(v)) for k, v in r.get("vc", {}).items()) if g},
                   "g": {k: g for k, g in ((k, _cs_out(v)) for k, v in r.get("g", {}).items()) if g}}
     return out
 

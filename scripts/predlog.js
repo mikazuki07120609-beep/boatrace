@@ -116,7 +116,7 @@ async function main() {
       const race = {
         vt: D.vt, nt: D.nt, wind, date: today, venue: D.venue.code, name: D.race.name,
         boats: D.entries.map((b) => ({ waku: b.waku, course: order.indexOf(b.waku) >= 0 ? order.indexOf(b.waku) + 1 : b.waku,
-                                       pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0],
+                                       pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], cl: b.cl || {},
                                        ex: BI.ex ? BI.ex[String(b.waku)] ?? null : null, est: BI.est ? BI.est[String(b.waku)] ?? null : null,
                                        cb: b.cb || [0, 0] })),
       };

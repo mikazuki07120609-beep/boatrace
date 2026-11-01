@@ -194,16 +194,10 @@
       if (!cs || !cs.n || C[i] > 2) return "—";
       return '<span class="dim">' + (C[i] === 1 ? "逃げ" : "逃がし") + "</span>" + p0(C[i] === 1 ? (cs.km || {})["逃げ"] || 0 : cs.ng || 0, cs.n) + "%";
     })));
-    // このレースの区分(女子戦・SG・G1・G2・G3・一般)のときの、このコースの成績(直近1年)
-    if (D.cat) {
-      var G = E.map(function (e, i) {
-        var g = (e.csg || {})[String(C[i])];
-        if (Array.isArray(g)) g = g[0] ? { n: g[0], w1: g[1], w2: g[2], w3: g[3], km: {} } : null;   // 前の形([走数, 1着, 2着, 3着])
-        return g && g.n ? g : null;
-      });
+    // 区分(SG など)・当地のときの、このコースの成績(直近1年)の行。G: 艇ごとのそのコースの成績(なければ null)
+    function courseRows(G) {
       function gr(k) { return G.map(function (g) { return g ? p0(g["w" + k], g.n) : null; }); }
       function gv(k) { return G.map(function (g) { return g && g.n >= 3 ? p0(g["w" + k], g.n) : null; }); }   // 3走未満は1位・2位の色を付けない
-      rows.push('<tr class="grp gcat"><th colspan="7"><span class="cattag">' + esc(D.cat) + "</span>のときのこのコース(直近1年)</th></tr>");
       [1, 2, 3].forEach(function (k) { rows.push(vrow(k + "着率", gr(k).map(function (v) { return cell(v, "%"); }), gv(k), "max")); });
       rows.push(vrow("ST", G.map(function (g) { return g ? st2(g.st) : "—"; }), G.map(function (g) { return g && g.n >= 3 && g.st != null ? g.st : null; }), "min"));
       rows.push(vrow("走数", G.map(function (g) { return g ? g.n : 0; })));
@@ -213,6 +207,23 @@
         if (!g || !g.n || C[i] > 2) return "—";
         return '<span class="dim">' + (C[i] === 1 ? "逃げ" : "逃がし") + "</span>" + p0(C[i] === 1 ? (g.km || {})["逃げ"] || 0 : g.ng || 0, g.n) + "%";
       })));
+    }
+    // 当地(この場)のときの成績(直近1年): この場の勝率と、この場でのこのコースの成績
+    var L = E.map(function (e, i) { var g = (e.cl || {})[String(C[i])]; return g && g.n ? g : null; });
+    rows.push('<tr class="grp gloc"><th colspan="7"><span class="loctag">当地</span>' + esc(V.name) + "のときのこのコース(直近1年)</th></tr>");
+    var lr = E.map(function (e) { var lv = e.lv || [0, 0]; return lv[1] ? lv[0] / lv[1] : null; });
+    rows.push(vrow("勝率", E.map(function (e, i) { var lv = e.lv || [0, 0]; return lv[1] ? cell(lr[i], "", 2) + '<span class="dim">' + lv[1] + "走</span>" : "—"; }),
+      E.map(function (e, i) { return (e.lv || [0, 0])[1] >= 6 ? lr[i] : null; }), "max"));   // 6走未満は1位・2位の色を付けない
+    courseRows(L);
+    // このレースの区分(女子戦・SG・G1・G2・G3・一般)のときの、このコースの成績(直近1年)
+    if (D.cat) {
+      var G = E.map(function (e, i) {
+        var g = (e.csg || {})[String(C[i])];
+        if (Array.isArray(g)) g = g[0] ? { n: g[0], w1: g[1], w2: g[2], w3: g[3], km: {} } : null;   // 前の形([走数, 1着, 2着, 3着])
+        return g && g.n ? g : null;
+      });
+      rows.push('<tr class="grp gcat"><th colspan="7"><span class="cattag">' + esc(D.cat) + "</span>のときのこのコース(直近1年)</th></tr>");
+      courseRows(G);
     }
     rows.push('<tr class="grp"><th colspan="7">モーター・ボート</th></tr>');
     rows.push(vrow("モーター評価", mz.map(function (z, i) { return gBadge(gradeOf(z, E[i].mg)); }), mz.map(function (z, i) { return gradeOf(z, E[i].mg) === "S+" ? 99 : z; }), "max", "mo"));
@@ -535,7 +546,7 @@
   function analyzeModel(B, W) {
     var race = { vt: D.vt, nt: D.nt, wind: W.wspd, date: D.race.date, venue: V.code, name: D.race.name,
                  boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], est: estOf(b.waku), cb: b.cb || [0, 0],
-                                                      cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], ex: b.ex }; }) };
+                                                      cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], cl: b.cl || {}, ex: b.ex }; }) };
     var M = MODEL.predict(race, PARAMS, { samples: 400 });
     if (!M) return null;
     var kw = windKw(W), byC = {};
@@ -762,6 +773,7 @@
     return s;
   }
 
+  var LOCC_PT = 0.1;                                                // 「当地のこのコース」を道中のポイントに書く、見立ての点数の大きさ
   // ---- スタートの見立て
   function sgn(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(3).replace(/^0/, ""); }
   function stReasons(b, R) {
@@ -778,6 +790,7 @@
     if (b.course >= 2 && Math.abs(q.course || 0) >= 0.008) out.push(b.course + "コースは" + sgn(q.course) + "秒");
     var ccs = (b.cs || {})[String(b.course)] || {};
     if (Math.abs(q.cdev || 0) >= 0.004 && ccs.st != null) out.push(b.course + "コースでは、ふだんよりSTが" + (q.cdev < 0 ? "早い" : "遅い") + "(このコースの平均ST" + st2(ccs.st) + "・" + (ccs.sn || 0) + "本、" + sgn(q.cdev) + "秒)");
+    if (Math.abs(q.vdev || 0) >= 0.003 && q.vsn) out.push("当地(" + V.name + ")では、ふだんよりSTが" + (q.vdev < 0 ? "早い" : "遅い") + "(当地の平均ST" + st2(q.vst) + "・" + q.vsn + "本、" + sgn(q.vdev) + "秒)");
     if (Math.abs(q.exd || 0) >= 0.003) out.push("展示タイムが" + (q.exd < 0 ? "速く、行き足が良さそう" : "遅め") + "(" + sgn(q.exd) + "秒)");
     if (q.wind) out.push("風速" + R.wspd + "m(" + sgn(q.wind) + "秒)");
     var est = estOf(b.waku);
@@ -897,6 +910,8 @@
     }
     if ((q.cdev || 0) <= -0.004) o.pro.push(b.course + "コースではふだんよりSTが早い(" + sgn(q.cdev) + "秒)");
     if ((q.cdev || 0) >= 0.004) d.pro.push(b.course + "コースではふだんよりSTが遅い(" + sgn(q.cdev) + "秒)");
+    if ((q.vdev || 0) <= -0.003) o.pro.push("当地ではふだんよりSTが早い(" + sgn(q.vdev) + "秒)");
+    if ((q.vdev || 0) >= 0.003) d.pro.push("当地ではふだんよりSTが遅い(" + sgn(q.vdev) + "秒)");
     if ((q.rec || 0) <= -0.004) o.pro.push("最近のSTが早め(" + sgn(q.rec) + "秒)");
     if ((q.rec || 0) >= 0.004) d.pro.push("最近のSTが遅め(" + sgn(q.rec) + "秒)");
     var fq = (q.f || 0) + (q.f2 || 0);
@@ -1129,6 +1144,23 @@
       if (b1.share >= 55) pts.push("1コース" + b1.name + "が逃げる形が濃厚。" + V.name + "は" + t[0] + "(1コース1着率" + fmt(p1) + "%)。" + (rec ? rec + "。" : ""));
       else if (b1.share >= 40) pts.push("1コース" + b1.name + "が中心だが、絶対ではない。スタートで遅れると2コースの差しや捲りが届く。" + (rec ? rec + "。" : ""));
       else pts.push("1コース" + b1.name + "は数字的に苦しい。外からの攻めで主導権を取られる可能性が高い。" + (rec ? rec + "。" : ""));
+    }
+    if (R.M && R.M.staticU) {
+      // 当地のこのコース: 見立ての「当地のこのコース」の点数が一番大きい艇
+      var LP = R.M.staticU.parts || [], locB = null;
+      B.forEach(function (b) {
+        for (var i = 0; i < R.M.classes.length; i++) if (R.M.classes[i][0] === b.course) {
+          var v = (LP[i] || {}).locc || 0;
+          if (v * ((LP[i] || {}).loccX || 0) <= 0) v = 0;                 // 成績の向きと見立ての向きがそろうときだけ
+          if (!locB || Math.abs(v) > Math.abs(locB.v)) locB = { b: b, v: v };
+          break;
+        }
+      });
+      if (locB && Math.abs(locB.v) >= LOCC_PT) {
+        var lcx = (locB.b.cl || {})[String(locB.b.course)] || {};
+        pts.push(locB.b.course + "コース" + locB.b.name + "は、当地(" + V.name + ")の" + locB.b.course + "コースで" + lcx.n + "走" + (lcx.w1 || 0) + "勝(1着率" + pct(lcx.w1 || 0, lcx.n) + "%)。" +
+          (locB.v > 0 ? "この場のこのコースが得意で、見立てでも上乗せしています。" : "この場のこのコースでは勝ち切れておらず、見立てでも少し下げています。"));
+      }
     }
     if (R.M) {
       // スタートの見立てから: 凹みそうな艇と、出そうな艇
@@ -1579,6 +1611,9 @@
     add(p.ex, "展示タイムが良い", "展示タイムが悪い");
     add(p.str, "このメンバーでは力が上位", "このメンバーでは力が下位");
     add(p.loc, "この場が得意", "この場が苦手寄り");
+    var lc = (b.cl || {})[String(c)] || {};
+    if ((p.locc || 0) * (p.loccX || 0) > 0)
+      add(p.locc, "当地の" + c + "コースで1着が多い(" + (lc.w1 || 0) + "/" + (lc.n || 0) + "走)", "当地の" + c + "コースでは1着が少ない(" + (lc.w1 || 0) + "/" + (lc.n || 0) + "走)");
     items.sort(function (a, b2) { return Math.abs(b2.v) - Math.abs(a.v); });
     return items.slice(0, 5);
   }

@@ -4,7 +4,8 @@
    2) 展開の見立て: STの組み合わせごとに、どのコースがどの決まり手で1着になりやすいか(条件付きロジット)
    本番前はSTが分からないので、1)の多数の組み合わせで2)を平均する。
    使い方: var R = SuimenModel.predict(race, params, {samples: 400});
-     race = {vt, nt, wind, date, venue, name(レース名), boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, lv, ex, est}]}
+     race = {vt, nt, wind, date, venue, name(レース名), boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, lv, cl, ex, est}]}
+       cl: 当地(この場)でのコースごとの成績 {コース: {n, w1, st, sn, …}}(当地のこのコースの1着率と、当地のST)
    ブラウザでもNode(require)でも使える。 */
 (function (root) {
   "use strict";
@@ -108,7 +109,13 @@
       // 展示タイムが6艇の平均より速い分(0.05秒単位)。ダッシュ勢は行き足につながる
       p.exdX = exd[i];
       p.exd = (co.exd || 0) * exd[i] + (c >= 4 ? (co.exd_d || 0) * exd[i] : 0);
-      p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven + p.mz + p.cdev + p.exd;
+      // 当地のST: この選手のこの場での平均STが、全体の平均STよりどれだけ早い・遅いか(本数が少ないほど0に寄せる。fit.py の local_st・start_row と同じ)
+      var vs = 0, vn = 0, KV = sm.VST_K || 10;
+      Object.keys(b.cl || {}).forEach(function (k) { var x = b.cl[k]; if (x && x.st != null && x.sn > 0) { vs += x.st * x.sn; vn += x.sn; } });
+      p.vsn = vn; p.vst = vn ? vs / vn : null;
+      p.vdevX = vn > 0 ? (vs + KV * mr) / (vn + KV) - mr : 0;
+      p.vdev = (co.vdev || 0) * p.vdevX;
+      p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven + p.mz + p.cdev + p.exd + p.vdev;
       p.est = 0;
       return p;
     });
@@ -168,7 +175,11 @@
       p.d = th["d_" + c + k] || 0;
       p.str = (th["str_" + k] || 0) * (pts[c - 1] - mp);
       p.loc = (th.loc || 0) * (locd[c - 1] - mloc);                   // 当地の相性
-      p.rec = th.rec * Math.log(((cs.w1 + K.REC_K * base) / (cs.n + K.REC_K)) / base);
+      var rate = (cs.w1 + K.REC_K * base) / (cs.n + K.REC_K);
+      p.rec = th.rec * Math.log(rate / base);
+      var lc = (b.cl || {})[String(c)] || {}, LCK = K.LOCC_K || 6;            // 当地のこのコース: この場でのこのコースの1着率が、このコースの1着率よりどれだけ高いか
+      p.loccX = lc.n ? Math.log((((lc.w1 || 0) + LCK * rate) / (lc.n + LCK)) / rate) : 0;   // 正: 当地のこのコースの方がよく勝っている
+      p.locc = (th.locc || 0) * p.loccX;
       p.mot = mmean != null && mots[c - 1] != null ? th.mot * (mots[c - 1] - mmean) / 10 : 0;
       p.ex = exOk ? ((th.ex || 0) + (k === "捲り" || k === "捲り差し" ? (th.ex_mk || 0) : 0)) * (exMean - exs[c - 1]) / 0.05 : 0;
       p.tac = 0; p.ls = 0;
@@ -182,7 +193,7 @@
       if (c >= 3 && (k === "差し" || k === "捲り差し")) p.nb = (th[k === "差し" ? "nb_sa" : "nb_ms"] || 0) * nbMakuri(B, pr.q, c, K);
       p.kind = 0;                                                       // レースの種類(優勝戦・ドリーム戦などは1号艇が勝ちやすい)と進入固定
       if (c === 1) p.kind = (th["kd_" + kind] || 0) + (fixed ? (th.kd_fixed || 0) : 0);
-      u[i] = v + p.d + p.str + p.loc + p.rec + p.mot + p.ex + p.tac + p.ls + p.nb + p.kind;
+      u[i] = v + p.d + p.str + p.loc + p.locc + p.rec + p.mot + p.ex + p.tac + p.ls + p.nb + p.kind;
       parts.push(p);
     });
     return { u: u, parts: parts, prior: pr, kind: kind, fixed: fixed };
