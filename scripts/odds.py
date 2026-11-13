@@ -269,6 +269,11 @@ def compact_final(rec: dict) -> dict:
         out["t0"] = f.get("at")
         out["tan0"] = [f["tan"].get(str(i)) for i in range(1, 7)]
         out["3t0"] = lst(f.get("3t"), ORDER_3T)
+    p = rec.get("prev") or {}
+    if p.get("tan"):                       # 締切時オッズの直前に取り込んだ単勝・3連単(締切の間際にページに出ていたオッズ。見立てに人気を混ぜるかの確かめに使う)
+        out["t1"] = p.get("at")
+        out["tan1"] = [p["tan"].get(str(i)) for i in range(1, 7)]
+        out["3t1"] = lst(p.get("3t"), ORDER_3T)
     return out
 
 

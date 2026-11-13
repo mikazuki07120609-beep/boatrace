@@ -64,6 +64,8 @@
     return v == null || !isFinite(v) ? null : v;
   }
   function estOf(waku) { var v = beforeReady() && BI.est ? BI.est[String(waku)] : null; return v == null ? null : v; }
+  function tiltOf(waku) { var v = beforeReady() && BI.tilt ? BI.tilt[String(waku)] : null; return v == null || !isFinite(v) ? null : v; }
+  function tiltTxt(t) { return (t > 0 ? "+" : t < 0 ? "−" : "") + Math.abs(t).toFixed(1); }
   function windSpeed() {
     if (BI && BI.weather && BI.weather.wind != null) return Math.round(BI.weather.wind);
     if (D.result && D.result.wind != null) return D.result.wind;
@@ -546,7 +548,7 @@
   function analyzeModel(B, W) {
     var race = { vt: D.vt, nt: D.nt, wind: W.wspd, date: D.race.date, venue: V.code, name: D.race.name,
                  boats: B.map(function (b) { return { waku: b.waku, course: b.course, pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], est: estOf(b.waku), cb: b.cb || [0, 0],
-                                                      cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], cl: b.cl || {}, ex: b.ex }; }) };
+                                                      cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], cl: b.cl || {}, ex: b.ex, tilt: tiltOf(b.waku) }; }) };
     var M = MODEL.predict(race, PARAMS, { samples: 400 });
     if (!M) return null;
     var kw = windKw(W), byC = {};
@@ -774,12 +776,12 @@
   }
 
   function S0() { return (PARAMS && PARAMS.start) || {}; }                     // 学習したスタートの見立ての値
-  var LOCC_PT = 0.1;                                                // 「当地のこのコース」を道中のポイントに書く、見立ての点数の大きさ
   // ---- スタートの見立て
   function sgn(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(3).replace(/^0/, ""); }
   function stReasons(b, R) {
     var s = b.stf, q = s.parts || {}, out = [], n = (b.stx || [0])[0];
     out.push(n ? "平均ST" + st2(b.stx[1] / n) + "(直近1年" + n + "走)" + (q.skill ? "・スタート巧者" : "") : "STの記録が少ない(全体の平均で見る)");
+    if (q.sk) out.push("巧者は平均STから見込むより一撃が多いので、少し早めに見ています(" + sgn(q.sk) + "秒)");
     if (q.n8 >= 4 && q.r8m != null && Math.abs(q.r8m - b.stx[1] / Math.max(1, n)) >= 0.02)
       out.push("最近は" + (q.r8m < b.stx[1] / n ? "早め" : "遅め") + "(直近" + q.n8 + "走の平均" + st2(q.r8m) + "、" + sgn(q.rec) + "秒)");
     if (s.scale >= 1.2) out.push("STのばらつきが大きい(一発もあるが、出遅れも多い)");
@@ -1153,22 +1155,12 @@
       else if (b1.share >= 40) pts.push("1コース" + b1.name + "が中心だが、絶対ではない。スタートで遅れると2コースの差しや捲りが届く。" + (rec ? rec + "。" : ""));
       else pts.push("1コース" + b1.name + "は数字的に苦しい。外からの攻めで主導権を取られる可能性が高い。" + (rec ? rec + "。" : ""));
     }
-    if (R.M && R.M.staticU) {
-      // 当地のこのコース: 見立ての「当地のこのコース」の点数が一番大きい艇
-      var LP = R.M.staticU.parts || [], locB = null;
-      B.forEach(function (b) {
-        for (var i = 0; i < R.M.classes.length; i++) if (R.M.classes[i][0] === b.course) {
-          var v = (LP[i] || {}).locc || 0;
-          if (v * ((LP[i] || {}).loccX || 0) <= 0) v = 0;                 // 成績の向きと見立ての向きがそろうときだけ
-          if (!locB || Math.abs(v) > Math.abs(locB.v)) locB = { b: b, v: v };
-          break;
-        }
-      });
-      if (locB && Math.abs(locB.v) >= LOCC_PT) {
-        var lcx = (locB.b.cl || {})[String(locB.b.course)] || {};
-        pts.push(locB.b.course + "コース" + locB.b.name + "は、当地(" + V.name + ")の" + locB.b.course + "コースで" + lcx.n + "走" + (lcx.w1 || 0) + "勝(1着率" + pct(lcx.w1 || 0, lcx.n) + "%)。" +
-          (locB.v > 0 ? "この場のこのコースが得意で、見立てでも上乗せしています。" : "この場のこのコースでは勝ち切れておらず、見立てでも少し下げています。"));
-      }
+    if (R.M && PARAMS && (PARAMS.dev || {}).tilt) {
+      // チルト: ダッシュ(4〜6コース)でチルトを+1.0以上に跳ねた艇(伸び仕様)。見立てにも上乗せしている
+      var tAt = (PARAMS.const || {}).TILT_AT || 0.75;
+      var tb = B.filter(function (b) { var tv = tiltOf(b.waku); return b.course >= 4 && tv != null && tv >= tAt; })
+                .sort(function (a, b) { return tiltOf(b.waku) - tiltOf(a.waku); })[0];
+      if (tb) pts.push(tb.course + "コース" + tb.name + "はチルト" + tiltTxt(tiltOf(tb.waku)) + "に跳ねていて、伸び仕様。ダッシュでチルトを跳ねた艇は捲り・捲り差しが決まりやすく、見立てでも上乗せしています。");
     }
     if (R.M) {
       // スタートの見立てから: 凹みそうな艇と、出そうな艇
@@ -1619,9 +1611,8 @@
     add(p.ex, "展示タイムが良い", "展示タイムが悪い");
     add(p.str, "このメンバーでは力が上位", "このメンバーでは力が下位");
     add(p.loc, "この場が得意", "この場が苦手寄り");
-    var lc = (b.cl || {})[String(c)] || {};
-    if ((p.locc || 0) * (p.loccX || 0) > 0)
-      add(p.locc, "当地の" + c + "コースで1着が多い(" + (lc.w1 || 0) + "/" + (lc.n || 0) + "走)", "当地の" + c + "コースでは1着が少ない(" + (lc.w1 || 0) + "/" + (lc.n || 0) + "走)");
+    var tl = tiltOf(b.waku);
+    if (p.tilt && tl != null) add(p.tilt, "チルト" + tiltTxt(tl) + "に跳ねていて伸び仕様(捲りが決まりやすい)", "");
     items.sort(function (a, b2) { return Math.abs(b2.v) - Math.abs(a.v); });
     return items.slice(0, 5);
   }

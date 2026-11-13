@@ -262,6 +262,57 @@ def racer_stats(pays: dict) -> dict:
             "r": {t: [int(x) for x in a] for t, a in acc.items() if a[0] >= 10}}
 
 
+def _logit(p):
+    p = min(max(p, 1e-4), 1 - 1e-4)
+    return math.log(p / (1 - p))
+
+
+def fit_cal2(min_n: int = 500) -> dict | None:
+    """締切前に記録した裏の万舟の見込み(オッズを入れて合わせたもの。pred.json の u.pr、なければ u.pm)と、実際に万舟になったかで、
+    見込みの出すぎを直す式を学ぶ: 直した見込み = sig(a + b × logit(見込み))。b < 1 なら、高い見込みも低い見込みも、全体の平均に寄せる。
+    (a, b) は (0, 1)(直さない)に寄せる(10レース分)。ura.js と同じ式で、オッズを入れて合わせたときだけ使う。
+    直近のレースを前半・後半に分けて確かめると、片方で学んだ式でもう片方の当たり方(対数損失)が良くなり、大荒れ注意の万舟率も上がった。"""
+    xs, ys = [], []
+    for folder in sorted((DATA / "live").glob("[0-9]" * 8)):
+        pred = load_json(folder / "pred.json", None)
+        pays = (load_json(DATA / "pays" / f"{folder.name}.json", None) or {}).get("venues") or {}
+        if not pred or not pays:
+            continue
+        for code, races in pred.items():
+            for no, lg in (races or {}).items():
+                u = (lg or {}).get("u") or {}
+                pv = (pays.get(code) or {}).get(str(no)) or {}
+                p0 = u.get("pr") if u.get("pr") is not None else u.get("pm")
+                if p0 is None or not u.get("od") or not pv.get("3t"):    # オッズを入れて合わせた見込みだけ
+                    continue
+                xs.append(_logit(float(p0)))
+                ys.append(1.0 if max(x[1] for x in pv["3t"]) >= MAN else 0.0)
+    n = len(xs)
+    if n < min_n:
+        return None
+    X, Y = np.array(xs), np.array(ys)
+    a, b = 0.0, 1.0
+    lam = 10.0                                            # (a, b) を (0, 1) に寄せる強さ
+    for _ in range(50):                                   # ニュートン法
+        z = a + b * X
+        p = 1 / (1 + np.exp(-z))
+        g = np.array([np.sum(Y - p) - lam * a, np.sum((Y - p) * X) - lam * (b - 1)])
+        w = p * (1 - p)
+        H = np.array([[-np.sum(w) - lam, -np.sum(w * X)], [-np.sum(w * X), -np.sum(w * X * X) - lam]])
+        step = np.linalg.solve(H, g)
+        a, b = a - step[0], b - step[1]
+        if abs(step).max() < 1e-7:
+            break
+    # 帯ごとの見込みと実際(確かめ用に残す)
+    p0 = 1 / (1 + np.exp(-X)); p1 = 1 / (1 + np.exp(-(a + b * X)))
+    bands = []
+    for lo, hi in ((0, .12), (.12, .16), (.16, .20), (.20, 1.01)):
+        sel = (p0 >= lo) & (p0 < hi)
+        if sel.sum() >= 20:
+            bands.append([round(lo * 100), round(min(hi, 1) * 100), int(sel.sum()), round(float(p0[sel].mean()) * 100, 1), round(float(p1[sel].mean()) * 100, 1), round(float(Y[sel].mean()) * 100, 1)])
+    return {"a": round(float(a), 4), "b": round(float(b), 4), "n": n, "bands": bands}
+
+
 def main(recs=None) -> int:
     pays = load_pays()
     if len(pays) < 3000:
@@ -490,6 +541,11 @@ def main(recs=None) -> int:
            "proxy": {k: round(v, 4) for k, v in px.items()},
            "cal": {"w": [round(float(x), 4) for x in w], "vens": vens, "wind": [b[2] for b in WIND_B], "wave": [b[2] for b in WAVE_B], "kinds": KINDS},
            "eval": ev, "back": back, "stats": st, "mix": mix}
+    try:                                   # 締切前に記録した見込みで、出すぎを直す式
+        out["cal2"] = fit_cal2()
+        print("裏の見込みの直し:", json.dumps(out["cal2"], ensure_ascii=False) if out["cal2"] else "記録が少ないので、まだ直しません")
+    except Exception as ex:  # noqa: BLE001
+        print("裏の見込みの直しを学べませんでした:", ex)
     save_json(OUT, out)
     try:
         save_json(OUT_RACERS, racer_stats(pays))

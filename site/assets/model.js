@@ -4,7 +4,7 @@
    2) 展開の見立て: STの組み合わせごとに、どのコースがどの決まり手で1着になりやすいか(条件付きロジット)
    本番前はSTが分からないので、1)の多数の組み合わせで2)を平均する。
    使い方: var R = SuimenModel.predict(race, params, {samples: 400});
-     race = {vt, nt, wind, date, venue, name(レース名), boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, lv, cl, ex, est}]}
+     race = {vt, nt, wind, date, venue, name(レース名), boats: [{waku, course, pts, stx, r8, f, cs, motor2, motorR, lv, cl, ex, est, tilt}]}
        cl: 当地(この場)でのコースごとの成績 {コース: {n, w1, st, sn, …}}(当地のこのコースの1着率と、当地のST)
    ブラウザでもNode(require)でも使える。 */
 (function (root) {
@@ -93,6 +93,7 @@
   function startParts(sm, byC, wind, venue) {
     var co = sm.coef, K = sm.K, RK = sm.REC_K || 4, mz = maeduke(byC), exd = exDevs(byC);
     function mrOf(stx) { return (stx[1] + K * sm.m_pop) / (stx[0] + K); }
+    var SK = sm.skill || { mr: 0.14, n: 100 };
     var parts = byC.map(function (b, i) {
       var stx = b.stx || [0, 0, 0], mr = mrOf(stx), r8 = b.r8 || [], rec = 0, nb = 0, nn = 0, r8m = null;
       if (r8.length) { r8m = r8.reduce(function (a, x) { return a + x; }, 0) / r8.length; rec = (r8m * r8.length + RK * mr) / (r8.length + RK) - mr; }
@@ -116,6 +117,10 @@
       p.vdevX = vn > 0 ? (vs + KV * mr) / (vn + KV) - mr : 0;
       p.vdev = (co.vdev || 0) * p.vdevX;
       p.mu = p.base + p.course + p.f + p.f2 + p.wind + p.rec + p.nb + p.ven + p.mz + p.cdev + p.exd + p.vdev;
+      // スタート巧者(直近1年で100走以上・平均STが.14以内)は、ふだんの平均STから見込むより一撃が多いので、少し早めに見る(fit.py の fit_skill_shift)
+      p.skill = (stx[0] || 0) >= SK.n && mr <= SK.mr;
+      p.sk = p.skill ? -(sm.skill_shift || 0) : 0;
+      p.mu += p.sk;
       p.est = 0;
       return p;
     });
@@ -130,10 +135,8 @@
     }
     // スタート巧者(直近1年で100走以上・平均STが.14以内)と、展示STの出方(fit.py の fit_est_shape と同じ):
     // 巧者でない選手が展示で遅め(.16以上)なら遅らせ(凹み寄り)、巧者が展示でFかタッチ(.02以内)なら早める(一撃寄り)。巧者の展示の遅めには足さない
-    var SK = sm.skill || { mr: 0.14, n: 100 };
     parts.forEach(function (p, i) {
       var b = byC[i];
-      p.skill = ((b.stx || [0])[0] || 0) >= SK.n && p.mr <= SK.mr;
       p.eslow = 0; p.efast = 0;
       if (!ok[i] || n < 4) return;
       if (!p.skill && b.est >= 0.16) p.eslow = sm.est_slow || 0;
@@ -189,9 +192,6 @@
       p.loc = (th.loc || 0) * (locd[c - 1] - mloc);                   // 当地の相性
       var rate = (cs.w1 + K.REC_K * base) / (cs.n + K.REC_K);
       p.rec = th.rec * Math.log(rate / base);
-      var lc = (b.cl || {})[String(c)] || {}, LCK = K.LOCC_K || 6;            // 当地のこのコース: この場でのこのコースの1着率が、このコースの1着率よりどれだけ高いか
-      p.loccX = lc.n ? Math.log((((lc.w1 || 0) + LCK * rate) / (lc.n + LCK)) / rate) : 0;   // 正: 当地のこのコースの方がよく勝っている
-      p.locc = (th.locc || 0) * p.loccX;
       p.mot = mmean != null && mots[c - 1] != null ? th.mot * (mots[c - 1] - mmean) / 10 : 0;
       p.ex = exOk ? ((th.ex || 0) + (k === "捲り" || k === "捲り差し" ? (th.ex_mk || 0) : 0)) * (exMean - exs[c - 1]) / 0.05 : 0;
       p.tac = 0; p.ls = 0;
@@ -205,7 +205,9 @@
       if (c >= 3 && (k === "差し" || k === "捲り差し")) p.nb = (th[k === "差し" ? "nb_sa" : "nb_ms"] || 0) * nbMakuri(B, pr.q, c, K);
       p.kind = 0;                                                       // レースの種類(優勝戦・ドリーム戦などは1号艇が勝ちやすい)と進入固定
       if (c === 1) p.kind = (th["kd_" + kind] || 0) + (fixed ? (th.kd_fixed || 0) : 0);
-      u[i] = v + p.d + p.str + p.loc + p.locc + p.rec + p.mot + p.ex + p.tac + p.ls + p.nb + p.kind;
+      p.tilt = 0;                                                       // チルト: +1.0 以上に跳ねたダッシュの艇は、捲り・捲り差しが決まりやすい(伸び仕様)
+      if (c >= 4 && (k === "捲り" || k === "捲り差し") && b.tilt != null && b.tilt >= (K.TILT_AT || 0.75)) p.tilt = (th.tilt || 0) * (b.tilt - (K.TILT_0 != null ? K.TILT_0 : 0.5));
+      u[i] = v + p.d + p.str + p.loc + p.rec + p.mot + p.ex + p.tac + p.ls + p.nb + p.kind + p.tilt;
       parts.push(p);
     });
     return { u: u, parts: parts, prior: pr, kind: kind, fixed: fixed };
@@ -229,14 +231,14 @@
       }
       if (c <= 5) O = (Math.min(inner, t[c - 1]) - t[c]) / Uu;
       u[CI[c + "捲り"]] += th["mk1_" + g] * L + th["mk2_" + g] * Math.max(0, L - 0.8);
-      u[CI[c + "差し"]] += th["sa1_" + g] * N + th["sa2_" + g] * Math.max(0, A) + th["sa3_" + g] * Math.max(0, O);
-      u[CI[c + "捲り差し"]] += th["ms1_" + g] * N + th["ms2_" + g] * Math.max(0, H) + th["ms3_" + g] * Math.max(0, A);
+      u[CI[c + "差し"]] += th["sa1_" + g] * N + (c >= 3 ? th["sa2_" + g] * Math.max(0, A) : 0) + th["sa3_" + g] * Math.max(0, O);
+      u[CI[c + "捲り差し"]] += th["ms1_" + g] * N + (c >= 3 ? th["ms2_" + g] * Math.max(0, H) + th["ms3_" + g] * Math.max(0, A) : 0);
       inner = Math.min(inner, t[c - 1]);
     }
     var w = Math.max(0, (wind || 0) - 3);
     if (w) {
       u[CI["1逃げ"]] += th.w_nige * w;
-      for (c = 2; c <= 6; c++) { u[CI[c + "捲り"]] += th.w_mk * w; u[CI[c + "差し"]] += th.w_sa * w; u[CI[c + "捲り差し"]] += th.w_ms * w; }
+      for (c = 2; c <= 6; c++) u[CI[c + "捲り差し"]] += (th.w_ms || 0) * w;
     }
     return u;
   }

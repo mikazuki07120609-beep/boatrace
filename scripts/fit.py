@@ -31,7 +31,6 @@ MOTOR_DAYS = 180
 # ---- 見立ての式の定数(model.js と同じ)
 PTS_MEAN, PTS_K = 31 / 6, 10       # 着順点の平均(1レース31点を6艇で分ける)と、走数が少ない選手を平均に寄せる強さ
 LOC_K = 8                          # 当地の着順点を、その選手の全体の平均に寄せる強さ(走数)
-LOCC_K = 6                         # 当地のこのコースの1着率を、その選手のこのコースの1着率に寄せる強さ(走数)
 REC_K, TAC_K, LS_K = 10, 3, 2
 VEN_M, VEN_KM = 300, 40            # 場の傾向を全国の傾向で補う強さ(レース数・勝ち数)
 U = 0.05                           # STの差の単位(秒)
@@ -52,8 +51,8 @@ PARAMS = ([f"d_{c}{k}" for c, k in CLASSES] + [f"str_{k}" for k in KIMS] + ["rec
           + [f"mk{j}_{g}" for g in range(4) for j in (1, 2)]
           + [f"sa{j}_{g}" for g in range(4) for j in (1, 2, 3)]
           + [f"ms{j}_{g}" for g in range(4) for j in (1, 2, 3)]
-          + ["w_nige", "w_mk", "w_sa", "w_ms", "loc", "nb_ms", "nb_sa"]
-          + [f"kd_{k}" for k in KINDS] + ["kd_fixed", "locc"])
+          + ["w_nige", "w_ms", "loc", "nb_ms", "nb_sa"]
+          + [f"kd_{k}" for k in KINDS] + ["kd_fixed"])
 PI = {n: i for i, n in enumerate(PARAMS)}
 NP = len(PARAMS)
 REG = np.array([2.0 if n.startswith("d_") else 0.5 for n in PARAMS])
@@ -115,7 +114,6 @@ def local_st(r: dict, vcode) -> list:
 
 def snapshot_racer(r: dict, d: dt.date, course: int, vcode=None) -> dict:
     cs = r.get("c", {}).get(str(course), {})
-    lc = ((r.get("vc") or {}).get(vcode) or {}).get(str(course), {}) if vcode else {}
     ps = period_start(d).isoformat()
     cst = [round(cs["st_sum"] / cs["st_n"], 2), cs["st_n"]] if cs.get("st_n", 0) > 0 else [None, 0]
     return {"pts": list(r.get("pts", [0, 0])), "stx": list(r.get("stx", [0, 0.0, 0.0])), "cst": cst,
@@ -125,7 +123,6 @@ def snapshot_racer(r: dict, d: dt.date, course: int, vcode=None) -> dict:
             "cs": {"n": cs.get("n", 0), "w1": cs.get("w1", 0), "w2": cs.get("w2", 0), "w3": cs.get("w3", 0),
                    "km": {k: v for k, v in cs.get("km", {}).items() if v > 0},
                    "ls": {k: v for k, v in cs.get("ls", {}).items() if v > 0} if course == 1 else {}},
-            "lc": {"n": lc.get("n", 0), "w1": lc.get("w1", 0)},          # 当地のこのコースの[走数, 1着]
             "vst": local_st(r, vcode) if vcode else [0, 0]}
 
 
@@ -309,9 +306,6 @@ def static_terms(rec):
         base = pc[c - 1]
         rate = (b["cs"]["w1"] + REC_K * base) / (b["cs"]["n"] + REC_K)
         terms.append((PI["rec"], i, math.log(rate / base)))
-        lc = b.get("lc") or {}                            # 当地のこのコース: この場でのこのコースの1着率が、このコースの1着率よりどれだけ高いか
-        if lc.get("n"):
-            terms.append((PI["locc"], i, math.log(((lc["w1"] + LOCC_K * rate) / (lc["n"] + LOCC_K)) / rate)))
         if mmean is not None and mots[c - 1] is not None:
             terms.append((PI["mot"], i, (mots[c - 1] - mmean) / 10))
         if ex_ok:                                         # 展示タイム(6艇の平均より速いほど、そのコースの決着が起きやすい。捲りは別に上乗せ)
@@ -366,19 +360,19 @@ def st_terms(t, wind):
         out.append((PI[f"mk1_{g}"], CI[(c, "捲り")], L))
         out.append((PI[f"mk2_{g}"], CI[(c, "捲り")], np.maximum(0, L - 0.8)))
         out.append((PI[f"sa1_{g}"], CI[(c, "差し")], N))
-        out.append((PI[f"sa2_{g}"], CI[(c, "差し")], np.maximum(0, A)))
+        if c >= 3:
+            out.append((PI[f"sa2_{g}"], CI[(c, "差し")], np.maximum(0, A)))
         out.append((PI[f"sa3_{g}"], CI[(c, "差し")], np.maximum(0, O)))
         out.append((PI[f"ms1_{g}"], CI[(c, "捲り差し")], N))
-        out.append((PI[f"ms2_{g}"], CI[(c, "捲り差し")], np.maximum(0, H)))
-        out.append((PI[f"ms3_{g}"], CI[(c, "捲り差し")], np.maximum(0, A)))
+        if c >= 3:
+            out.append((PI[f"ms2_{g}"], CI[(c, "捲り差し")], np.maximum(0, H)))
+            out.append((PI[f"ms3_{g}"], CI[(c, "捲り差し")], np.maximum(0, A)))
     if wind is not None:
         w = max(0, wind - 3)
         if w:
             one = np.full(len(t), float(w))
             out.append((PI["w_nige"], CI[(1, "逃げ")], one))
             for c in range(2, 7):
-                out.append((PI["w_mk"], CI[(c, "捲り")], one))
-                out.append((PI["w_sa"], CI[(c, "差し")], one))
                 out.append((PI["w_ms"], CI[(c, "捲り差し")], one))
     return out
 
@@ -559,6 +553,11 @@ def live_est(with_f: bool = False) -> dict:
 SKILL = {"mr": 0.14, "n": 100}
 EST_SLOW_AT, EST_FAST_AT = 0.16, 0.02
 EST_SHAPE_DAYS = 60                       # 学習に使う直近の日数(直前情報のある日)
+# スタート巧者は、ふだんの平均STから見込むより一撃(両隣より0.05秒以上早い)が多く、凹みが少ない(学習に使っていない直近30日で、
+# 巧者の一撃の見込み11.3%・実際13.2%)。巧者の予想STを少し早める大きさを、直近60日で一撃・凹みの見込みが一番当たる値に決める。
+# 学習に使っていない30日で確かめると、早めた方が一撃・凹みの見込みも、本番前の1着の見込みも当たりやすかった(前半・後半とも)。
+SKILL_SHIFT_DAYS = 60
+SKILL_SHIFT_GRID = (0.0, 0.002, 0.004, 0.006, 0.008, 0.010, 0.012)
 
 
 def is_skilled(sm, stx) -> bool:
@@ -626,6 +625,52 @@ def fit_est_shape(sm, recs) -> None:
     sm["est_shape_gain"] = round(base - loss(sm["est_slow"], sm["est_fast"]), 6)
 
 
+def fit_skill_shift(sm, recs) -> None:
+    """スタート巧者の予想STを早める分(秒): 直近60日のレース(6艇のSTがそろったもの)で、各艇の一撃・凹みの見込みの対数損失が一番小さくなる大きさ。
+    start_means と model.js の startParts で、巧者の予想STから引く。"""
+    sm["skill"] = dict(SKILL)
+    sm["skill_shift"] = 0.0
+    full = [r for r in recs if r["y"] is not None and all(b["st"] is not None for b in r["b"])]
+    if not full:
+        return
+    d_from = max(r["d"] for r in full) - dt.timedelta(days=SKILL_SHIFT_DAYS - 1)
+    pool = np.array(sm["pool"])
+    rng = np.random.default_rng(29)
+    S = 300
+    NB = [[j for j in (i - 1, i + 1) if 0 <= j < 6] for i in range(6)]
+    R = []
+    for rec in full:
+        if rec["d"] < d_from:
+            continue
+        mus = np.array(start_means(sm, rec))
+        sk = np.array([is_skilled(sm, b["stx"]) for b in rec["b"]], dtype=float)
+        if not sk.any():
+            continue
+        sc = np.array([racer_scale(sm, b) for b in rec["b"]])
+        z = pool[rng.integers(0, len(pool), size=S)] * sc
+        st = np.array([b["st"] for b in rec["b"]])
+        oa = np.array([st[i] <= st[NB[i]].min() - 0.05 + 1e-9 for i in range(6)])
+        da = np.array([st[i] >= st[NB[i]].max() + 0.05 - 1e-9 for i in range(6)])
+        R.append((mus, sk, z, oa, da))
+    sm["skill_shift_n"] = len(R)
+    if len(R) < 1000:
+        return
+    def loss(dl):
+        tot = 0.0
+        for mus, sk, z, oa, da in R:
+            t = np.clip(mus - dl * sk + z, 0.0, 0.45)
+            for i in range(6):
+                nb = t[:, NB[i]]
+                po = min(max(float(np.mean(t[:, i] <= nb.min(axis=1) - 0.05)), 1e-3), 1 - 1e-3)
+                pd = min(max(float(np.mean(t[:, i] >= nb.max(axis=1) + 0.05)), 1e-3), 1 - 1e-3)
+                tot -= math.log(po if oa[i] else 1 - po) + math.log(pd if da[i] else 1 - pd)
+        return tot / (6 * len(R))
+    L = {dl: loss(dl) for dl in SKILL_SHIFT_GRID}
+    best = min(SKILL_SHIFT_GRID, key=lambda dl: L[dl])
+    sm["skill_shift"] = best if L[best] < L[0.0] - 1e-6 else 0.0
+    sm["skill_shift_gain"] = round(L[0.0] - L[sm["skill_shift"]], 6)
+
+
 def fit_est(sm, sts) -> None:
     """展示STの効き方。展示は本番より全体に早く出るので、6艇の中での差(レースの平均からのずれ)どうしで比べる:
     本番のSTの、予想STからのずれ(レースの平均を引いたもの) = est ×(展示STの、予想STからのずれ(同じく平均を引いたもの)) + 残り。
@@ -676,13 +721,17 @@ def start_means(sm, rec):
     B = rec["b"]
     out = []
     exd = ex_devs([b.get("ex") for b in B])
+    sh = sm.get("skill_shift") or 0.0
     for i, b in enumerate(B):
         s = {"stx": b["stx"], "r8": b.get("r8") or [], "fp": b["fp"], "c": b["c"], "wind": rec["wind"], "v": rec["v"],
              "nb": [B[j]["stx"] for j in (i - 1, i + 1) if 0 <= j < 6], "mz": rec.get("mz"), "cst": b.get("cst"), "exd": exd[i],
              "vst": b.get("vst")}
         row = start_row(s, sm["K"], sm["m_pop"], [None])
         co = sm["coef"]
-        out.append(sum(co.get(n, 0.0) * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(rec["v"], 0.0))
+        mu = sum(co.get(n, 0.0) * x for n, x in zip(START_NAMES, row)) + sm.get("ven", {}).get(rec["v"], 0.0)
+        if sh and is_skilled(sm, b["stx"]):        # スタート巧者は少し早めに(fit_skill_shift)
+            mu -= sh
+        out.append(mu)
     return out
 
 
@@ -1001,6 +1050,88 @@ def conditional_st(th, sm, recs, S=120):
 LAST_RECS = None            # 最後に作ったレースの記録(裏の学習 scripts/ura_fit.py が使い回す)
 
 
+TILT_AT, TILT_0 = 0.75, 0.5             # チルト: +1.0 以上に跳ねたダッシュ(4〜6コース)の艇の捲り・捲り差しに、(チルト − 0.5)× 重み を足す
+
+
+def live_tilt() -> dict:
+    """取り込んだ直前情報のチルト {(日付, 場, レース, 枠): チルト}。"""
+    out = {}
+    for folder in sorted((DATA / "live").glob("[0-9]" * 8)):
+        try:
+            d = parse_ymd(folder.name)
+        except ValueError:
+            continue
+        for f in folder.glob("[0-9][0-9].json"):
+            for no, b in ((load_json(f, {}) or {}).get("before") or {}).items():
+                if not b.get("ready"):
+                    continue
+                for w, x in (b.get("tilt") or {}).items():
+                    if isinstance(x, (int, float)) and -1 <= x <= 3.5:
+                        out[(d, f.stem, int(no), int(w))] = x
+    return out
+
+
+def tilt_feats(rec, tl):
+    """チルトの項の値(決着パターンごと)。そろっていなければ None。model.js と同じ式。"""
+    ts = [tl.get((rec["d"], rec["v"], rec["no"], b.get("waku"))) for b in rec["b"]]
+    if any(t is None for t in ts):
+        return None
+    f = np.zeros(NC)
+    for i, (c, k) in enumerate(CLASSES):
+        if c >= 4 and k in ("捲り", "捲り差し") and ts[c - 1] >= TILT_AT:
+            f[i] = ts[c - 1] - TILT_0
+    return f
+
+
+def tilt_data(th, sm, recs, tl, S=200, seed=23):
+    """チルトの項の学習に使う、レースごとの [STの組み合わせごとの点数(S×NC), チルトの項の値, 実際の決着]。"""
+    rng = np.random.default_rng(seed)
+    out = []
+    for rec in recs:
+        if not rec["clean"] or rec["y"] is None:
+            continue
+        f = tilt_feats(rec, tl)
+        if f is None:
+            continue
+        lp, terms = static_terms(rec)
+        u0 = lp.copy()
+        for (j, k, v) in terms:
+            u0[k] += th[j] * v
+        t, _ = sample_st(sm, rec, S, rng)
+        U_ = np.tile(u0, (S, 1))
+        for (j, k, v) in st_terms(t, rec["wind"]):
+            U_[:, k] += th[j] * v
+        out.append((rec["d"], U_, f, rec["y"]))
+    return out
+
+
+def tilt_ll(data, a):
+    tot = 0.0
+    for _, U_, f, y in data:
+        u = U_ + a * f
+        u = u - u.max(axis=1, keepdims=True)
+        P = np.exp(u)
+        P /= P.sum(axis=1, keepdims=True)
+        tot += math.log(max(1e-12, float(P[:, y].mean())))
+    return tot
+
+
+def fit_tilt(data) -> float:
+    """チルトの重み(0〜2)。1次元で、対数尤度 − 0.5×重み² が一番大きいところ(弱く0に寄せる)。"""
+    if not any(f.any() for _, _, f, _ in data):
+        return 0.0
+    grid = [i * 0.1 for i in range(21)]
+    best = max(grid, key=lambda a: tilt_ll(data, a) - 0.5 * a * a)
+    lo, hi = max(0.0, best - 0.1), min(2.0, best + 0.1)
+    for _ in range(12):                               # 細かく(三分探索)
+        m1, m2 = lo + (hi - lo) / 3, hi - (hi - lo) / 3
+        if tilt_ll(data, m1) - 0.5 * m1 * m1 < tilt_ll(data, m2) - 0.5 * m2 * m2:
+            lo = m1
+        else:
+            hi = m2
+    return round((lo + hi) / 2, 3)
+
+
 def main() -> int:
     global LAST_RECS
     recs, sts = build_records()
@@ -1015,6 +1146,8 @@ def main() -> int:
     train = [r for r in recs if r["d"] < cut]
     test = [r for r in recs if r["d"] >= cut]
     sm_tr = fit_start([s for s in sts if s["d"] < cut])
+    if sm_tr:
+        fit_skill_shift(sm_tr, train)
     ev = None
     if sm_tr and len(train) >= 2000:
         th_tr, _ = fit_dev(train)
@@ -1032,17 +1165,23 @@ def main() -> int:
     sm = fit_start(sts)
     if sm:
         fit_est(sm, sts)
+        fit_skill_shift(sm, recs)
         fit_est_shape(sm, recs)
     th, D = fit_dev(recs)
     if th is None or sm is None:
         print("学習できませんでした")
         return 1
+    # チルト(直前情報を取り込んだ日のレースだけで、ほかの重みはそのままにして学習する)
+    tl = live_tilt()
+    td = tilt_data(th, sm, recs, tl) if tl else []
+    tilt_w = fit_tilt(td) if len(td) >= 300 else 0.0
     model = {"version": 1, "fitted": today_jst().isoformat(), "train": {"from": min(r["d"] for r in recs).isoformat(),
                                                                        "to": last.isoformat(), "races": D.n},
-             "const": {"PTS_MEAN": PTS_MEAN, "PTS_K": PTS_K, "REC_K": REC_K, "TAC_K": TAC_K, "LS_K": LS_K, "LOC_K": LOC_K, "LOCC_K": LOCC_K,
+             "const": {"PTS_MEAN": PTS_MEAN, "PTS_K": PTS_K, "REC_K": REC_K, "TAC_K": TAC_K, "LS_K": LS_K, "LOC_K": LOC_K, "TILT_AT": TILT_AT, "TILT_0": TILT_0,
                        "VEN_M": VEN_M, "VEN_KM": VEN_KM, "U": U},
              "classes": ["%d%s" % ck for ck in CLASSES],
-             "dev": {n: round(float(v), 4) for n, v in zip(PARAMS, th)},
+             "dev": dict({n: round(float(v), 4) for n, v in zip(PARAMS, th)}, tilt=tilt_w),
+             "tilt": {"n": len(td), "boats": int(sum(int((f > 0).any()) for _, _, f, _ in td))},
              "start": sm, "cond_st": conditional_st(th, sm, recs)}
     if th_ord is not None:
         model["order"] = order_model(th_ord, base2)

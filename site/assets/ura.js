@@ -98,6 +98,10 @@
       if (nn >= 100 && tot > 0) mk = big / tot;
       if (mk != null && UP.mix && UP.mix.w) pMan = sig(UP.mix.w[0] + UP.mix.w[1] * logit(pModel) + UP.mix.w[2] * logit(mk));
     }
+    // 合わせた見込みは、高い方にも低い方にも出すぎる(締切時オッズで学習した重みを、締切前のオッズで使うため)。
+    // 締切前に記録した見込みと、実際に万舟になったかで学んだ式で直す(scripts/ura_fit.py の fit_cal2。直す前の値は pRaw)
+    var pRaw = pMan;
+    if (pMan !== pModel && UP.cal2 && UP.cal2.b) pMan = sig(UP.cal2.a + UP.cal2.b * logit(pMan));
     // 1着の見込み(艇ごと)と、表の本線の艇
     var pc = [0, 0, 0, 0, 0, 0];
     Mo.p.forEach(function (p, i) { pc[CL[i][0] - 1] += p; });
@@ -129,7 +133,7 @@
         pop = { rows: rows, value: value, over: rows.filter(function (r) { return r.pm - r.pw >= 0.08; }).sort(function (a, b) { return (b.pm - b.pw) - (a.pm - a.pw); }) };
       }
     }
-    return { T: T, G: G, m: m, pMan: pMan, pModel: pModel, mk: mk, mixed: pMan !== pModel, x: x, pc: pc, oc: oc, scen: scen, cands: cands, lead: lead, pop: pop,
+    return { T: T, G: G, m: m, pMan: pMan, pRaw: pRaw, pModel: pModel, mk: mk, mixed: pRaw !== pModel, cal2: pMan !== pRaw, x: x, pc: pc, oc: oc, scen: scen, cands: cands, lead: lead, pop: pop,
              odds: mg.odds, c2w: c2w, byC: byC };
   }
 

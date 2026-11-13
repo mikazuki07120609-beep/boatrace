@@ -118,6 +118,7 @@ async function main() {
         boats: D.entries.map((b) => ({ waku: b.waku, course: order.indexOf(b.waku) >= 0 ? order.indexOf(b.waku) + 1 : b.waku,
                                        pts: b.pts || [0, 0], stx: b.stx || [0, 0, 0], r8: b.r8 || [], f: b.f || [], cs: b.cs || {}, motor2: b.motor2, motorR: b.motorR, lv: b.lv || [0, 0], cl: b.cl || {},
                                        ex: BI.ex ? BI.ex[String(b.waku)] ?? null : null, est: BI.est ? BI.est[String(b.waku)] ?? null : null,
+                                       tilt: BI.tilt ? BI.tilt[String(b.waku)] ?? null : null,
                                        cb: b.cb || [0, 0] })),
       };
       const R = M.predict(race, params, { samples: 400 });
@@ -147,7 +148,7 @@ async function main() {
           if (U) {
             const pw = [0, 0, 0, 0, 0, 0];                          // 1着の見込み(枠番の順)
             U.pc.forEach((p, c) => { const w = U.c2w[c + 1]; if (w) pw[w - 1] = r3(p); });
-            rec.u = { ura: UP.fitted || null, pm: r3(U.pMan), m: r3(U.m), ow: U.c2w[U.oc] || null,
+            rec.u = { ura: UP.fitted || null, pm: r3(U.pMan), pr: r3(U.pRaw), m: r3(U.m), ow: U.c2w[U.oc] || null,
               ul: U.lead ? [U.lead.i, U.lead.b ? U.lead.b.waku : U.c2w[U.lead.c], r3(U.lead.p), r3(U.lead.pk)] : null, pw, od: oat };
             nu++;
           }
