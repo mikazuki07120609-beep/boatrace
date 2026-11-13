@@ -143,6 +143,8 @@ jobs:
                   n("#runBox tbody tr") + "つ / " + run.slice(0, 200);
               });
               console.log("::notice title=スタートのタブ::" + s);
+              const sk = await pg.evaluate(() => [...document.querySelectorAll("#stNotes li")].map((li) => li.textContent).filter((t) => /巧者|展示が遅め/.test(t)).slice(0, 2).join(" / "));
+              if (sk) console.log("::notice title=スタート巧者と展示::" + sk.slice(0, 400));
             }
             console.log("::notice title=ブラウザ " + process.env.PAGE + "::締切表示 " + dl + " / 読み込み係 " + helper);
             console.log("::notice title=ブラウザが読んだデータ::" + (seen.join(" | ") || "なし"));
