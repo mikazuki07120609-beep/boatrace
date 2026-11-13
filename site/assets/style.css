@@ -666,6 +666,8 @@ body.top{background:var(--bg);padding-left:0;padding-right:0}
 .edb{border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:5px}
 .edh{display:flex;align-items:center;gap:8px;font-size:14px;line-height:1.3}
 .edh .dim{margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--muted);white-space:nowrap}
+.skilltag{font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:999px;background:color-mix(in srgb,var(--tc-start) 18%,var(--surface));
+  color:color-mix(in srgb,var(--tc-start) 70%,var(--ink));white-space:nowrap}
 .edl{display:grid;grid-template-columns:5.4em minmax(0,1fr);gap:8px;align-items:start;font-size:13px;line-height:1.55}
 .edk{font-weight:800;font-size:11.5px;display:flex;align-items:baseline;justify-content:space-between;gap:4px;padding:1px 6px;border-radius:6px;white-space:nowrap}
 .edk b{font-family:var(--mono);font-size:14px}

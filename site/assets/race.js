@@ -773,12 +773,13 @@
     return s;
   }
 
+  function S0() { return (PARAMS && PARAMS.start) || {}; }                     // 学習したスタートの見立ての値
   var LOCC_PT = 0.1;                                                // 「当地のこのコース」を道中のポイントに書く、見立ての点数の大きさ
   // ---- スタートの見立て
   function sgn(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(3).replace(/^0/, ""); }
   function stReasons(b, R) {
     var s = b.stf, q = s.parts || {}, out = [], n = (b.stx || [0])[0];
-    out.push(n ? "平均ST" + st2(b.stx[1] / n) + "(直近1年" + n + "走)" : "STの記録が少ない(全体の平均で見る)");
+    out.push(n ? "平均ST" + st2(b.stx[1] / n) + "(直近1年" + n + "走)" + (q.skill ? "・スタート巧者" : "") : "STの記録が少ない(全体の平均で見る)");
     if (q.n8 >= 4 && q.r8m != null && Math.abs(q.r8m - b.stx[1] / Math.max(1, n)) >= 0.02)
       out.push("最近は" + (q.r8m < b.stx[1] / n ? "早め" : "遅め") + "(直近" + q.n8 + "走の平均" + st2(q.r8m) + "、" + sgn(q.rec) + "秒)");
     if (s.scale >= 1.2) out.push("STのばらつきが大きい(一発もあるが、出遅れも多い)");
@@ -795,6 +796,9 @@
     if (q.wind) out.push("風速" + R.wspd + "m(" + sgn(q.wind) + "秒)");
     var est = estOf(b.waku);
     if (est != null) out.push("展示ST" + (est < 0 ? "F" + st2(-est) : st2(est)) + (Math.abs(q.est || 0) >= 0.003 ? "(" + sgn(q.est) + "秒)" : ""));
+    if (q.eslow) out.push("展示が遅め。スタート巧者でない選手は、展示で遅いと本番でも凹みやすい(" + sgn(q.eslow) + "秒)");
+    if (q.efast) out.push("スタート巧者が展示で" + (est < 0 ? "F" : "タッチ") + "。このときは本番も一撃が多い(" + sgn(q.efast) + "秒)");
+    if (q.skill && est != null && est >= 0.16) out.push("スタート巧者は、展示で遅くても本番で凹みやすくならないので、巧者でない選手に足す遅めの分" + ((S0().est_slow || 0) ? "(" + sgn(S0().est_slow) + "秒)" : "") + "は足していない");
     return out;
   }
   function renderStart(R, pre) {
@@ -918,6 +922,9 @@
     if (s.fp > 0 && fq >= 0.003) { d.pro.push("今期F" + s.fp + "持ちで、慎重になりやすい(" + sgn(fq) + "秒)"); o.con.push("F持ちで踏み込みにくい"); }
     if ((q.mz || 0) >= 0.004) d.pro.push("前づけで起こしが深くなる(" + sgn(q.mz) + "秒)");
     if (b.course === 4 && !mz && s.pOut >= 0.06) o.pro.push("カド(4コース)は助走が長く、内の3艇より前に出やすい位置");
+    if (q.efast) o.pro.push("スタート巧者が展示でFかタッチ(このとき本番も一撃が多い)");
+    if (q.eslow) { d.pro.push("展示が遅め(巧者でない選手は、本番でも凹みやすい)"); o.con.push("展示が遅め"); }
+    if (q.skill && !pre && (estOf(b.waku) || 0) >= 0.16) d.con.push("スタート巧者は、展示の遅れを本番に持ち越しにくい");
     return { out: o, dent: d };
   }
   function renderEdges(R, pre) {
@@ -934,6 +941,7 @@
     box.innerHTML = '<div class="edges">' + B.map(function (b) {
       var s = b.stf, w = edgeWhy(b, B, pre);
       return '<div class="edb"><div class="edh"><span class="waku w' + b.waku + '">' + b.waku + "</span><b>" + b.course + "コース " + esc(b.name) + femMark(b) + "</b>" +
+        ((s.parts || {}).skill ? '<span class="skilltag" title="直近1年で100走以上、平均STが.14以内">スタート巧者</span>' : "") +
         '<span class="dim">予想ST ' + st2(s.mean) + "</span></div>" + line("out", s.pOut, w.out, s.pOut >= Math.max(0.12, nat * 1.5)) + line("dent", s.pDent, w.dent, s.pDent >= Math.max(0.15, natD * 1.5)) + "</div>";
     }).join("") + "</div>" +
       '<p class="sub edsum">このレースの6艇の平均: 一撃 ' + Math.round(nat * 100) + "%・出遅れ " + Math.round(natD * 100) + "%</p>";

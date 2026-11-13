@@ -128,6 +128,18 @@
       var k = co.est != null ? co.est : 0.35;
       parts.forEach(function (p, i) { if (ok[i]) { p.est = k * ((es[i] - mE) - (p.mu - mM)); p.mu += p.est; } });
     }
+    // スタート巧者(直近1年で100走以上・平均STが.14以内)と、展示STの出方(fit.py の fit_est_shape と同じ):
+    // 巧者でない選手が展示で遅め(.16以上)なら遅らせ(凹み寄り)、巧者が展示でFかタッチ(.02以内)なら早める(一撃寄り)。巧者の展示の遅めには足さない
+    var SK = sm.skill || { mr: 0.14, n: 100 };
+    parts.forEach(function (p, i) {
+      var b = byC[i];
+      p.skill = ((b.stx || [0])[0] || 0) >= SK.n && p.mr <= SK.mr;
+      p.eslow = 0; p.efast = 0;
+      if (!ok[i] || n < 4) return;
+      if (!p.skill && b.est >= 0.16) p.eslow = sm.est_slow || 0;
+      if (p.skill && b.est <= 0.02) p.efast = -(sm.est_fast || 0);
+      p.mu += p.eslow + p.efast;
+    });
     return parts;
   }
   function startMeans(sm, byC, wind, venue) { return startParts(sm, byC, wind, venue).map(function (p) { return p.mu; }); }

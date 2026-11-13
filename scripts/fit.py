@@ -234,7 +234,7 @@ def make_record(d, vcode, race, acc, vt, nt, motor):
         r = acc.racer(e["toban"])
         b = snapshot_racer(r, d, c, vcode)
         b["lv"] = list(r.get("v", {}).get(vcode, [0, 0]))                  # この場での[着順点, 走数](当地の相性)
-        b.update({"c": c, "toban": e["toban"], "st": e["st"] if valid_st(e) else None, "rank": e.get("rank"),
+        b.update({"c": c, "waku": e.get("waku"), "toban": e["toban"], "st": e["st"] if valid_st(e) else None, "rank": e.get("rank"),
                   "ex": e.get("ex"), "motor": motor_rate(motor, vcode, e.get("motor"), d)})
         rec["b"].append(b)
     return rec
@@ -532,8 +532,8 @@ POOL = 1200
 EST_PRIOR, EST_PRIOR_N = 0.35, 200      # 展示STの効き方の初期値と、その重み(走数)
 
 
-def live_est() -> dict:
-    """取り込んだ直前情報の展示ST {(日付, 場, レース, 枠): 展示ST}。フライングだった展示は除く。"""
+def live_est(with_f: bool = False) -> dict:
+    """取り込んだ直前情報の展示ST {(日付, 場, レース, 枠): 展示ST}。フライングだった展示(負の数)は、with_f のときだけ入れる。"""
     out = {}
     for folder in sorted((DATA / "live").glob("[0-9]" * 8)):
         try:
@@ -546,9 +546,84 @@ def live_est() -> dict:
                 if not b.get("ready"):
                     continue
                 for w, x in (b.get("est") or {}).items():
-                    if isinstance(x, (int, float)) and 0 <= x < 0.5:
+                    if isinstance(x, (int, float)) and (0 <= x < 0.5 or (with_f and -0.3 < x < 0)):
                         out[(d, f.stem, int(no), int(w))] = x
     return out
+
+
+# スタート巧者(直近1年で100走以上、平均ST(走数で全体の平均に寄せたもの)が.14以内)と、展示STの出方の効き方。
+# 直前情報を取り込み始めた日からのレースで確かめると(前半で学習→後半で確かめ、その逆も):
+# - スタート巧者でない選手が、展示で遅め(.16以上)だと、本番でも凹みやすい(遅らせると、一撃・凹みの見込みが両方の確かめで当たりやすくなった)
+# - スタート巧者は、展示で遅めでも本番で凹みやすくならない(遅らせると、当たりにくくなった)
+# - スタート巧者が、展示でFかタッチ(.02以内)だと、本番は一撃が多い(早めると、両方で当たりやすくなった)
+SKILL = {"mr": 0.14, "n": 100}
+EST_SLOW_AT, EST_FAST_AT = 0.16, 0.02
+EST_SHAPE_DAYS = 60                       # 学習に使う直近の日数(直前情報のある日)
+
+
+def is_skilled(sm, stx) -> bool:
+    n, s1, _ = stx
+    mr = (s1 + sm["K"] * sm["m_pop"]) / (n + sm["K"])
+    return n >= SKILL["n"] and mr <= SKILL["mr"]
+
+
+def fit_est_shape(sm, recs) -> None:
+    """展示STの出方(遅め・F/タッチ)の効き方を、一撃・凹みの見込みの当たり方(対数損失)が一番よくなる大きさに決める。
+    est_slow: スタート巧者でない選手が展示で遅め(.16以上)のとき、予想STを遅らせる分。
+    est_fast: スタート巧者が展示でFかタッチ(.02以内)のとき、予想STを早める分。model.js と同じ式。"""
+    ex = live_est(with_f=True)
+    sm["skill"] = dict(SKILL)
+    sm["est_slow"], sm["est_fast"], sm["est_shape_n"] = 0.0, 0.0, 0
+    if not ex:
+        return
+    d_last = max(k[0] for k in ex)
+    d_from = d_last - dt.timedelta(days=EST_SHAPE_DAYS - 1)
+    k = sm["coef"].get("est", EST_PRIOR)
+    pool = np.array(sm["pool"])
+    rng = np.random.default_rng(17)
+    S = 300
+    R = []
+    for rec in recs:
+        if rec["d"] < d_from or any(b["st"] is None for b in rec["b"]):
+            continue
+        es = [ex.get((rec["d"], rec["v"], rec["no"], b.get("waku"))) for b in rec["b"]]
+        if any(e is None for e in es):
+            continue
+        mus = np.array(start_means(sm, rec))
+        ec = np.array([max(-0.02, min(0.35, e)) for e in es])
+        mus = mus + k * ((ec - ec.mean()) - (mus - mus.mean()))                     # いまの展示STの効き方(6艇の中での差)
+        sk = np.array([is_skilled(sm, b["stx"]) for b in rec["b"]])
+        slow = np.array([(not sk[i]) and es[i] >= EST_SLOW_AT for i in range(6)], dtype=float)
+        fast = np.array([sk[i] and es[i] <= EST_FAST_AT for i in range(6)], dtype=float)
+        sc = np.array([racer_scale(sm, b) for b in rec["b"]]) * (sm.get("est_scale") or 1.0)
+        z = pool[rng.integers(0, len(pool), size=S)] * sc
+        st = np.array([b["st"] for b in rec["b"]])
+        oa, da = [], []
+        for i in range(6):
+            nb = [j for j in (i - 1, i + 1) if 0 <= j < 6]
+            oa.append(st[i] <= st[nb].min() - 0.05 + 1e-9)
+            da.append(st[i] >= st[nb].max() + 0.05 - 1e-9)
+        R.append((mus, slow, fast, z, np.array(oa), np.array(da)))
+    sm["est_shape_n"] = len(R)
+    if len(R) < 300:
+        return
+    NB = [[j for j in (i - 1, i + 1) if 0 <= j < 6] for i in range(6)]
+    def loss(pen, bon):
+        tot = 0.0
+        for mus, slow, fast, z, oa, da in R:
+            t = np.clip(mus + pen * slow - bon * fast + z, 0.0, 0.45)
+            for i in range(6):
+                nb = t[:, NB[i]]
+                po = min(max(float(np.mean(t[:, i] <= nb.min(axis=1) - 0.05)), 1e-3), 1 - 1e-3)
+                pd = min(max(float(np.mean(t[:, i] >= nb.max(axis=1) + 0.05)), 1e-3), 1 - 1e-3)
+                tot -= math.log(po if oa[i] else 1 - po) + math.log(pd if da[i] else 1 - pd)
+        return tot / (6 * len(R))
+    base = loss(0.0, 0.0)
+    pen = min((0.0, 0.002, 0.004, 0.006, 0.008, 0.010), key=lambda x: loss(x, 0.0))
+    bon = min((0.0, 0.002, 0.004, 0.006, 0.008), key=lambda x: loss(pen, x))
+    if loss(pen, bon) < base - 1e-5:
+        sm["est_slow"], sm["est_fast"] = pen, bon
+    sm["est_shape_gain"] = round(base - loss(sm["est_slow"], sm["est_fast"]), 6)
 
 
 def fit_est(sm, sts) -> None:
@@ -957,6 +1032,7 @@ def main() -> int:
     sm = fit_start(sts)
     if sm:
         fit_est(sm, sts)
+        fit_est_shape(sm, recs)
     th, D = fit_dev(recs)
     if th is None or sm is None:
         print("学習できませんでした")
