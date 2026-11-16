@@ -135,6 +135,12 @@ jobs:
             if (loc) console.log("::notice title=出走表の当地::" + loc.slice(0, 300));
             const tl = await pg.evaluate(() => [...document.querySelectorAll("#points li")].map((li) => li.textContent).filter((t) => /チルト/.test(t)).slice(0, 1).join(""));
             if (tl) console.log("::notice title=道中のポイントのチルト::" + tl.slice(0, 300));
+            const sx = await pg.evaluate(() => {
+              const t = [...document.querySelectorAll(".stabs [data-tab]")].map((b) => b.textContent).join(" ");
+              const c = document.querySelector(".pane:not([hidden]) .sx-c");
+              return t ? "タブ " + t + " / " + (c ? c.innerText.replace(/\s+/g, " ").slice(0, 160) : "") : "";
+            });
+            if (sx) console.log("::notice title=一節まとめ::" + sx);
             const st = await pg.$('.tabs [data-tab="start"]');
             if (st) {
               await st.click(); await pg.waitForTimeout(1500);
