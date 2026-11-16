@@ -12,6 +12,7 @@ from common import DATA, OUT, PROGRAM, RESULTS, ROOT, SITE, VENUES, KIMARITE, de
 from alerts import badges, race_alerts
 from motor import motor_rates, raw_scores, venue_grades
 import pace as pacemod
+import setsu_page
 import tide as tidemod
 from stats import VENUE_DAYS, category_resolver, collect, venue_table
 
@@ -617,7 +618,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
     chips = "".join(f'<a class="chip{" on" if r["no"] == race["no"] else ""}" href="{r["no"]:02d}.html">{r["no"]}R</a>' for r in vprog["races"])
     meta_html = (f'<h1>{e(vname)} {race["no"]}R {e(race["name"])}</h1>'
                  f'<div class="meta"><span class="tag" id="dlTag">締切 {e(dl_now)}{"(変更)" if dl_now != dl_prog else ""}</span><span class="tag">{race["distance"]}m</span>'
-                 + cat_tag(cat) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "") + tide_tag(td)
+                 + cat_tag(cat) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "") + setsu_link(ymd, code, rel) + tide_tag(td)
                  + f'<span class="sub">{e(vprog.get("title", ""))}</span></div>'
                  f'<div class="alerts" id="alerts">{badges(alerts or {})}</div><div class="chips">{chips}</div>')
     head = (f'<nav class="crumb"><a href="{rel}today.html">今日のレース</a>›<a href="{rel}{ymd}/index.html">{jdate(d)}</a>›'
@@ -767,6 +768,7 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
     VENUE_LIST[(ymd, code)] = {"rows": keep, "tier": f"{tier(p1)}(1コース1着率{f1(p1)}%)"}
     body = (f'<nav class="crumb"><a href="../../today.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + cat_tag(venue_cat(ymd, code)) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
+            + setsu_link(ymd, code, "../../")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
             f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{ymd}/{code}.json" data-code="{code}" data-dlurl="{ymd}/dl.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
             '<th>結果</th><th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
@@ -779,6 +781,12 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
 
 
 GRADES_ALL: dict = {}   # 開催のグレード(data/grades.json。main で読み込む)
+SETSU_LINKS: dict = {}  # {(日付, 場): 一節まとめのページの道筋}(main で setsu_page.build_all が作る)
+
+
+def setsu_link(ymd: str, code: str, rel: str) -> str:
+    p = SETSU_LINKS.get((ymd, code))
+    return f'<a class="tag sx-tagl" href="{rel}{p}">一節まとめ</a>' if p else ""
 EVAL: dict = {}         # data/eval.json の latest(学習に使っていない直近の日での見立ての確かめ。main で読み込む)
 
 
@@ -849,10 +857,18 @@ def build_day(d, prog, dates, alerts=None, live=None):
     ymd = d.strftime("%Y%m%d")
     nav = " ".join(f'<a class="chip{" on" if x == d else ""}" href="../{x:%Y%m%d}/index.html">{x.month}/{x.day}</a>' for x in dates)
     body = (f'<nav class="crumb"><a href="../today.html">今日のレース</a></nav><h1>{jdate(d)}の開催</h1>'
-            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(d, prog, "../", alerts, live)}</section>')
+            f'<div class="chips">{nav}</div>{setsu_line("../")}<section><h2>開催場</h2>{day_cards(d, prog, "../", alerts, live)}</section>')
     write(f"{ymd}/index.html", page(f"{jdate(d)}のボートレース開催一覧 | {SITE_NAME}",
                                     f"{jdate(d)}に開催のボートレース全場の出走表と展開の見立て。", body, 1, f"{ymd}/",
                                     '<script src="../assets/day.js"></script>', DAY_NOTES, mode="omote", alt=f"ura/{ymd}/index.html"))
+
+
+def setsu_line(rel: str) -> str:
+    """今日のレース・開催一覧のページに出す、一節まとめの一覧への入口。"""
+    if not SETSU_LINKS:
+        return ""
+    return (f'<a class="sx-entry" href="{rel}setsu/index.html"><b>一節まとめ</b>'
+            '<span>開催中の場の優勝候補・得点率の順位・モーターの変化・スタートの平均</span></a>')
 
 
 def build_index(today, progs, dates, alerts_by_day=None):
@@ -861,7 +877,7 @@ def build_index(today, progs, dates, alerts_by_day=None):
     label = "今日" if show == today else ("明日" if show == today + dt.timedelta(days=1) else "")
     body = (f'<h1>{label}{"の" if label else ""}レース {jdate(show)}</h1>'
             '<p class="lead">全国のボートレースの出走表を毎日自動で更新し、直前情報と1周1マークの展開シミュレーションを出しています。買い目は出しません。</p>'
-            f'<div class="chips">{nav}</div><section><h2>開催場</h2>{day_cards(show, progs[show], "", (alerts_by_day or {}).get(show))}</section>')
+            f'<div class="chips">{nav}</div>{setsu_line("")}<section><h2>開催場</h2>{day_cards(show, progs[show], "", (alerts_by_day or {}).get(show))}</section>')
     write("today.html", page(f"今日のレース | {SITE_NAME} ボートレースの出走表と展開の見立て",
                              "全国のボートレースの出走表を毎日自動更新。直前情報と1周1マークの展開シミュレーション。", body, 0, "today.html",
                              '<script src="assets/day.js"></script>', DAY_NOTES, mode="omote", alt="ura/index.html"))
@@ -1578,6 +1594,15 @@ def main():
     cats = category_resolver()                # レースの区分(開催のグレードと女子戦)と女子レーサー
     GRADES_ALL.clear()
     GRADES_ALL.update(cats.grades)
+    SETSU_LINKS.clear()
+    try:                                     # 一節まとめ(data/setsu の節のファイルから。レースのページから入口を張るので先に作る)
+        su, links = setsu_page.build_all(today, progs, page, write, cat_tag, cache)
+        SETSU_LINKS.update(links)
+        urls += su
+    except Exception as ex:  # noqa: BLE001  一節まとめを作れなくても、ほかのページは作る
+        import traceback
+        traceback.print_exc()
+        print("一節まとめをとばしました:", ex)
     for d in dates:
         build_date(d, progs, dates, cache, cats, model, stadiums, alerts_by_day, urls)
     build_index(today, progs, dates, alerts_by_day)

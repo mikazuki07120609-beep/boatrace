@@ -219,6 +219,25 @@ def main() -> int:
         if n:
             subprocess.run(["node", str(pathlib.Path(__file__).with_name("learn_anim.js")), f"{yday:%Y%m%d}", str(review)], check=False)
         shutil.rmtree(review, ignore_errors=True)
+    # 一節まとめ: 前検が終わった節(初日の番組表が出た節)のファイルを作り、優勝の見込みの式を1日1回学び直す
+    try:
+        import setsu
+        if setsu.fit_due():
+            setsu.fit_model(today)
+    except Exception as ex:  # noqa: BLE001  学び直せなくても、前の式で続ける
+        print("一節まとめの優勝の見込みを学び直せませんでした:", ex)
+    try:
+        import setsu
+        progs = {}
+        for d in (today, today + dt.timedelta(days=1)):
+            p = load_json(PROGRAM / f"{d:%Y%m%d}.json", None)
+            if p:
+                progs[d] = p
+        slog: list = []
+        setsu.refresh(today, progs, load_json(DATA / "stadiums.json", {}) or {}, slog)
+        print("\n".join(slog))
+    except Exception as ex:  # noqa: BLE001  一節まとめのファイルを作れなくても、サイトの更新は続ける
+        print("一節まとめのファイルをとばしました:", ex)
     build_site.main()
     return 0
 

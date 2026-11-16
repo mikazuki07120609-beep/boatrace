@@ -559,6 +559,19 @@ def dispatch(workflow: str) -> bool:
     return r.returncode == 0
 
 
+def rebuild_once(day: dt.date) -> None:
+    """今日の最終レースの結果まで取り込んだら、毎日の更新(サイトの作り直し)を1日1回だけ起こす。
+    一節まとめの日ごとのタブ(その日のレースが全部終わった日の分)を、夜のうちに足すため。"""
+    f = day_dir(day) / "state.json"
+    st = load_json(f, None) or {"tries": {}}
+    if st.get("rebuild"):
+        return
+    if dispatch("update.yml"):
+        st["rebuild"] = dt.datetime.now(JST).strftime("%H:%M")
+        save_json(f, st)
+        git_push(f"直前情報・結果 {dt.datetime.now(JST):%Y-%m-%d %H:%M} [skip ci]")
+
+
 def loop(minutes: float, push: bool) -> None:
     t0 = time.time()
     asked_update = False
@@ -586,6 +599,7 @@ def loop(minutes: float, push: bool) -> None:
                 print("今日の分は終わりました", flush=True)
                 if push:
                     git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
+                    rebuild_once(day)
                 return
         except Exception:  # noqa: BLE001  1回の失敗で止めず、次の回にやり直す
             import traceback
