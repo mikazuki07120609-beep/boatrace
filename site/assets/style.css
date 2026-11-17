@@ -901,3 +901,138 @@ a.tag.sx-tagl{text-decoration:none;background:color-mix(in srgb,var(--tc-navi) 1
 .sx-res .sx-wn .small{display:block;margin-left:0}
 .sx-ev .small{display:block}
 .sx-std td.sx-mk{font-size:14px;letter-spacing:.12em}
+
+/* =====================================================================
+   見た目の整理(2026-11): 静かな水面に、6色の枠だけが目立つ。
+   - 色: 水面 #eef3f7・紙 #fff・墨 #15222c・霞 #5b6b77・罫 #dde6ec・水色 #1170ae。強い色は枠の6色と、選んでいるタブの色だけ
+   - 箱は平らに(色付きの影をやめ、細い罫だけ)。説明は「このページの見方」にたたむ
+   ===================================================================== */
+:root{--bg:#eef3f7;--surface:#ffffff;--ink:#15222c;--muted:#5b6b77;--line:#dde6ec;--accent:#1170ae;--accent-soft:#e2eff8;--radius:16px}
+@media (prefers-color-scheme: dark){:root{--bg:#0d151b;--surface:#141e26;--ink:#e7eef3;--muted:#9bb0bd;--line:#25333e;--accent:#5cc0de;--accent-soft:#15313e}}
+body{line-height:1.65}
+.wrap{gap:16px}
+/* 見出しの行: ロゴ(6色の帯)・今日・検索・成績・表裏 */
+.site-head{flex-wrap:nowrap;gap:8px;padding-block:14px 0}
+.logo{display:inline-flex;align-items:center;gap:8px;font-size:22px;white-space:nowrap;color:var(--ink)}
+.logo::before{content:none}
+.wk6{display:inline-block;flex:none;width:28px;height:7px;border-radius:2px;box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 18%,transparent);
+  background:linear-gradient(90deg,#fff 0 16.66%,#1b1b1b 16.66% 33.33%,#d7282f 33.33% 50%,#1d5fbf 50% 66.66%,#f2cf1d 66.66% 83.33%,#1f9a4b 83.33%)}
+.site-nav{margin-left:auto;flex-wrap:nowrap;gap:2px;font-size:14px}
+.site-nav a{color:var(--ink);text-decoration:none;padding:5px 9px;border-radius:999px;font-weight:800}
+.site-nav a:hover{background:var(--accent-soft);color:var(--accent)}
+.mode-sw{margin-right:0;padding:4px 11px;font-size:12.5px;letter-spacing:.04em}
+.crumb{font-size:12.5px;gap:4px}
+.crumb a{text-decoration:none}
+.crumb a:hover{text-decoration:underline}
+/* 見出し */
+h1{font-size:clamp(24px,6.2vw,32px)}
+h1 .h1d{display:block;font-family:var(--body);font-weight:700;font-size:14px;color:var(--muted);letter-spacing:.02em;margin-top:4px}
+h2{font-size:18px;gap:8px}
+h2::before{width:4px;height:.95em;border-radius:2px}
+/* 箱: 平らに */
+section{border-radius:var(--radius);box-shadow:none;padding:16px 16px 18px;gap:12px}
+.card{box-shadow:none;border-radius:14px}
+.vcard,.cards .vcard:nth-child(n){border-top:1px solid var(--line)}
+.vcard.soon{border-color:color-mix(in srgb,var(--red) 55%,var(--line));box-shadow:inset 4px 0 0 var(--red)}
+.vcard .v{font-size:19px}
+.tag{font-size:11.5px;padding:2px 9px}
+.sub{font-size:13px}
+.note{font-size:12px;line-height:1.7}
+/* 今日のレース */
+.dayrow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.chip{padding:4px 11px;font-size:13.5px}
+.sx-entry{flex-wrap:nowrap;align-items:center;padding:11px 14px;border-radius:14px;box-shadow:none;gap:10px}
+.sx-entry span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* 場のレース一覧(4列) */
+.race-list th{font-size:11.5px}
+.race-list td{padding:8px 6px}
+.race-list td.rl-no{white-space:nowrap}
+.race-list td.rl-no .rno{display:block;font-family:var(--pop);font-size:17px;color:var(--ink);line-height:1.2}
+.race-list td.rl-no .dl{display:block;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.race-list td.rl-name{white-space:normal;min-width:84px}
+.race-list td.rl-w1{white-space:normal;font-weight:700;font-size:13.5px}
+.race-list td.rl-w1 .small{font-weight:500}
+.race-list td.res .small-tri .waku{width:20px;height:20px;font-size:11.5px}
+/* レースの見出し */
+h1.rh .rn{font-size:.72em;color:var(--muted)}
+.meta{gap:6px}
+.meta .mtxt{font-size:13px;color:var(--muted);font-weight:700}
+.meta a.tag{text-decoration:none}
+.rtitle{margin:-8px 0 0;font-size:12.5px;color:var(--muted)}
+.chips.rnav{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.chips.rnav .chip{text-align:center;padding:6px 0;border-radius:10px;font-family:var(--pop);font-weight:400;font-size:14px}
+/* タブ: ふだんは文字だけ、選んだタブに色 */
+.tabs{border:1px solid var(--line);box-shadow:0 6px 16px -10px rgba(21,34,44,.35);background:color-mix(in srgb,var(--surface) 94%,transparent);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.tabs button{background:transparent;color:color-mix(in srgb,var(--tc) 78%,var(--ink));border-radius:10px}
+.tabs button:hover{background:color-mix(in srgb,var(--tc) 10%,transparent)}
+.tabs button.on{background:var(--tc);color:#fff;box-shadow:none}
+/* 出走表: このコースの成績の区分の切り替え(全体・当地・女子戦など) */
+.rcv[data-blk="all"] .b-loc,.rcv[data-blk="all"] .b-cat,.rcv[data-blk="loc"] .b-all,.rcv[data-blk="loc"] .b-cat,
+.rcv[data-blk="cat"] .b-all,.rcv[data-blk="cat"] .b-loc{display:none}
+table.vt tr.seg-row th{padding:6px 6px 7px}
+.seg{display:inline-flex;gap:2px;padding:2px;border-radius:999px;background:var(--surface);border:1px solid var(--line);vertical-align:middle;margin-right:8px}
+.seg button{border:0;background:transparent;font-size:12px;font-weight:800;padding:3px 11px;border-radius:999px;color:var(--muted);line-height:1.4}
+.seg button.on{background:var(--pc,var(--accent));color:#fff}
+.seg-cap{font-size:11.5px;font-weight:700;vertical-align:middle}
+/* 結果の帯 */
+.resbar{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+/* いちばん下: このページの見方(たたむ)・注意・ほかのページ */
+.site-foot{display:flex;flex-direction:column;gap:12px;padding-top:6px;font-size:12px;color:var(--muted)}
+.howto{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:0 14px}
+.howto>summary{cursor:pointer;font-weight:800;color:var(--ink);font-size:13.5px;padding:12px 0;list-style:none;display:flex;align-items:center;gap:8px}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary::before{content:"";width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s ease;margin-right:2px}
+.howto[open]>summary::before{transform:rotate(45deg)}
+.howto .notes{margin:0 0 14px;padding-left:1.1em;display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:1.75}
+.site-foot .disc{margin:0;line-height:1.7;max-width:70ch}
+.foot-nav{display:flex;flex-wrap:wrap;gap:4px 16px;font-weight:700}
+.foot-nav a{color:var(--muted)}
+footer h2{display:none}
+@media (prefers-reduced-motion:reduce){.howto>summary::before{transition:none}}
+@media (max-width:420px){
+  .site-nav a{padding:5px 7px}
+  .logo{font-size:20px;gap:6px}
+  .wk6{width:22px}
+  section{padding:14px 10px 16px}
+}
+/* 最初のページ(表と裏を選ぶ) */
+.top .site-foot{width:min(1040px,calc(100% - 32px));margin-left:auto;margin-right:auto}
+.top-brand .logo{font-size:32px}
+/* 今日のレース: 開催場は背景の上に直接並べる(箱の中に箱を入れない) */
+section.venues{background:transparent;border:0;padding:0;gap:10px}
+.sx-entry b{flex:none;white-space:nowrap}
+.vcard{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"vrow next" "t t" "ub ub" "sub sub";column-gap:12px;row-gap:1px;padding:12px 14px}
+.vcard .vrow{grid-area:vrow;min-width:0}
+.vcard .next{grid-area:next;align-self:center;text-align:right;font-size:14px;white-space:nowrap}
+.vcard .t{grid-area:t;font-size:12.5px}
+.vcard .ubadges{grid-area:ub}
+.vcard .sub{grid-area:sub;font-size:12px}
+.vcard .next:empty{display:none}
+/* たたんだ注記 */
+details.fold{margin:0}
+details.fold>summary{cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);list-style:none;padding:2px 0}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s ease}
+details.fold[open]>summary::before{transform:rotate(45deg)}
+details.fold[open]>summary{margin-bottom:4px}
+@media (prefers-reduced-motion:reduce){details.fold>summary::before{transition:none}}
+/* たたんだ箱(見出しを押すと開く) */
+details.secfold{display:flex;flex-direction:column;gap:12px}
+details.secfold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px}
+details.secfold>summary::-webkit-details-marker{display:none}
+details.secfold>summary h2{margin:0}
+details.secfold>summary::after{content:"";flex:none;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-right:6px;transition:transform .15s ease}
+details.secfold[open]>summary::after{transform:rotate(-135deg)}
+details.secfold[open]>summary{margin-bottom:10px}
+@media (prefers-reduced-motion:reduce){details.secfold>summary::after{transition:none}}
+.race-list td.rl-w1{min-width:104px}
+.race-list td.rl-name{min-width:60px;font-size:14px}
+section>p:not([class]){margin:0}
+@media (min-width:720px){.chips.rnav{grid-template-columns:repeat(12,minmax(0,1fr))}}
+/* 一節まとめの一覧: 場の名前と状態を1行に */
+.sx-card{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"v ct" "t t" "p p";column-gap:10px;row-gap:2px;align-items:center;padding:12px 14px}
+.sx-card .v{grid-area:v;font-size:19px}
+.sx-card .sx-ct{grid-area:ct}
+.sx-card .t{grid-area:t}
+.sx-card .t.tp{grid-area:p;color:var(--ink);font-weight:700}

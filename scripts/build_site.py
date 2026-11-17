@@ -5,6 +5,7 @@ import html
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 
@@ -60,11 +61,10 @@ def pct(a, b):
     return None if not b else round(a / b * 100)
 
 
-BASE_NOTES = ["当サイトは非公式のデータ解説サイトです。データは公式の番組表・競走成績ファイルと、BOAT RACE オフィシャルウェブサイトの直前情報・結果から自動で作っています。"
-              "読み取りに誤りが含まれることがあるので、正確な情報は主催者発表のものをご確認ください。",
-              "見立てや映像は過去のデータから計算した目安で、結果を保証するものではなく、舟券の購入をすすめるものでもありません。舟券の購入は20歳以上に限られます。"]
-
-
+DISCLAIMER = ("非公式のデータ解説サイトです。公式の番組表・競走成績と BOAT RACE オフィシャルウェブサイトの直前情報・結果から自動で作っていて、"
+              "読み取りの誤りがあるかもしれません。正確な情報は主催者発表をご確認ください。見立てや映像は過去のデータからの目安で、舟券の購入をすすめるものではありません。"
+              "舟券の購入は20歳以上に限られます。")
+DISCLAIMER_URA = "荒れを狙えば回収率が上がるとは限りません。"
 SITE_NAME_URA = "裏水面ノート"
 URA_NOTES = ["裏水面ノートは、荒れる(3連単が1万円以上の万舟になる)レースと、荒れるとしたらどの形かを探すためのモードです。"
              "当たる割合は表の本線よりずっと低く、配当の高さで当たりにくさを補う考え方です。荒れを狙えば回収率が上がるとは限りません(見立ての成績のページに、実際の当たり方と配当を出しています)。"]
@@ -77,21 +77,42 @@ ICON_URA = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBo
             "%3Ccircle cx='15' cy='17' r='11' fill='%23ff5470'/%3E%3Ccircle cx='20' cy='12' r='9' fill='%230d0b12'/%3E%3C/svg%3E")
 
 
+_NOTE_RE = re.compile(r'<p class="note">(.*?)</p>', re.S)
+_TAG_RE = re.compile(r"<[^>]+>")
+FOLD_AT = 70                 # これより長い注記は「くわしい見方」にたたむ
+
+
+def fold_notes(body: str) -> str:
+    """長い注記(<p class="note">)は、たたんでおく(開くと読める)。短いものはそのまま。"""
+    def rep(m):
+        if len(_TAG_RE.sub("", m.group(1))) <= FOLD_AT:
+            return m.group(0)
+        return f'<details class="fold"><summary>くわしい見方</summary>{m.group(0)}</details>'
+    return _NOTE_RE.sub(rep, body)
+
+
 def page(title, desc, body, depth, path, scripts="", notes=None, mode="omote", alt=None, page_class=""):
-    """1ページの枠。mode は "omote"(水面ノート)か "ura"(裏水面ノート)。alt はもう一方のモードの同じページ(サイトの一番上からの道筋)。"""
+    """1ページの枠。mode は "omote"(水面ノート)か "ura"(裏水面ノート)。alt はもう一方のモードの同じページ(サイトの一番上からの道筋)。
+    見出しは1行(ロゴ・今日・検索・成績・表裏の切り替え)。ページの見方(notes)は、いちばん下の「このページの見方」にたたんでおく。"""
     rel = "../" * depth
     ura = mode == "ura"
-    items = "".join(f"<li>{x}</li>" for x in (notes or []) + (URA_NOTES if ura else []) + BASE_NOTES)
+    pre = "ura/" if ura else ""
+    hows = (notes or []) + (URA_NOTES if ura else [])
+    items = "".join(f"<li>{x}</li>" for x in hows)
     name = SITE_NAME_URA if ura else SITE_NAME
     home = f"{rel}ura/index.html" if ura else f"{rel}today.html"
-    nav = (f'<a href="{home}">今日のレース</a><a href="{rel}{"ura/" if ura else ""}search.html">レース検索</a>'
-           f'<a href="{rel}{"ura/" if ura else ""}seiseki.html">見立ての成績</a><a href="{rel}{"ura/" if ura else ""}about.html">このサイトについて</a>')
+    nav = (f'<a href="{home}">今日</a><a href="{rel}{pre}search.html" title="レース検索">検索</a>'
+           f'<a href="{rel}{pre}seiseki.html" title="見立ての成績">成績</a>')
     other = alt if alt is not None else ("today.html" if ura else "ura/index.html")
     switch = (f'<a class="mode-sw" href="{rel}{other}" title="{"表の水面ノートで見る" if ura else "裏水面ノートで見る"}">'
-              f'{"表へ" if ura else "裏へ"}<span aria-hidden="true">⇄</span></a>') if mode in ("omote", "ura") else ""
+              f'{"表へ" if ura else "裏へ"}</a>') if mode in ("omote", "ura") else ""
     head = ("" if mode == "top" else
-            f'<header class="site-head"><a class="logo" href="{rel}index.html" title="表と裏を選ぶページへ">{name}</a>{switch}'
-            f'<nav class="site-nav">{nav}</nav></header>')
+            f'<header class="site-head"><a class="logo" href="{rel}index.html" title="表と裏を選ぶページへ">{name}<i class="wk6" aria-hidden="true"></i></a>'
+            f'<nav class="site-nav" aria-label="サイトの中">{nav}</nav>{switch}</header>')
+    howto = f'<details class="howto"><summary>このページの見方</summary><ul class="notes">{items}</ul></details>' if hows else ""
+    foot = (f'<footer class="site-foot">{howto}<p class="disc">{DISCLAIMER}{DISCLAIMER_URA if ura else ""}</p>'
+            f'<nav class="foot-nav" aria-label="ほかのページ"><a href="{rel}{pre}about.html">このサイトについて</a>'
+            f'<a href="{rel}setsu/index.html">一節まとめ</a>' + ("" if mode == "top" else f'<a href="{rel}index.html">表と裏を選ぶ</a>') + '</nav></footer>')
     cls = " ".join(x for x in ("ura" if ura else "", page_class) if x)
     return f"""<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
@@ -111,8 +132,8 @@ def page(title, desc, body, depth, path, scripts="", notes=None, mode="omote", a
 {data_js()}
 </head><body{f' class="{cls}"' if cls else ""}><div class="wrap">
 {head}
-{body}
-<footer><h2>注意とこのページの見方</h2><ul class="notes">{items}</ul></footer>
+{fold_notes(body)}
+{foot}
 </div>{scripts}</body></html>"""
 
 
@@ -550,16 +571,18 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                    '<section class="stlink"><p class="sub">スタートの見立て(予想ST・一撃・出遅れ)と、スリットから1マークまでの展開は、<a href="#start" data-go="start">スタートのタブ</a>にあります。</p></section>')
     start_html = ('<section aria-labelledby="h-st"><div class="row-head"><h2 id="h-st">スタートの見立て</h2><span class="sub" id="stState"></span></div>'
                   + start_proof() +
-                  '<div id="stBox"><p class="wait">計算しています…</p></div><ul class="points" id="stNotes"></ul></section>'
+                  '<div id="stBox"><p class="wait">計算しています…</p></div>'
+                  '<details class="fold"><summary>予想STの根拠(艇ごと)</summary><ul class="points" id="stNotes"></ul></details></section>'
                   '<section aria-labelledby="h-slit"><div class="row-head"><h2 id="h-slit">スリットの隊形</h2><span class="sub">予想ST</span></div>'
                   '<div id="slitBox"><p class="wait">計算しています…</p></div>'
                   '<p class="note">右ほど早いスタート(スリットで前に出る)。帯は、10回に4回はこの間に入る幅です。点線は6艇の予想STの平均。</p></section>'
-                  '<section aria-labelledby="h-edge"><h2 id="h-edge">一撃スタートと出遅れの根拠</h2><div id="edgeBox"><p class="wait">計算しています…</p></div>'
+                  '<section aria-labelledby="h-edge"><details class="secfold"><summary><h2 id="h-edge">一撃スタートと出遅れの根拠</h2></summary>'
+                  '<div id="edgeBox"><p class="wait">計算しています…</p></div>'
                   '<p class="note">一撃は両隣の艇のどちらより0.05秒以上早いスタート、出遅れ(凹み)は両隣のどちらより0.05秒以上遅いスタートになる見込みです。'
                   '根拠のカッコの中は、予想STを早く(−)・遅く(+)する分です。' + e(start_check()) +
                   'スタート巧者は、直近1年で100走以上・平均STが.14以内の選手です。直前情報を取り込んでいるレースで確かめると、'
                   '巧者でない選手は展示で遅め(.16以上)だと本番でも凹みやすく、巧者は展示で遅くても凹みやすくならず、'
-                  '巧者が展示でFかタッチ(.02以内)だと本番で一撃が多くなっていたので、その分を見立てに入れています(大きさは毎晩学習し直します)。</p></section>'
+                  '巧者が展示でFかタッチ(.02以内)だと本番で一撃が多くなっていたので、その分を見立てに入れています(大きさは毎晩学習し直します)。</p></details></section>'
                   '<section aria-labelledby="h-run"><h2 id="h-run">スリットから1マークまで</h2><ul class="points runpts" id="runLead"></ul><div id="runBox"></div>'
                   '<p class="note">スタートの見立てで作った400通りのスリットを、形ごとに分けて、そのときに1マークで一番多い決着を数えたものです。</p></section>')
     view = ('<section class="t1" aria-labelledby="h-t1"><div class="row-head"><h2 id="h-t1">1周1マーク展開シミュレーション</h2></div>'
@@ -574,14 +597,15 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
             '<p class="sub nvnote" id="t1Note" hidden></p>'
             '<div class="pats" id="t1Pats" role="group" aria-label="決着パターン"></div></div></section>')
     navi = ('<section class="navi" aria-labelledby="h-navi"><div class="row-head"><h2 id="h-navi">展開ナビ</h2><span class="sub" id="nvState"></span></div>'
-            '<p class="sub">軸にする艇と、その艇の勝ち方(戦術)を選ぶと、2着・3着に考えられる展開を、起こりやすさとデータと一緒に並べます。</p>'
+            '<p class="sub">軸の艇と勝ち方を選ぶと、2着・3着の展開を起こりやすい順に並べます。</p>'
             '<div class="nvsel"><div class="nvl">軸艇</div><div class="nvboats" id="nvBoats" role="group" aria-label="軸艇"></div>'
             '<div class="nvl">戦術</div><div class="nvtacs" id="nvTacs" role="group" aria-label="戦術"></div></div>'
             '<div id="nvOut"><p class="wait">計算しています…</p></div></section>')
     analysis = ('<section class="gated"><h2>展開の見立て</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
                 '<p class="sub" id="scenLead"></p><div class="scen" id="scen"></div><div class="p2" id="scen2"></div></div></section>'
                 '<section class="gated"><h2>道中のポイント</h2><p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden>'
-                '<ul class="points" id="points"></ul><div class="boats" id="boats"></div></div></section>'
+                '<ul class="points" id="points"></ul>'
+                '<details class="fold"><summary>艇ごとの見立て(コース別の成績・勝ち筋)</summary><div class="boats" id="boats"></div></details></div></section>'
                 '<section class="gated"><div class="row-head"><h2>解説文</h2><button id="btnCopy" type="button">コピー</button></div>'
                 '<p class="wait">スタート展示のあとに出します。</p><div class="gbody" hidden><textarea id="post" aria-label="解説文"></textarea>'
                 '<p class="note" id="copyMsg" aria-live="polite"></p></div></section>')
@@ -616,11 +640,12 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
                        f'<p class="note">単位:%。全国の{e(cat)}({cat_tbl["races"]}レース)の、コースごとの1着・2着・3着の割合と、1着になったときの決まり手の割合(当サイト集計)。</p></section>')
     # ナビ
     chips = "".join(f'<a class="chip{" on" if r["no"] == race["no"] else ""}" href="{r["no"]:02d}.html">{r["no"]}R</a>' for r in vprog["races"])
-    meta_html = (f'<h1>{e(vname)} {race["no"]}R {e(race["name"])}</h1>'
-                 f'<div class="meta"><span class="tag" id="dlTag">締切 {e(dl_now)}{"(変更)" if dl_now != dl_prog else ""}</span><span class="tag">{race["distance"]}m</span>'
-                 + cat_tag(cat) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "") + setsu_link(ymd, code, rel) + tide_tag(td)
-                 + f'<span class="sub">{e(vprog.get("title", ""))}</span></div>'
-                 f'<div class="alerts" id="alerts">{badges(alerts or {})}</div><div class="chips">{chips}</div>')
+    mtxt = "・".join(x for x in (f'{race["distance"]}m', f'第{vprog["day"]}日' if vprog.get("day") else "") if x)
+    meta_html = (f'<h1 class="rh">{e(vname)} {race["no"]}R <span class="rn">{e(race["name"])}</span></h1>'
+                 f'<div class="meta">' + cat_tag(cat) + f'<span class="tag dl" id="dlTag">締切 {e(dl_now)}{"(変更)" if dl_now != dl_prog else ""}</span>'
+                 f'<span class="mtxt">{e(mtxt)}</span>' + tide_tag(td) + setsu_link(ymd, code, rel) + '</div>'
+                 f'<p class="rtitle">{e(vprog.get("title", ""))}</p>'
+                 f'<div class="alerts" id="alerts">{badges(alerts or {})}</div><nav class="chips rnav" aria-label="レース">{chips}</nav>')
     head = (f'<nav class="crumb"><a href="{rel}today.html">今日のレース</a>›<a href="{rel}{ymd}/index.html">{jdate(d)}</a>›'
             f'<a href="index.html">{e(vname)}</a></nav>' + meta_html)
     data = {"venue": {k: vinfo[k] for k in ("code", "name", "place", "kimarite")}, "alerts": alerts or {}, "cat": cat,
@@ -652,8 +677,7 @@ def build_race(d, code, vprog, race, vinfo, racers, result, tables, depth=2, ran
             '<button type="button" role="tab" data-tab="t1">1S1M<br class="tb">展開</button><button type="button" role="tab" data-tab="navi">展開<br class="tb">ナビ</button>'
             '<button type="button" role="tab" data-tab="data">データ</button></nav>')
     tac_html = ('<section class="tac" aria-labelledby="h-tac"><div class="row-head"><h2 id="h-tac">コース別の戦法</h2><span class="sub">直近1年</span></div>'
-                '<p class="sub">このレースの6人の、今日のコースでの戦い方です。1着の決まり手だけでなく、2着・3着になったときの動きと、'
-                'その選手がそのコースにいたときに1コースの逃げや外の艇の差しがどれだけ決まったかも出します。</p>'
+                '<p class="sub">6人の、今日のコースでの戦い方です(1着・2着・3着のときの動きと、そのとき1コースが逃げたか)。</p>'
                 '<div id="tacNow"><p class="wait">計算しています…</p></div><ul class="points" id="tacNotes"></ul></section>'
                 '<section class="tac" aria-labelledby="h-tac2"><h2 id="h-tac2">選手ごとの全コースの戦法</h2>'
                 '<div class="tacsel" id="tacBoats" role="group" aria-label="選手"></div><div id="tacAll"></div>'
@@ -746,6 +770,7 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
         x = racer_view(race["entries"][0], racers)
         c1 = x["cs"].get("1")
         c1txt = f'{pct(c1["w1"], c1["n"])}%<span class="small">{c1["n"]}走</span>' if c1 and c1["n"] else "—"
+        c1plain = f'イン1着{pct(c1["w1"], c1["n"])}%' if c1 and c1["n"] else "イン1着—"
         lr = ((vlive or {}).get("result") or {}).get(str(race["no"]))
         res = (results_v or {}).get(race["no"])
         tri = (lr or {}).get("tri")
@@ -758,20 +783,19 @@ def build_venue(d, code, vprog, vinfo, racers, results_v, vlive=None, al_map=Non
         keep.append({"no": race["no"], "dl": dl_now, "moved": dl_now != race["deadline"], "name": race["name"], "dist": race["distance"],
                      "al": badges((al_map or {}).get(race["no"]), True) if (al_map or {}).get(race["no"]) and any((al_map or {}).get(race["no"]).values()) else "",
                      "tri": tri, "pay": (lr or {}).get("pay"), "w1": (x["name"], x["cls"]), "c1": c1txt})
-        rows.append(f'<tr data-deadline="{e(dl_now)}" data-no="{race["no"]}"><td><a class="rno" href="{race["no"]:02d}.html">{race["no"]}R</a></td>'
-                    f'<td class="num"><span class="dl{" moved" if dl_now != race["deadline"] else ""}">{e(dl_now)}</span><span class="small cd"></span></td>'
-                    f'<td><a href="{race["no"]:02d}.html">{e(race["name"])}</a>' + (f'<span class="small">{race["distance"]}m</span>' if race["distance"] != 1800 else "")
+        rows.append(f'<tr data-deadline="{e(dl_now)}" data-no="{race["no"]}"><td class="rl-no"><a class="rno" href="{race["no"]:02d}.html">{race["no"]}R</a>'
+                    f'<span class="dl{" moved" if dl_now != race["deadline"] else ""}">{e(dl_now)}</span><span class="small cd"></span></td>'
+                    f'<td class="rl-name"><a href="{race["no"]:02d}.html">{e(race["name"])}</a>' + (f'<span class="small">{race["distance"]}m</span>' if race["distance"] != 1800 else "")
                     + (f'<span class="alrow">{badges((al_map or {}).get(race["no"]), True)}</span>' if (al_map or {}).get(race["no"]) and any((al_map or {}).get(race["no"]).values()) else "")
-                    + f'</td><td class="res">{restxt}</td><td><span class="waku w1">1</span> {e(x["name"])} <span class="small">{e(x["cls"])}</span></td>'
-                    f'<td class="num">{c1txt}</td></tr>')
+                    + f'</td><td class="rl-w1">{e(x["name"])}<span class="small">{e(x["cls"])}・{c1plain}</span></td><td class="res">{restxt}</td></tr>')
     p1 = vinfo["place"][0][0] if vinfo["place"] else 0
     VENUE_LIST[(ymd, code)] = {"rows": keep, "tier": f"{tier(p1)}(1コース1着率{f1(p1)}%)"}
     body = (f'<nav class="crumb"><a href="../../today.html">今日のレース</a>›<a href="../index.html">{jdate(d)}</a></nav>'
             f'<h1>{e(vname)} {jdate(d)}</h1><div class="meta">' + cat_tag(venue_cat(ymd, code)) + (f'<span class="tag">第{vprog["day"]}日</span>' if vprog.get("day") else "")
             + setsu_link(ymd, code, "../../")
             + f'<span class="tag">{tier(p1)}(1コース1着率{f1(p1)}%)</span><span class="sub">{e(vprog.get("title", ""))}</span></div>'
-            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{ymd}/{code}.json" data-code="{code}" data-dlurl="{ymd}/dl.json"><thead><tr><th>R</th><th class="num">締切</th><th>レース</th>'
-            '<th>結果</th><th>1号艇</th><th class="num">1号艇の<br>1コース1着率</th></tr></thead><tbody>' + "".join(rows)
+            f'<section><h2>レース一覧</h2><div class="scroll"><table class="race-list" data-date="{d.isoformat()}" data-live="{ymd}/{code}.json" data-code="{code}" data-dlurl="{ymd}/dl.json"><thead><tr><th>R・締切</th><th>レース</th>'
+            '<th>1号艇</th><th>結果</th></tr></thead><tbody>' + "".join(rows)
             + "</tbody></table></div></section>")
     title = f"{vname} {jdate(d)} 出走表・レース一覧 | {SITE_NAME}"
     desc = f"{vname}の{jdate(d)}の全レースの出走表、選手のコース別成績、展開の見立て。{vprog.get('title', '')}"
@@ -795,8 +819,8 @@ def start_proof() -> str:
     ev = EVAL
     if not ev or ev.get("top1") is None or ev.get("top1_with_st") is None:
         return ""
-    s = (f'スタートが分かれば、見立ての一番手の決着が当たる割合は{ev["top1"]:.1f}%から{ev["top1_with_st"]:.1f}%に上がります'
-         f'(学習に使っていない直近30日・{ev.get("races") or 0:,}レース)。1マークの決着を一番大きく動かすのが、スタートです。')
+    s = (f'スタートが分かると、見立ての1番手が当たる割合は{ev["top1"]:.1f}%から{ev["top1_with_st"]:.1f}%に上がります'
+         f'(直近30日・{ev.get("races") or 0:,}レース)。決着を一番動かすのはスタートです。')
     return f'<p class="stkey">{e(s)}</p>'
 
 
@@ -842,7 +866,7 @@ def day_cards(d, prog, depth_prefix, alerts=None, live=None, ura=False, S=None):
                              f'<span class="vrow"><span class="v">{e(VENUES.get(code, code))}</span>{cat_tag(venue_cat(ymd, code))}<span class="als"></span></span>'
                              f'<span class="next" aria-live="polite"></span>'
                              f'<span class="t">{e(v.get("title", ""))}</span>' + (f'<span class="ubadges">{extra}</span>' if extra else "") + '<span class="sub">'
-                             + (f'第{v["day"]}日 ・ ' if v.get("day") else "") + f'{len(v["races"])}R ・ 締切 {e(first)}〜{e(last)}</span></a>'))
+                             + (f'第{v["day"]}日・' if v.get("day") else "") + f'{len(v["races"])}R・締切 {e(first)}〜{e(last)}</span></a>'))
     items.sort()
     return f'<div class="cards" data-date="{d.isoformat()}" data-dlurl="{ymd}/dl.json">' + "".join(x[1] for x in items) + "</div>"
 
@@ -856,8 +880,11 @@ DAY_NOTES = ["開催場は、次のレースの締切が近い順に並べてい
 def build_day(d, prog, dates, alerts=None, live=None):
     ymd = d.strftime("%Y%m%d")
     nav = " ".join(f'<a class="chip{" on" if x == d else ""}" href="../{x:%Y%m%d}/index.html">{x.month}/{x.day}</a>' for x in dates)
-    body = (f'<nav class="crumb"><a href="../today.html">今日のレース</a></nav><h1>{jdate(d)}の開催</h1>'
-            f'<div class="chips">{nav}</div>{setsu_line("../")}<section><h2>開催場</h2>{day_cards(d, prog, "../", alerts, live)}</section>')
+    nv = len(prog.get("venues") or {})
+    nr = sum(len(v.get("races") or []) for v in (prog.get("venues") or {}).values())
+    body = (f'<nav class="crumb"><a href="../today.html">今日のレース</a></nav><h1 class="dayh">開催一覧<span class="h1d">{jdate(d)}</span></h1>'
+            f'<div class="dayrow"><div class="chips">{nav}</div><span class="sub">{nv}場・{nr}レース</span></div>{setsu_line("../")}'
+            f'<section class="venues"><h2>開催場<span class="h2s">締切が近い順</span></h2>{day_cards(d, prog, "../", alerts, live)}</section>')
     write(f"{ymd}/index.html", page(f"{jdate(d)}のボートレース開催一覧 | {SITE_NAME}",
                                     f"{jdate(d)}に開催のボートレース全場の出走表と展開の見立て。", body, 1, f"{ymd}/",
                                     '<script src="../assets/day.js"></script>', DAY_NOTES, mode="omote", alt=f"ura/{ymd}/index.html"))
@@ -868,16 +895,18 @@ def setsu_line(rel: str) -> str:
     if not SETSU_LINKS:
         return ""
     return (f'<a class="sx-entry" href="{rel}setsu/index.html"><b>一節まとめ</b>'
-            '<span>開催中の場の優勝候補・得点率の順位・モーターの変化・スタートの平均</span></a>')
+            '<span>開催中の節の優勝候補・得点率・モーターの変化</span></a>')
 
 
 def build_index(today, progs, dates, alerts_by_day=None):
     show = today if today in progs else max(progs)
     nav = " ".join(f'<a class="chip{" on" if x == show else ""}" href="{x:%Y%m%d}/index.html">{x.month}/{x.day}</a>' for x in dates)
     label = "今日" if show == today else ("明日" if show == today + dt.timedelta(days=1) else "")
-    body = (f'<h1>{label}{"の" if label else ""}レース {jdate(show)}</h1>'
-            '<p class="lead">全国のボートレースの出走表を毎日自動で更新し、直前情報と1周1マークの展開シミュレーションを出しています。買い目は出しません。</p>'
-            f'<div class="chips">{nav}</div>{setsu_line("")}<section><h2>開催場</h2>{day_cards(show, progs[show], "", (alerts_by_day or {}).get(show))}</section>')
+    nv = len(progs[show].get("venues") or {})
+    nr = sum(len(v.get("races") or []) for v in (progs[show].get("venues") or {}).values())
+    body = (f'<h1 class="dayh">{label}{"の" if label else ""}レース<span class="h1d">{jdate(show)}</span></h1>'
+            f'<div class="dayrow"><div class="chips">{nav}</div><span class="sub">{nv}場・{nr}レース</span></div>{setsu_line("")}'
+            f'<section class="venues"><h2>開催場<span class="h2s">締切が近い順</span></h2>{day_cards(show, progs[show], "", (alerts_by_day or {}).get(show))}</section>')
     write("today.html", page(f"今日のレース | {SITE_NAME} ボートレースの出走表と展開の見立て",
                              "全国のボートレースの出走表を毎日自動更新。直前情報と1周1マークの展開シミュレーション。", body, 0, "today.html",
                              '<script src="assets/day.js"></script>', DAY_NOTES, mode="omote", alt="ura/index.html"))
@@ -913,7 +942,7 @@ def write_search(dates, today):
         print("検索用の見立てを足せませんでした:", ex)
     tabs = "".join(f'<button type="button" class="chip{" on" if d == today else ""}" data-ymd="{d:%Y%m%d}">'
                    f'{"今日" if d == today else "明日" if d == today + dt.timedelta(days=1) else ""} {d.month}/{d.day}</button>' for d in dates)
-    body = ('<h1>レース検索</h1><p class="lead">条件を選ぶと、当てはまるレースが締切の順に並びます。「直前」の条件は、スタート展示のあとに取り込んだレースから探します。</p>'
+    body = ('<h1>レース検索</h1><p class="lead">条件を選ぶと、当てはまるレースが締切の順に並びます。</p>'
             f'<div class="chips" id="sDates">{tabs}</div>'
             '<section class="sform"><div id="sConds" class="sconds"></div>'
             '<div class="srow"><input type="search" id="sName" placeholder="選手名・登番" autocomplete="off" aria-label="選手名・登番">'
@@ -924,7 +953,8 @@ def write_search(dates, today):
             '<button type="button" id="sClear">条件を外す</button></div>'
             '<button type="button" id="sJump" class="sjump" hidden></button></section>'
             '<section><h2 id="sCount">レース</h2><div id="sList" class="slist"><p class="sub">読み込み中…</p></div></section>')
-    notes = ["準優の勝負駆けは、今節の着順を点数(1着10点・2着8点・3着6点・4着4点・5着2点・6着1点)にした得点率で、今の18位をボーダーの目安にした推定です。"
+    notes = ["「直前」の付いた条件は、スタート展示のあとに取り込んだレースから探します。",
+             "準優の勝負駆けは、今節の着順を点数(1着10点・2着8点・3着6点・4着4点・5着2点・6着1点)にした得点率で、今の18位をボーダーの目安にした推定です。"
              "残り1走の選手は、その1走で何着以内ならボーダーの目安に届くかを出しています。場によって点数の数え方や準優の枠の数が違うことがあります。",
              "モーター評価は、展示タイムが出ていればそれも加えて計算し直します。チルト・進入・展示タイム・部品交換・風は、取り込んだ直前情報から調べます。",
              "逃げの見立ては、ページを作ったときの計算です(展示の前のものは枠なり・ふだんのSTとして計算)。"]
@@ -1234,11 +1264,10 @@ def build_ura_day(d, prog, dates, S, today, alerts=None, live=None, top=False):
     rank = (f'<section><div class="row-head"><h2>荒れそうなレース</h2><span class="sub">場のふだんの万舟率と比べて高い順</span></div>'
             f'{ura_ranking(S, pfx, live)}</section>')
     if top:
-        head = (f'<h1>{label}{"の" if label else ""}レース {jdate(d)}</h1>'
-                '<p class="lead">全国の全レースを、荒れる(3連単が1万円以上の万舟になる)見込みと、荒れるとしたら一番ありそうな決着(裏本線)で見るモードです。'
-                '当たる割合は低い代わりに、荒れたときを狙う見方です。買い目は出しません。</p>')
+        head = (f'<h1 class="dayh">{label}{"の" if label else ""}レース<span class="h1d">{jdate(d)}</span></h1>'
+                '<p class="lead">万舟(3連単1万円以上)になる見込みと、荒れるとしたら一番ありそうな決着(裏本線)で見るモードです。</p>')
     else:
-        head = f'<nav class="crumb"><a href="../index.html">今日のレース</a></nav><h1>{jdate(d)}の開催</h1>'
+        head = f'<nav class="crumb"><a href="../index.html">今日のレース</a></nav><h1 class="dayh">開催一覧<span class="h1d">{jdate(d)}</span></h1>'
     live_sec, man_sec, strip, cfg_js = "", "", "", ""
     if d == today:                       # 今日: 展示のあとの荒れ(ura.json)・通知・今日の万舟。開いている間は ura_day.js が1分ごとに読み直す
         feed = (DATA_BASE + "ura/feed.xml") if DATA_BASE else RAW_BASE + "main/data/live/feed.xml"
@@ -1340,16 +1369,14 @@ def build_top(today, progs):
         vn = (S.get("venues") or {}).get(r["c"], {}).get("name") or VENUES.get(r["c"], r["c"])
         hot = f'<span class="tsub">いちばん荒れそう: <b>{e(vn)} {r["no"]}R</b> 万舟の見込み {r["u"]["pm"] * 100:.0f}%</span>'
     label = "今日" if show == today else "明日"
-    body = ('<div class="top-brand"><span class="logo">水面ノート</span><p class="sub">全国のボートレースを、データで読む。毎日自動で更新しています。買い目は出しません。</p></div>'
+    body = ('<div class="top-brand"><span class="logo">水面ノート<i class="wk6" aria-hidden="true"></i></span><p class="sub">全国のボートレースを、データで読む。毎日自動で更新しています。買い目は出しません。</p></div>'
             '<div class="top-pick">'
             f'<a class="tpanel omote" href="today.html"><span class="tk">表</span><span class="tn">水面ノート</span>'
             '<span class="td">当てにいく本線。出走表・直前情報・1周1マークの展開シミュレーションで、一番ありそうな決着を出します。</span>'
-            f'<span class="tsub">{label} {nv}場・{nr}レース</span><span class="tgo">今日のレースへ →</span></a>'
+            f'<span class="tsub">{label} {nv}場・{nr}レース</span><span class="tgo">{label}のレースを見る</span></a>'
             '<a class="tpanel ura" href="ura/index.html"><span class="tk">裏</span><span class="tn">裏水面ノート</span>'
             '<span class="td">荒れを狙う裏本線。万舟になる見込みと、荒れるとしたら一番ありそうな決着を、風・波・展開・人気のずれから出します。</span>'
-            f'<span class="tsub">{label} {nv}場・{nr}レース</span>{hot}<span class="tgo">今日のレースへ →</span></a></div>'
-            '<nav class="top-links"><a href="search.html">レース検索(表)</a><a href="ura/search.html">レース検索(裏)</a>'
-            '<a href="seiseki.html">見立ての成績(表)</a><a href="ura/seiseki.html">見立ての成績(裏)</a><a href="about.html">このサイトについて</a></nav>')
+            f'<span class="tsub">{label} {nv}場・{nr}レース</span>{hot}<span class="tgo">{label}のレースを見る</span></a></div>')
     write("index.html", page(f"{SITE_NAME} | ボートレースの出走表と展開の見立て(表)・荒れ予報(裏)",
                              "全国のボートレースの出走表を毎日自動更新。当てにいく本線の水面ノートと、荒れを狙う裏水面ノート。", body, 0, "",
                              "", None, mode="top", page_class="top"))
@@ -1358,7 +1385,7 @@ def build_top(today, progs):
 def build_ura_search(dates, today):
     tabs = "".join(f'<button type="button" class="chip{" on" if d == today else ""}" data-ymd="{d:%Y%m%d}">'
                    f'{"今日" if d == today else "明日" if d == today + dt.timedelta(days=1) else ""} {d.month}/{d.day}</button>' for d in dates)
-    body = ('<h1>レース検索(裏)</h1><p class="lead">荒れの材料で、穴の出そうなレースを探します。「直前」の条件は、スタート展示のあとに取り込んだレースから探します。</p>'
+    body = ('<h1>レース検索(裏)</h1><p class="lead">荒れの材料で、穴の出そうなレースを探します。</p>'
             f'<div class="chips" id="sDates">{tabs}</div>'
             '<section class="sform"><div id="sConds" class="sconds"></div>'
             '<div class="srow"><input type="search" id="sName" placeholder="選手名・登番" autocomplete="off" aria-label="選手名・登番">'
@@ -1370,7 +1397,8 @@ def build_ura_search(dates, today):
             '<button type="button" id="sClear">条件を外す</button></div>'
             '<button type="button" id="sJump" class="sjump" hidden></button></section>'
             '<section><h2 id="sCount">レース</h2><div id="sList" class="slist"><p class="sub">読み込み中…</p></div></section>')
-    notes = ["万舟の見込みと裏本線は、ページを作ったときの計算です(展示の前のレースは、枠なりの進入・ふだんのSTの目安)。",
+    notes = ["「直前」の付いた条件は、スタート展示のあとに取り込んだレースから探します。",
+             "万舟の見込みと裏本線は、ページを作ったときの計算です(展示の前のレースは、枠なりの進入・ふだんのSTの目安)。",
              "「荒れそうな順」は、万舟の見込みが、その場のふだんの万舟率の何倍かの順です。"]
     write("ura/search.html", page(f"レース検索(裏) | {SITE_NAME_URA}", "万舟の見込みが高い・1号艇が危ない・向かい風が強いなど、荒れの材料で今日のレースを探す。",
                                   body, 1, "ura/search.html", '<script src="../assets/search.js"></script>', notes, mode="ura", alt="search.html"))

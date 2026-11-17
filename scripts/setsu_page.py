@@ -447,6 +447,8 @@ def status_of(sf: dict, G: dict, A: dict, today: dt.date) -> tuple:
     k = A["kdone"]
     nxt = next((d for d in days if not d["complete"]), None)
     if k == 0:
+        if days and days[0]["d"] <= today:
+            return "初日", "初日のレース中です。初日のレースが全部終わったら、まとめと日ごとのタブを足します。"
         return "前検", f"前検が終わりました。初日は{first.month}/{first.day}です。"
     lab = day_label(days[k - 1])
     if nxt:
@@ -538,12 +540,12 @@ def build_all(today: dt.date, progs: dict, page, write, cat_tag, cache: dict) ->
     items = []
     for pg, path, sf in sorted(cards, key=lambda c: (c[0]["finished"], c[2]["code"])):
         top = pg["top"]
-        tl = (f'<span class="t">{e(top[0])}: {e(top[1])}' + (f" {pc(top[2])}" if top[2] is not None else "") + "</span>") if top else ""
+        tl = (f'<span class="t tp">{e(top[0])}: {e(top[1])}' + (f" {pc(top[2])}" if top[2] is not None else "") + "</span>") if top else ""
         items.append(f'<a class="card sx-card{" done" if pg["finished"] else ""}" href="{path.split("/")[1]}"><span class="v">{e(pg["vname"])}</span>'
                      f'<span class="sx-ct">{cat_tag(pg["grade"])}<span class="tag">{e(pg["tag"])}</span></span>'
                      f'<span class="t">{e(sf.get("title", ""))} {e(pg["span"])}</span>{tl}</a>')
     body = ('<nav class="crumb"><a href="../today.html">今日のレース</a></nav><h1>一節まとめ</h1>'
-            '<p class="lead">開催中の場の、前検から優勝戦までのまとめです。優勝候補・得点率の順位・モーターの変化・スタートの平均と、日ごとの結果を見られます。</p>'
+            '<p class="lead">開催中の場の、前検から優勝戦までのまとめです。</p>'
             + (f'<div class="cards">{"".join(items)}</div>' if items else '<p class="sub">いま開催中の節はありません。</p>'))
     write("setsu/index.html", page("一節まとめ | 水面ノート", "開催中のボートレース場の一節まとめ。優勝候補、モーターの変化、スタートの平均、日ごとの結果。",
                                    body, 1, "setsu/index.html", "", NOTES, mode="omote"))

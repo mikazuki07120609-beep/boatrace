@@ -165,7 +165,8 @@
   function gradeOf(z, mg) { return mg && mg.sp && z != null && z >= 0.65 ? "S+" : grade(z); }
   function gBadge(g) { return '<b class="g ' + (g === "S+" ? "gSp" : "g" + g) + '">' + g + "</b>"; }
 
-  // 出走表
+  // 出走表。このコースの成績は「全体・当地・区分(女子戦・SG など)」を切り替えて1つずつ出す(CARD_BLK)
+  var CARD_BLK = "all";
   function renderCard() {
     var box = $("#cardBox");
     if (!box) return;
@@ -181,42 +182,48 @@
     rows.push(vrow("全国2連率", E.map(function (e) { return cell(e.rate2, "%", 1); }), E.map(function (e) { return e.rate2; }), "max"));
     rows.push(vrow("当地勝率", E.map(function (e) { return cell(e.local, "", 2); }), E.map(function (e) { return e.local; }), "max"));
     rows.push(vrow("当地2連率", E.map(function (e) { return cell(e.local2, "%", 1); }), E.map(function (e) { return e.local2; }), "max"));
-    rows.push('<tr class="grp"><th colspan="7">このコース(' + (moved ? "展示の進入" : "枠と同じ") + ")の直近1年</th></tr>");
+    var segs = [["all", "全体"], ["loc", "当地"]].concat(D.cat ? [["cat", D.cat]] : []);
+    if (!segs.some(function (x) { return x[0] === CARD_BLK; })) CARD_BLK = "all";
+    var cw = moved ? "展示の進入" : "枠と同じ";
+    rows.push('<tr class="grp seg-row"><th colspan="7"><span class="seg" role="group" aria-label="このコースの成績の区分">' + segs.map(function (x) {
+      return '<button type="button" data-blk="' + x[0] + '" aria-pressed="' + (x[0] === CARD_BLK) + '"' + (x[0] === CARD_BLK ? ' class="on"' : "") + ">" + esc(x[1]) + "</button>";
+    }).join("") + '</span><span class="seg-cap b-all">このコース(' + cw + ")の直近1年</span>" +
+      '<span class="seg-cap b-loc">' + esc(V.name) + "でこのコース(" + cw + ")に入ったとき・直近1年</span>" +
+      (D.cat ? '<span class="seg-cap b-cat">' + esc(D.cat) + "でこのコース(" + cw + ")に入ったとき・直近1年</span>" : "") + "</th></tr>");
     rows.push(vrow("コース", C.map(function (c) { return c; })));
     var r1 = CS.map(function (cs) { return cs && cs.n ? p0(cs.w1, cs.n) : null; }), r2 = CS.map(function (cs) { return cs && cs.n ? p0(cs.w2, cs.n) : null; }),
         r3 = CS.map(function (cs) { return cs && cs.n ? p0(cs.w3, cs.n) : null; });
-    rows.push(vrow("1着率", r1.map(function (v) { return cell(v, "%"); }), r1, "max"));
-    rows.push(vrow("2着率", r2.map(function (v) { return cell(v, "%"); }), r2, "max"));
-    rows.push(vrow("3着率", r3.map(function (v) { return cell(v, "%"); }), r3, "max"));
-    rows.push(vrow("ST", CS.map(function (cs) { return cs ? st2(cs.st) : "—"; }), CS.map(function (cs) { return cs && cs.n >= 3 ? cs.st : null; }), "min"));
-    rows.push(vrow("走数", CS.map(function (cs) { return cs ? cs.n : 0; })));
-    rows.push(vrow("勝ち方", CS.map(function (cs, i) { return '<span class="tx">' + esc(winText(cs, C[i])) + "</span>"; })));
-    rows.push(vrow("2着の時", CS.map(function (cs) { return '<span class="tx">' + esc(secondText(cs)) + "</span>"; })));
+    rows.push(vrow("1着率", r1.map(function (v) { return cell(v, "%"); }), r1, "max", "b-all"));
+    rows.push(vrow("2着率", r2.map(function (v) { return cell(v, "%"); }), r2, "max", "b-all"));
+    rows.push(vrow("3着率", r3.map(function (v) { return cell(v, "%"); }), r3, "max", "b-all"));
+    rows.push(vrow("ST", CS.map(function (cs) { return cs ? st2(cs.st) : "—"; }), CS.map(function (cs) { return cs && cs.n >= 3 ? cs.st : null; }), "min", "b-all"));
+    rows.push(vrow("走数", CS.map(function (cs) { return cs ? cs.n : 0; }), null, null, "b-all"));
+    rows.push(vrow("勝ち方", CS.map(function (cs, i) { return '<span class="tx">' + esc(winText(cs, C[i])) + "</span>"; }), null, null, "b-all"));
+    rows.push(vrow("2着の時", CS.map(function (cs) { return '<span class="tx">' + esc(secondText(cs)) + "</span>"; }), null, null, "b-all"));
     rows.push(vrow("逃げ・逃がし", CS.map(function (cs, i) {
       if (!cs || !cs.n || C[i] > 2) return "—";
       return '<span class="dim">' + (C[i] === 1 ? "逃げ" : "逃がし") + "</span>" + p0(C[i] === 1 ? (cs.km || {})["逃げ"] || 0 : cs.ng || 0, cs.n) + "%";
-    })));
+    }), null, null, "b-all"));
     // 区分(SG など)・当地のときの、このコースの成績(直近1年)の行。G: 艇ごとのそのコースの成績(なければ null)
-    function courseRows(G) {
+    function courseRows(G, b) {
       function gr(k) { return G.map(function (g) { return g ? p0(g["w" + k], g.n) : null; }); }
       function gv(k) { return G.map(function (g) { return g && g.n >= 3 ? p0(g["w" + k], g.n) : null; }); }   // 3走未満は1位・2位の色を付けない
-      [1, 2, 3].forEach(function (k) { rows.push(vrow(k + "着率", gr(k).map(function (v) { return cell(v, "%"); }), gv(k), "max")); });
-      rows.push(vrow("ST", G.map(function (g) { return g ? st2(g.st) : "—"; }), G.map(function (g) { return g && g.n >= 3 && g.st != null ? g.st : null; }), "min"));
-      rows.push(vrow("走数", G.map(function (g) { return g ? g.n : 0; })));
-      rows.push(vrow("勝ち方", G.map(function (g, i) { return '<span class="tx">' + esc(winText(g, C[i])) + "</span>"; })));
-      rows.push(vrow("2着の時", G.map(function (g) { return '<span class="tx">' + esc(secondText(g)) + "</span>"; })));
+      [1, 2, 3].forEach(function (k) { rows.push(vrow(k + "着率", gr(k).map(function (v) { return cell(v, "%"); }), gv(k), "max", b)); });
+      rows.push(vrow("ST", G.map(function (g) { return g ? st2(g.st) : "—"; }), G.map(function (g) { return g && g.n >= 3 && g.st != null ? g.st : null; }), "min", b));
+      rows.push(vrow("走数", G.map(function (g) { return g ? g.n : 0; }), null, null, b));
+      rows.push(vrow("勝ち方", G.map(function (g, i) { return '<span class="tx">' + esc(winText(g, C[i])) + "</span>"; }), null, null, b));
+      rows.push(vrow("2着の時", G.map(function (g) { return '<span class="tx">' + esc(secondText(g)) + "</span>"; }), null, null, b));
       rows.push(vrow("逃げ・逃がし", G.map(function (g, i) {
         if (!g || !g.n || C[i] > 2) return "—";
         return '<span class="dim">' + (C[i] === 1 ? "逃げ" : "逃がし") + "</span>" + p0(C[i] === 1 ? (g.km || {})["逃げ"] || 0 : g.ng || 0, g.n) + "%";
-      })));
+      }), null, null, b));
     }
     // 当地(この場)のときの成績(直近1年): この場の勝率と、この場でのこのコースの成績
     var L = E.map(function (e, i) { var g = (e.cl || {})[String(C[i])]; return g && g.n ? g : null; });
-    rows.push('<tr class="grp gloc"><th colspan="7"><span class="loctag">当地</span>' + esc(V.name) + "のときのこのコース(直近1年)</th></tr>");
     var lr = E.map(function (e) { var lv = e.lv || [0, 0]; return lv[1] ? lv[0] / lv[1] : null; });
-    rows.push(vrow("勝率", E.map(function (e, i) { var lv = e.lv || [0, 0]; return lv[1] ? cell(lr[i], "", 2) + '<span class="dim">' + lv[1] + "走</span>" : "—"; }),
-      E.map(function (e, i) { return (e.lv || [0, 0])[1] >= 6 ? lr[i] : null; }), "max"));   // 6走未満は1位・2位の色を付けない
-    courseRows(L);
+    rows.push(vrow("当地の<br>勝率", E.map(function (e, i) { var lv = e.lv || [0, 0]; return lv[1] ? cell(lr[i], "", 2) + '<span class="dim">' + lv[1] + "走</span>" : "—"; }),
+      E.map(function (e, i) { return (e.lv || [0, 0])[1] >= 6 ? lr[i] : null; }), "max", "b-loc"));   // 6走未満は1位・2位の色を付けない
+    courseRows(L, "b-loc");
     // このレースの区分(女子戦・SG・G1・G2・G3・一般)のときの、このコースの成績(直近1年)
     if (D.cat) {
       var G = E.map(function (e, i) {
@@ -224,8 +231,7 @@
         if (Array.isArray(g)) g = g[0] ? { n: g[0], w1: g[1], w2: g[2], w3: g[3], km: {} } : null;   // 前の形([走数, 1着, 2着, 3着])
         return g && g.n ? g : null;
       });
-      rows.push('<tr class="grp gcat"><th colspan="7"><span class="cattag">' + esc(D.cat) + "</span>のときのこのコース(直近1年)</th></tr>");
-      courseRows(G);
+      courseRows(G, "b-cat");
     }
     rows.push('<tr class="grp"><th colspan="7">モーター・ボート</th></tr>');
     rows.push(vrow("モーター評価", mz.map(function (z, i) { return gBadge(gradeOf(z, E[i].mg)); }), mz.map(function (z, i) { return gradeOf(z, E[i].mg) === "S+" ? 99 : z; }), "max", "mo"));
@@ -240,7 +246,18 @@
     }), null, null, "series"));
     rows.push(vrow("節間順位", E.map(function (e) { return e.srank ? e.srank[0] + '<span class="dim">/' + e.srank[1] + "</span>" : "—"; }),
       E.map(function (e) { return e.srank ? e.srank[0] : null; }), "min"));
-    box.innerHTML = '<div class="vt-wrap stick"><table class="vt rcv">' + vhead(true) + "<tbody>" + rows.join("") + "</tbody></table></div>";
+    box.innerHTML = '<div class="vt-wrap stick"><table class="vt rcv" data-blk="' + CARD_BLK + '">' + vhead(true) + "<tbody>" + rows.join("") + "</tbody></table></div>";
+    if (!box._seg) {
+      box._seg = true;
+      box.addEventListener("click", function (ev) {
+        var b = ev.target.closest ? ev.target.closest(".seg [data-blk]") : null;
+        if (!b) return;
+        CARD_BLK = b.getAttribute("data-blk");
+        var t = box.querySelector("table.rcv");
+        if (t) t.setAttribute("data-blk", CARD_BLK);
+        [].slice.call(box.querySelectorAll(".seg [data-blk]")).forEach(function (x) { var on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); });
+      });
+    }
   }
 
   // ---- コース別の戦法: 選手ごと・コースごとの戦い方(直近1年)。1着の決まり手・2着/3着の時の動き(推定)・スタートで内より先に出た割合・
