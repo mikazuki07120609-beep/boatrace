@@ -39,6 +39,9 @@ WINDOW_MIN = 15              # 締切の何分前から読むか
 PAGES_PER_CYCLE = 27         # 1回り(1分)に読むページの上限。超える分は次の回り(古いものから)
 FINAL_UNTIL = 40             # 締切の何分後まで、締切時オッズを読みに行くか
 FINAL_TRIES = 6
+LATE_TRIES = 2               # 取りこぼした締切時オッズ(実行が遅れて始まった・止まっていた間のレース)を、あとから読みに行く回数
+LATE_PER_CYCLE = 3           # 取り直しは急がないので、1回りに読むレースの数を絞る(今のレースが先)
+WATCH_SEC = 600              # 直前情報・結果の取り込み(live.yml)が止まっていないかを見る間隔
 KEEP_FINAL_DAYS = 120
 PAGES = ("odds3t", "odds2tf", "oddstf")
 WT = Path("/tmp/odds-worktree")          # odds ブランチの作業場所(Actions の中)
@@ -295,8 +298,11 @@ def race_jobs(prog: dict, base: Path, day: dt.date, now: dt.datetime, state: dic
                     out.append((0, last, mins, code, race["no"]))
             elif -FINAL_UNTIL <= mins <= -1 and str(race["no"]) not in (finals.get(code) or {}) and state["tries"].get(key, 0) < FINAL_TRIES:
                 out.append((1, state["tries"].get(key, 0), -mins, code, race["no"]))
+            elif mins < -FINAL_UNTIL and str(race["no"]) not in (finals.get(code) or {}) and state["tries"].get("late:" + key, 0) < LATE_TRIES:
+                out.append((2, state["tries"].get("late:" + key, 0), mins, code, race["no"]))   # 取りこぼし(古いものから)
     out.sort()
-    return out
+    late = [j for j in out if j[0] == 2][:LATE_PER_CYCLE]
+    return [j for j in out if j[0] != 2] + late
 
 
 def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None) -> int:
@@ -337,6 +343,8 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
         rec = parse_race({page: got.get((code, no, page)) for page in PAGES})
         if kind == 1:
             state["tries"][key] = state["tries"].get(key, 0) + 1
+        elif kind == 2:
+            state["tries"]["late:" + key] = state["tries"].get("late:" + key, 0) + 1
         if not rec:
             continue
         path = base / "data" / "odds" / f"{day:%Y%m%d}" / code / f"{no:02d}.json"
@@ -349,7 +357,7 @@ def cycle(base: Path, day: dt.date, state: dict, now: dt.datetime | None = None)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(rec, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         changed += 1
-        if kind == 1 and rec.get("final"):
+        if kind in (1, 2) and rec.get("final"):
             finals.setdefault(code, {})[str(no)] = compact_final(rec)
             final_path.parent.mkdir(parents=True, exist_ok=True)
             final_path.write_text(json.dumps(finals, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -385,6 +393,12 @@ def remaining(day: dt.date, now: dt.datetime, state: dict | None = None) -> bool
     return last is not None and now <= last + dt.timedelta(minutes=FINAL_UNTIL)
 
 
+def late_left(base: Path, day: dt.date, now: dt.datetime, state: dict) -> bool:
+    """取りこぼした締切時オッズの取り直しが、まだ残っているか。"""
+    prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None)
+    return bool(prog) and any(j[0] == 2 for j in race_jobs(prog, base, day, now, state))
+
+
 def loop(minutes: float, push: bool) -> None:
     end = time.time() + minutes * 60
     try:
@@ -398,14 +412,22 @@ def loop(minutes: float, push: bool) -> None:
     mirror_odds(base, day)                     # 前の実行までに取ったものも、Cloudflare にそろえておく
     if push:
         publish(base, f"オッズ {day:%Y-%m-%d}")
+    last_watch = 0.0
     while time.time() < end:
         now = dt.datetime.now(JST)
         if now.date() != day:
             print("日付が変わったので終わります", flush=True)
             break
-        if not remaining(day, now, state):
+        if not remaining(day, now, state) and not late_left(base, day, now, state):
             print("今日の分は終わりです", flush=True)
             break
+        if push and time.time() - last_watch >= WATCH_SEC:      # 直前情報・結果の取り込みが止まっていたら起こす
+            last_watch = time.time()
+            try:
+                import keepalive
+                keepalive.ensure("live.yml")
+            except Exception as ex:  # noqa: BLE001
+                print("直前情報・結果の取り込みを見られませんでした:", ex, flush=True)
         t0 = time.time()
         try:
             n = cycle(base, day, state, now)
@@ -427,8 +449,10 @@ def main() -> int:
     ap.add_argument("--need-more", action="store_true")
     a = ap.parse_args()
     if a.need_more:
+        # 朝5時からは、今日のレースが残っていれば引き継ぐ(早く始まった実行が7時前に時間切れになっても、途切れないように)。
+        # 夜は引き継がない(朝は、直前情報・結果の取り込みと毎日の更新が、止まっていれば起こす。scripts/keepalive.py)
         now = dt.datetime.now(JST)
-        return 0 if now.hour >= 7 and remaining(now.date(), now) else 1
+        return 0 if now.hour >= 5 and remaining(now.date(), now) else 1
     if a.loop:
         loop(a.loop, a.push)
     return 0

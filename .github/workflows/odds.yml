@@ -4,6 +4,9 @@ name: オッズ(締切の直前のレース)
 # 締切のあとは、締切時オッズ(確定)を1回だけ読んで残す。レースのページのオッズのタブが読みに来る。
 # 直前情報・結果の取り込み(live.yml)とは別に動かす(こちらで何かあっても、あちらは止まらない)。
 # 1回の実行は最長345分。終わるときに今日の分が残っていれば、自分で次の実行を起こして引き継ぐ。
+# 締切を過ぎてから始まった(取りこぼした)レースの締切時オッズも、あとから読みに行く。
+# 朝の始まりは予約の起動のほか、直前情報・結果の取り込み(live.yml。いつも1つ動いている)と毎日の更新が、止まっていれば起こす
+# (GitHub の予約の起動は数時間遅れたり来なかったりするため。scripts/keepalive.py)。動いている間は、live.yml が止まっていないかも見る。
 on:
   schedule:
     - cron: "50 22 * * *"              # 7:50(日本時間)
@@ -27,6 +30,8 @@ jobs:
       actions: write          # 次の実行を起こすため
       statuses: write         # 動いているか・失敗したかを残すため(commit status "odds")
     steps:
+      - name: 始まった時刻を残す(すぐ終わった実行が、次の実行を起こし続けないように)
+        run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -50,7 +55,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if python3 scripts/odds.py --need-more; then
-            gh workflow run odds.yml --ref main && echo "次の実行を起こしました"
+            python3 scripts/keepalive.py --next odds.yml --since "$T0"
           else
-            echo "今日の分は終わりです"
+            echo "今日の分は終わりです(明日の朝は、直前情報・結果の取り込みが起こします)"
           fi

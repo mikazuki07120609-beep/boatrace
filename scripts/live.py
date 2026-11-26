@@ -13,7 +13,9 @@
 レースのページは、このファイルを開くたびに読みに来る(サイトを作り直さなくても、展示と結果が出る)。
 秘密の値があれば、同じファイルを Cloudflare R2 にも置く(scripts/r2.py。ページは先にそちらを読む)。
 
-  python3 scripts/live.py --loop 350          # 350分まで(その日の最終レースの結果が出たら終わる)
+実行が遅れて始まった・止まっていた間のレースも、締切を過ぎてから直前情報・結果を読みに行って取り直す(取りこぼしの取り直し)。
+
+  python3 scripts/live.py --loop 345          # 345分まで(今日の分が終わっても夜のあいだも待ち、朝5時から次の日の分を始める)
   python3 scripts/live.py --once              # 1回だけ
   python3 scripts/live.py --parse before FILE # 保存したページを読み取って表示(確認用)
 """
@@ -54,6 +56,13 @@ ORIG_URL = {
 }
 LIST_AHEAD = 240          # 締切の何分前から出走表(F・Lの回数)を読みに行くか
 LIST_PER_CYCLE = 3        # 出走表は急がないので、1回りに読む数を絞る
+# 取りこぼしの取り直し: 実行が遅れて始まった・止まっていた間のレースは、締切を過ぎてからでも公式のページに残っているので読みに行く
+# (直前情報・結果・オリジナル展示。大文字が取り直しで、読むページは小文字の方と同じ)。今のレースを先に読み、1回りに読む数を絞る
+LATE = {"B": "b", "R": "r", "O": "o"}
+LATE_TRIES = {"B": 3, "R": 3, "O": 2}
+LATE_PER_CYCLE = 8
+IDLE_SEC = 600            # 夜(今日の分が終わってから朝5時まで)は読みに行かず、この間隔で待つ
+WATCH_SEC = 600           # オッズの取り込みが止まっていないかを見る間隔
 KIM = {"逃げ": "逃げ", "まくり": "捲り", "差し": "差し", "まくり差し": "捲り差し", "抜き": "抜き", "恵まれ": "恵まれ"}
 
 
@@ -332,9 +341,18 @@ def tasks(prog: dict, venues: dict, state: dict, now: dt.datetime) -> list:
             if (BEFORE_FROM < mins <= LIST_AHEAD and any(x["toban"] not in fl for x in race.get("entries", []))
                     and tries.get(f"l:{code}-{no}", 0) < MAX_TRIES["l"]):
                 out.append((2, mins, "l", code, race["no"]))
+            # 取りこぼし(古いものから): 結果は待つ時間を過ぎたもの、直前情報・オリジナル展示は締切を過ぎたもの
+            if not r and mins < -RESULT_GIVEUP and tries.get(f"R:{code}-{no}", 0) < LATE_TRIES["R"]:
+                out.append((3, mins, "R", code, race["no"]))
+            if not (b and b.get("ready")) and mins < BEFORE_UNTIL and tries.get(f"B:{code}-{no}", 0) < LATE_TRIES["B"]:
+                out.append((4, mins, "B", code, race["no"]))
+            if (code in ORIG_URL and b and b.get("ready") and not o and mins < -10
+                    and tries.get(f"O:{code}-{no}", 0) < LATE_TRIES["O"]):
+                out.append((5, mins, "O", code, race["no"]))
     out.sort()
     lists = [x for x in out if x[2] == "l"][:LIST_PER_CYCLE]
-    return [x for x in out if x[2] != "l"] + lists
+    late = [x for x in out if x[2] in LATE][:LATE_PER_CYCLE]
+    return [x for x in out if x[2] in ("b", "r", "o")] + lists + late
 
 
 def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
@@ -345,12 +363,13 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
     now = now or dt.datetime.now(JST)
     venues, state = load_day(day)
     changed, n = set(), 0
-    for _, _, kind, code, no in tasks(prog, venues, state, now):
+    for _, _, todo, code, no in tasks(prog, venues, state, now):
         if n:
             time.sleep(WAIT_SEC)
         n += 1
-        key = f"{kind}:{code}-{no}"
+        key = f"{todo}:{code}-{no}"
         state["tries"][key] = state["tries"].get(key, 0) + 1
+        kind = LATE.get(todo, todo)                     # 取りこぼしの取り直しも、読むページと読み取り方は同じ
         page = fetch({"b": "beforeinfo", "r": "raceresult", "l": "racelist", "o": "orig"}[kind], code, no, f"{day:%Y%m%d}")
         if not page:
             continue
@@ -449,9 +468,9 @@ def mirror_live(day: dt.date) -> None:
 
 
 def remaining(day: dt.date, now: dt.datetime) -> bool:
-    """まだ読みに行くものがあるか(最終レースの結果まで)。"""
+    """まだ読みに行くものがあるか(最終レースの結果と、取りこぼしの取り直しまで)。"""
     prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None) or {}
-    venues, _ = load_day(day)
+    venues, state = load_day(day)
     last = None
     for code, v in prog.get("venues", {}).items():
         for race in v.get("races", []):
@@ -464,7 +483,9 @@ def remaining(day: dt.date, now: dt.datetime) -> bool:
         return False
     done = all((venues.get(c, {}).get("result") or {}).get(str(r["no"]))
                for c, v in prog.get("venues", {}).items() for r in v.get("races", []))
-    return not done and now <= last + dt.timedelta(minutes=RESULT_GIVEUP)
+    if not done and now <= last + dt.timedelta(minutes=RESULT_GIVEUP):
+        return True
+    return any(t[2] in LATE for t in tasks(prog, venues, state, now))   # 取りこぼしの取り直しが残っていれば、それも終わるまで
 
 
 def _git(*a):
@@ -573,14 +594,26 @@ def rebuild_once(day: dt.date) -> None:
 
 
 def loop(minutes: float, push: bool) -> None:
+    """minutes 分のあいだ動く。今日の分が終わっても、夜のあいだも、終わらずに待つ(朝5時から次の日の分を始める)。
+    実行が終わると、live.yml が次の実行を起こして引き継ぐ(scripts/keepalive.py)。GitHub の予約の起動は数時間遅れたり
+    来なかったりするので、朝の起動を予約だけに任せない。"""
     t0 = time.time()
     asked_update = False
+    done_day = None                          # 今日の分を終えた日
+    last_watch = 0.0
+    idle_note = 0.0
     while True:
+        left = minutes * 60 - (time.time() - t0)
+        if left < CYCLE_SEC:
+            return
         now = dt.datetime.now(JST)
         day = now.date()
-        if now.hour < 5:                     # 日付が変わったら終わる(朝の実行に任せる)
-            print("今日の開催は終わりました", flush=True)
-            return
+        if now.hour < 5 or done_day == day:  # 夜: 読みに行かずに待つ
+            if time.time() - idle_note >= 3600:
+                idle_note = time.time()
+                print(f"{now:%H:%M} 待っています(朝5時から次の日の分を始めます)", flush=True)
+            time.sleep(max(1, min(IDLE_SEC, left - CYCLE_SEC + 1)))
+            continue
         try:
             if push:
                 git_sync()
@@ -588,6 +621,14 @@ def loop(minutes: float, push: bool) -> None:
             if not (PROGRAM / f"{day:%Y%m%d}.json").exists():
                 if push and not asked_update and now.hour >= 6:
                     asked_update = dispatch("update.yml")
+            if push and time.time() - last_watch >= WATCH_SEC:   # オッズの取り込みが止まっていたら起こす(開催の時間帯だけ)
+                last_watch = time.time()
+                try:
+                    import keepalive
+                    if keepalive.odds_hours(now):
+                        keepalive.ensure("odds.yml")
+                except Exception as ex:  # noqa: BLE001
+                    print("オッズの取り込みを見られませんでした:", ex, flush=True)
             changed = cycle(day, now)
             mirror_live(day)                     # 見る人のページへは、こちら(Cloudflare)から先に届ける
             if push:
@@ -596,11 +637,12 @@ def loop(minutes: float, push: bool) -> None:
             if changed:
                 after_change(day, push)
             if (PROGRAM / f"{day:%Y%m%d}.json").exists() and not remaining(day, now):
-                print("今日の分は終わりました", flush=True)
+                print("今日の分は終わりました(朝5時まで待ちます)", flush=True)
                 if push:
                     git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
                     rebuild_once(day)
-                return
+                done_day = day
+                continue
         except Exception:  # noqa: BLE001  1回の失敗で止めず、次の回にやり直す
             import traceback
             traceback.print_exc()
