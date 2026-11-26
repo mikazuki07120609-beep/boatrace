@@ -1791,8 +1791,8 @@
       if (URA && j.before) {                                       // 裏: 先のレースの直前情報の風・波(このレースの展示の前の目安)
         var lw = null;
         Object.keys(j.before).forEach(function (k) {
-          var x = j.before[k] || {}, w = x.weather;
-          if (w && w.wind != null && (!lw || String(x.fetched || "") > lw.at)) lw = { wind: w.wind, wave: w.wave, at: String(x.fetched || "") };
+          var x = j.before[k] || {}, w = x.weather;                  // 締切を過ぎてから取り直したもの(late)は、そのときの風・波ではないので使わない
+          if (w && w.wind != null && !x.late && (!lw || String(x.fetched || "") > lw.at)) lw = { wind: w.wind, wave: w.wave, at: String(x.fetched || "") };
         });
         if (lw && JSON.stringify(lw) !== JSON.stringify(VW)) { VW = lw; if (!ready()) ch = true; }
       }

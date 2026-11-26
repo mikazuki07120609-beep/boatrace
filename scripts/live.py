@@ -417,6 +417,10 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
         if not info:
             continue
         info["fetched"] = dt.datetime.now(JST).strftime("%H:%M")
+        if todo in LATE:
+            info["late"] = True                          # 締切を過ぎてから取り直したもの(先のレースの風・波の目安には使わない)
+            if kind == "b":
+                drop_late_weather(info, prog["venues"][code]["races"], no, v)
         slot = v.setdefault("before" if kind == "b" else "result", {})
         old = slot.get(str(no))
         if kind == "b" and old and not info.get("ready") and old == {**info, "fetched": old.get("fetched")}:
@@ -429,6 +433,19 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
             save_delays(day, prog, venues)
     print(f"{now:%H:%M} {n}ページを読み、{len(changed)}場が更新", flush=True)
     return changed
+
+
+def drop_late_weather(info: dict, races: list, no: int, lv: dict) -> None:
+    """締切を過ぎてから読んだ直前情報の水面気象が、そのレースの締切よりあとの時刻のもの(1Rのページは、そのときの気象を出す)なら外す。
+    2R からは「前のレースの時点」の気象なので、締切前に読んだときと同じ。"""
+    W = info.get("weather") or {}
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", str(W.get("at") or ""))
+    race = next((r for r in races if r["no"] == no), None)
+    dl = deadline_of(race, lv) if race else None
+    if m and dl:
+        hh, mm = map(int, dl.split(":"))
+        if int(m.group(1)) * 60 + int(m.group(2)) > hh * 60 + mm:
+            info["weather"] = {}
 
 
 def save_delays(day: dt.date, prog: dict, venues: dict) -> None:
