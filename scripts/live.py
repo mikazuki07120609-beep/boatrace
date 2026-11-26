@@ -49,7 +49,7 @@ ORIG_URL = {
     "01": "http://www.kiryu-kyotei.com/modules/yosou/cyokuzen.php?day={ymd}&race={no}",
     "06": "https://www.boatrace-hamanako.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
     "10": "https://www.boatrace-mikuni.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
-    "11": "https://www.boatrace-biwako.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
+    "11": "https://www.boatrace-biwako.jp/modules/yosou/cyokuzen.php?day={ymd}&race={no}&if=0&kind=2",
     "13": "https://boatrace-amagasaki.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
     "14": "https://www.n14.jp/modules/yosou/group-cyokuzen.php?day={ymd}&race={no}&kind=2",
     "18": "https://www.boatrace-tokuyama.jp/modules/yosou/tenji.php?day={ymd}&race={no}&kind=2",
@@ -259,7 +259,11 @@ def parse_orig(page: str) -> dict | None:
         if waku is None:
             continue
         nums = [float(c) if re.fullmatch(r"-?\d+\.\d{1,2}", c) else None for c in cs]
-        ix = next((i for i, x in enumerate(nums) if x is not None and 6.0 <= x <= 7.6 and i >= 2), None)
+        def follows(i: int) -> bool:            # すぐ後ろに、見出しの数だけ数字が並んでいるか
+            return len(nums) > i + len(order) and all(nums[i + 1 + j] is not None for j in range(len(order)))
+        ix = next((i for i, x in enumerate(nums) if i >= 2 and x is not None and 6.0 <= x <= 7.6 and follows(i)), None)
+        if ix is None:                          # 展示タイムが「-.--」のページ(鳴門の過去の日など): その印のすぐ後ろから
+            ix = next((i for i, c in enumerate(cs) if i >= 2 and re.fullmatch(r"-\.-{1,2}", c) and follows(i)), None)
         if ix is None:
             continue
         vals = nums[ix + 1:ix + 1 + len(order)]
