@@ -1,0 +1,36 @@
+== http://www.kiryu-kyotei.com/modules/yosou/cyokuzen.php?day=20261122&race=6
+  200 text/html; charset=UTF-8 21327バイト → www.kiryu-kyotei.com_modules_yosou_cyokuzen.php_day_20261122_race_6
+== https://www.boatrace-hamanako.jp/modules/yosou/group-cyokuzen.php?day=20261122&race=6&kind=2
+  200 text/html; charset=UTF-8 2870バイト → www.boatrace-hamanako.jp_modules_yosou_group-cyokuzen.php_day_20261122_race_6_kind_2
+  手がかり: /cdn/pc/images/sorry/wait_swacky.svg
+== https://boatrace-amagasaki.jp/modules/yosou/group-cyokuzen.php?day=20261122&race=6&kind=2
+  200 text/html; charset=UTF-8 9741バイト → boatrace-amagasaki.jp_modules_yosou_group-cyokuzen.php_day_20261122_race_6_kind_2
+  手がかり: /cdn/pc/images/yosou/img_original_tenji.png?ver=1.0.3
+  手がかり: /uploads/cdn/kao/faceimg/Face33543.jpg?d=20261126
+  手がかり: /uploads/cdn/kao/faceimg/Face34090.jpg?d=20261126
+  手がかり: /uploads/cdn/kao/faceimg/Face34289.jpg?d=20261126
+  手がかり: /uploads/cdn/kao/faceimg/Face34382.jpg?d=20261126
+  手がかり: /uploads/cdn/kao/faceimg/Face35139.jpg?d=20261126
+  手がかり: /uploads/cdn/kao/faceimg/Face35467.jpg?d=20261126
+== https://www.n14.jp/modules/yosou/group-cyokuzen.php?day=20261122&race=6&kind=2
+  200 text/html; charset=UTF-8 8347バイト → www.n14.jp_modules_yosou_group-cyokuzen.php_day_20261122_race_6_kind_2
+  手がかり: /cdn/pc/images/yosou/img_originaldata.png?ver=1.0.0
+== http://www.kiryu-kyotei.com/themes/kiryu/js/common/html5.js
+  200 application/javascript 2429バイト → www.kiryu-kyotei.com_themes_kiryu_js_common_html5.js
+== http://www.kiryu-kyotei.com/themes/kiryu/js/common/jquery-1.11.2.min.js
+  200 application/javascript 95931バイト → www.kiryu-kyotei.com_themes_kiryu_js_common_jquery-1.11.2.min.js
+  手がかり: abbr|article|aside|audio|bdi|canvas|data|datalist|details|figcaption|figure|footer|header|hgroup|mark|meter|nav|output|progress|section|summary|time|video
+== http://www.kiryu-kyotei.com/modules/yosou/js/simple-light-box.js?ver=2.0.0
+  200 application/javascript 1218バイト → www.kiryu-kyotei.com_modules_yosou_js_simple-light-box.js_ver_2.0.0
+== https://www.boatrace-hamanako.jp/resources/assets/js/jquery-3.6.0.min.js
+  200 application/javascript 89501バイト → www.boatrace-hamanako.jp_resources_assets_js_jquery-3.6.0.min.js
+== https://boatrace-amagasaki.jp/resources/assets/js/jquery-3.6.0.min.js
+  200 application/javascript 89501バイト → boatrace-amagasaki.jp_resources_assets_js_jquery-3.6.0.min.js
+== https://boatrace-amagasaki.jp/modules/yosou/js/simple-light-box.js
+  200 application/javascript 1650バイト → boatrace-amagasaki.jp_modules_yosou_js_simple-light-box.js
+  手がかり: /cdn/pc/css/yosou/simple-light-box.css?ver=1.1
+== https://www.n14.jp/resources/assets/js/jquery-3.6.0.min.js
+  200 application/javascript 89501バイト → www.n14.jp_resources_assets_js_jquery-3.6.0.min.js
+== https://www.n14.jp/modules/yosou/js/simple-light-box.js
+  200 application/javascript 1650バイト → www.n14.jp_modules_yosou_js_simple-light-box.js
+  手がかり: /cdn/pc/css/yosou/simple-light-box.css?ver=1.1

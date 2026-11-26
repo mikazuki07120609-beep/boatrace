@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>BOAT RACE 尼崎</title>
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="stylesheet" href="/common_layout/css/color.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/reset.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/main.min.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/common_parts.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/common13.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/yosou.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/group-syussou.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/group-odds-result.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/tokuhayami.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/waku10.css?ver=1.0.4" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/group-cyokuzen.css?ver=1.0.4" type="text/css">  <script src="/resources/assets/js/jquery-3.6.0.min.js"></script>
+</head>
+<body class="in_frame_body">
+    <div class="in_iframe">
+<div class ="yosou-content">
+    <div class="js-sub_tabs sub-tabs has_replaybtn">
+	<ul>
+		<li class="link" data-kind="0"><a href="javascript:void(0)" data-kind="0" data-day="20261122" data-race="6" >直前情報</a></li>
+		<li class="link" data-kind="1"><a href="javascript:void(0)" data-kind="1" data-day="20261122" data-race="6" >スタート展示</a></li>
+		<li class="link selected" data-kind="2"><a href="javascript:void(0)" data-kind="2" data-day="20261122" data-race="6" >オリジナル展示データ</a></li>
+		<li class="link nouryoku_link" data-kind="3"><a href="javascript:void(0)" data-kind="3" data-day="20261122" data-race="6" >能力指数</a></li>
+		<div class="tenji_button"><a href="javascript:void(0)" class="par-btn02 red-btn" onclick="window.open('https://livebb.jlc.ne.jp/bb_top/new_bb/index.php?tpl=13&ymd=2026-11-22&race=6&md=T','BB_window','width=1000,height=685,resizable=yes' );">展示リプレイ</a></div>
+	</ul>
+</div>    	<script type="text/javascript" src="/modules/yosou/js/simple-light-box.js"></script>
+	<div class="yosou-content">
+		<div class="category-oriten">
+						<table class="par-table01 ">
+
+				<thead>
+
+					<tr>
+
+						<th class="col1 head_waku" rowspan="2">枠</th>
+
+						<th class="col2 head_player" rowspan="2"><span class="head_player__toban">級別 / 登番</span><span class="head_player__racer">選手名</span><span class="head_player__shibu">支部 / 出身地 / 年齢</span></th>
+
+						<th class="col3" rowspan="2">体重</th>
+
+						<th class="col3" rowspan="2">調整</th>
+
+						<th class="col4" rowspan="2">チルト</th>
+
+						<th class="col5" rowspan="2">展示<br />タイム</th>
+
+						<th class="col6" colspan="2">オリジナル展示データ</th>
+
+					</tr>
+
+					<tr>
+
+						<th class="col6">一周</th>
+
+						<th class="col6">まわり足</th>
+
+					</tr>
+
+				</thead>
+
+				<tbody>
+
+					<tr class='odd'><td  class='col1 waku tei_color1 '>1</td><td  class='col2 tei_sub_color1 com-racer-data'><div class='com-racer-block'><div class='com-racer-img'><span style='background-image: url(/uploads/cdn/kao/faceimg/Face34289.jpg?d=20261126);'></span></div><!----><ul class='com-racer-info'><li class='com-toban'><span class='par-ico_kyubetu col-kyu_A2'>A2</span> 4289</li><li class='com-rname'><a href='https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=4289' target='_blank'>落合　　直子</a></li><li class='com-subinfo'>大　阪/大　阪/42</li></ul></div></td><td class='col3'>47.0</td><td class='col3'></td><td class='col4'>-0.5</td><td class='col5 rank_2'>6.65</td>					<td class="col6 rank_1" >36.28</td>
+					<td class="col7 rank_2" >11.20</td>
+</tr><tr class='even'><td  class='col1 waku tei_color2 '>2</td><td  class='col2 tei_sub_color2 com-racer-data'><div class='com-racer-block'><div class='com-racer-img'><span style='background-image: url(/uploads/cdn/kao/faceimg/Face34090.jpg?d=20261126);'></span></div><!----><ul class='com-racer-info'><li class='com-toban'><span class='par-ico_kyubetu col-kyu_B2'>B2</span> 4090</li><li class='com-rname'><a href='https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=4090' target='_blank'>中村　　　尊</a></li><li class='com-subinfo'>埼　玉/埼　玉/46</li></ul></div></td><td class='col3'>54.8</td><td class='col3'></td><td class='col4'>-0.5</td><td class='col5 '>6.69</td>					<td class="col6 rank_2" >36.44</td>
+					<td class="col7 rank_1" >11.09</td>
+</tr><tr class='odd'><td  class='col1 waku tei_color3 '>3</td><td  class='col2 tei_sub_color3 com-racer-data'><div class='com-racer-block'><div class='com-racer-img'><span style='background-image: url(/uploads/cdn/kao/faceimg/Face34382.jpg?d=20261126);'></span></div><!----><ul class='com-racer-info'><li class='com-toban'><span class='par-ico_kyubetu col-kyu_B1'>B1</span> 4382</li><li class='com-rname'><a href='https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=4382' target='_blank'>高山　　智至</a></li><li class='com-subinfo'>滋　賀/京　都/42</li></ul></div></td><td class='col3'>52.8</td><td class='col3'></td><td class='col4'>-0.5</td><td class='col5 '>6.69</td>					<td class="col6 " >37.27</td>
+					<td class="col7 " >11.38</td>
+</tr><tr class='even'><td  class='col1 waku tei_color4 '>4</td><td  class='col2 tei_sub_color4 com-racer-data'><div class='com-racer-block'><div class='com-racer-img'><span style='background-image: url(/uploads/cdn/kao/faceimg/Face35139.jpg?d=20261126);'></span></div><!----><ul class='com-racer-info'><li class='com-toban'><span class='par-ico_kyubetu col-kyu_A1'>A1</span> 5139</li><li class='com-rname'><a href='https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=5139' target='_blank'>大場　　恒季</a></li><li class='com-subinfo'>愛　知/愛　知/26</li></ul></div></td><td class='col3'>52.0</td><td class='col3'></td><td class='col4'>0.5</td><td class='col5 rank_1'>6.64</td>					<td class="col6 " >37.14</td>
+					<td class="col7 " >11.42</td>
+</tr><tr class='odd'><td  class='col1 waku tei_color5 '>5</td><td  class='col2 tei_sub_color5 com-racer-data'><div class='com-racer-block'><div class='com-racer-img'><span style='background-image: url(/uploads/cdn/kao/faceimg/Face35467.jpg?d=20261126);'></span></div><!----><ul class='com-racer-info'><li class='com-toban'><span class='par-ico_kyubetu col-kyu_B2'>B2</span> 5467</li><li class='com-rname'><a href='https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=5467' target='_blank'>野村　　羽玖</a></li><li class='com-subinfo'>大　阪/大　阪/19</li></ul></div></td><td class='col3'>51.5</td><td class='col3'>0.5</td><td class='col4'>-0.5</td><td class='col5 '>6.76</td>					<td class="col6 " >37.00</td>
+					<td class="col7 " >11.23</td>
+</tr><tr class='even'><td  class='col1 waku tei_color6 '>6</td><td  class='col2 tei_sub_color6 com-racer-data'><div class='com-racer-block'><div class='com-racer-img'><span style='background-image: url(/uploads/cdn/kao/faceimg/Face33543.jpg?d=20261126);'></span></div><!----><ul class='com-racer-info'><li class='com-toban'><span class='par-ico_kyubetu col-kyu_B1'>B1</span> 3543</li><li class='com-rname'><a href='https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=3543' target='_blank'>福田　　雅一</a></li><li class='com-subinfo'>香　川/香　川/58</li></ul></div></td><td class='col3'>52.7</td><td class='col3'></td><td class='col4'>-0.5</td><td class='col5 '>6.74</td>					<td class="col6 " >37.45</td>
+					<td class="col7 " >11.37</td>
+</tr>
+				</tbody>
+
+			</table>
+<div class='oriten_note'>
+
+					<div class='left_note'>
+
+					<div class='grade_color_note'>
+
+					<span class='color_box rank_1'>1位</span> 
+					<span class='color_box rank_2'>2位</span>
+				</div>
+
+						<h2 class='note_ttl'>一周・まわり足タイムは、BOATRACE 尼崎独自計測値です。</h2>
+
+						<ul class='yosou_notes'>
+
+							<li>※水面状況や再展示などで計測ができない場合がございます。予めご了承ください。</li>
+
+							<li>※計測ができなかった場合は、「-」（ハイフン）が表示されます。</li>
+
+						</ul>
+
+					</div>
+
+					<div class='right_note'>
+
+						<div class='hyou_mikata oriten_keisoku'>
+
+						<a href='javascript:void(0);' class='js-lightbox-btn'>計測位置</a>
+
+						<div class='js-lightbox-target' style='display: none;'>
+
+							<div class='modal_content oriten_content'>
+
+								<img src='/cdn/pc/images/yosou/img_original_tenji.png?ver=1.0.3' alt='計測位置'>
+
+							</div>
+
+							<link rel='stylesheet' href='/modules/yosou/css/simple-light-box.css?ver=1.0.4'>
+						</div>
+</div>
+
+					</div>
+
+				</div>
+
+		</div>
+	</div>
+	<div class="blank"></div>
+    </div>
+
+<script>
+	$(document).on("click", '.js-sub_tabs li a', function(ev){
+		let _this = $(this);
+		//選択されたレース番号 
+		var target_race= _this.attr("data-race");
+		//対象日付
+		var target_day = _this.attr("data-day");
+		//選択されたコンテンツ番号
+		var target_kind = _this.attr("data-kind");
+
+		var typelink = '/modules/yosou/group-cyokuzen.php';
+		typelink = typelink+'?day='+target_day+'&race='+target_race+'&kind='+target_kind+'&if=1';
+
+		$(".yosou_contents iframe", parent.document).attr("src",typelink);
+		
+	});
+</script>
+
+</div>
+</div>
+</body>
+</html>

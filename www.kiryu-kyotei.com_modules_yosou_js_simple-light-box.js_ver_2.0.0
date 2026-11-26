@@ -1,0 +1,43 @@
+$(function(){
+	var parentBody = $(window.parent.document.body);
+	var cssFile = false;
+
+	$(".js-lightbox-btn").on("click", function(){
+		var imgUrl 		= $(this).attr("data-img-path");
+		var wHeight   	= $(window.parent.document.body).height();
+		var wPosition 	= $(window.parent).scrollTop();
+		var readCss 	= "";
+		var createHtml 	= "";
+
+		//同じスタイルシートを何度も読み込まないように
+		if(cssFile == false){
+			cssFile = "<link rel='stylesheet' href='./css/simple-light-box.css?ver=2.0.0'>";
+			readCss = cssFile;
+		}
+
+		createHtml =
+			 readCss
+			+"<div class='js-lightbox'>"
+				+"<div class='background'></div>"
+				+"<div class='bk-wrap'><img class='bk-wrap-image' src='"+imgUrl+"' alt=''></div>"
+			+"</div>";
+		parentBody.prepend(createHtml);
+
+
+		parentBody.find(".background").css({
+			"height": wHeight+"px"
+		});
+		parentBody.find(".bk-wrap").css({
+			"top": wPosition+"px"
+		});
+
+	});
+
+	//**********************************************
+	//	ライトボックス削除処理
+	//**********************************************
+	parentBody.on("click", ".background, .bk-wrap", function(){
+		parentBody.children(".js-lightbox").remove();
+	})
+
+});

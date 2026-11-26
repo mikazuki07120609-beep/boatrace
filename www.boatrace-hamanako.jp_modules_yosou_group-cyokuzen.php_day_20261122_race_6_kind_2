@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>BOAT RACE 浜名湖</title>
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="stylesheet" href="/common_layout/css/color.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/reset.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/main.min.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/common_parts.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/resources/assets/css/common06.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/yosou.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/group-syussou.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/group-odds-result.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/tokuhayami.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/waku10.css?ver=1.0.0" type="text/css">
+  <link rel="stylesheet" href="/modules/yosou/css/group-cyokuzen.css?ver=1.0.0" type="text/css">  <script src="/resources/assets/js/jquery-3.6.0.min.js"></script>
+</head>
+<body class="in_frame_body">
+    <div class="in_iframe">
+<div class ="yosou-content">
+    <div class="js-sub_tabs sub-tabs ">
+	<ul>
+		<li class="kako_sub_list link" data-kind="0"><a href="javascript:void(0)" data-kind="0" data-day="20261122" data-race="1" >直前情報</a></li>
+		<li class="kako_sub_list link" data-kind="1"><a href="javascript:void(0)" data-kind="1" data-day="20261122" data-race="1" >スタート展示</a></li>
+		<li class="kako_sub_list link" data-kind="2"><a href="javascript:void(0)" data-kind="2" data-day="20261122" data-race="1" >オリジナル展示データ</a></li>
+	</ul>
+	
+</div>        		<link rel="stylesheet" href="/resources/assets/css/sorry.css" type="text/css">
+		<div class="sorry info sorry_yosou">
+			<div class="sorry_info">
+				<p>次節開催までしばらくお待ちください</p>
+			</div>
+			<div class="sorry_image"><img src="/cdn/pc/images/sorry/wait_swacky.svg"></div>
+		</div></div>
+
+<script>
+	$(document).on("click", '.js-sub_tabs li a', function(ev){
+		let _this = $(this);
+		//選択されたレース番号 
+		var target_race= _this.attr("data-race");
+		//対象日付
+		var target_day = _this.attr("data-day");
+		//選択されたコンテンツ番号
+		var target_kind = _this.attr("data-kind");
+
+		var typelink = '/modules/yosou/group-cyokuzen.php';
+		typelink = typelink+'?day='+target_day+'&race='+target_race+'&kind='+target_kind+'&if=1';
+
+		$(".yosou_contents iframe", parent.document).attr("src",typelink);
+		
+	});
+</script>
+
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE HTML>
+<!--[if IE 8 ]><html class="ie8" lang="ja"><![endif]-->
+<!--[if IE 9 ]><html class="ie9" lang="ja"><![endif]-->
+<!--[if (gt IE 9)|!(IE)]><!-->
+<html lang="ja">
+<!--<![endif]-->
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<title>BOAT RACE 桐生 Official Site - 競技情報</title>
+<meta name="description" content="BOAT RACE 桐生のOfficialウェブサイトです。" />
+<meta name="keywords" content="桐生,競艇場,競艇,ボートレース,桐生競艇,レースカレンダー,施設案内,桐生競艇おいしいメニュー,ご飯,お店,交通ガイド,開催レース情報,イベント情報,イベント,ファンサービス,群馬支部,群馬支部選手一覧,選手一覧,桐生競艇データベース,リンク,待受画面,待受画像,ご意見,ご感想,お天気,群馬,新桐生" />
+<meta name="author" content="Kiryu-kyotei.com" lang="ja" />
+<meta name="copyright" content="BOAT RACE KIRYU" />
+<meta name="robots" content="NOINDEX,NOFOLLOW" />
+<!--[if lt IE 9]>
+<script src="/themes/kiryu/js/common/html5.js"></script>
+<![endif]-->
+<meta name="rating" content="general" />
+<meta name="generator" content="XOOPS Cube" />
+<link rel="stylesheet" type="text/css" href="/themes/kiryu/css/common/style.css?ver=2.0.0" type="text/css" media="all" />
+<link rel="shortcut icon" href="/themes/kiryu/images/favicon.ico" />
+<link rel='stylesheet' href='./css/yosou.css?ver=2.0.0'>
+<link rel='stylesheet' href='./css/cyokuzen.css?ver=2.0.0'>
+</head>
+<body class="yosou"><div class="raceinfo_box">
+    <div class="raceinfo_title">6R　　ドラドキ目玉</div>
+    <div class="raceinfo_anteiban"></div>
+    <div class="raceinfo_dento">締切時刻　締切</div>
+</div>
+<div class="category-cyokuzen">
+<div class="yosoubody cf">
+    <h2 class="ttl02 mt_20">直前情報</h2>
+    <table class="com-yosou-table cyokuzen"><thead><tr><th rowspan="2" class="col1 teiban">艇番</th><th rowspan="2" class="col2 racer">登録番号/選手名<br/>級別/支部/出身地/年齢</th><th class="col3">体重</th><th class="col4" rowspan="2">チルト</th><th class="col5" rowspan="2">展示<br>タイム</th><th class="col6" colspan="3">オリジナル展示データ</th><th class="col7" colspan="4">前走成績</th></tr><tr class="thead_even"><th class="col3-1">調整</th><th class="col6-1">半周</th><th class="col6-2">まわり足</th><th class="col6-3">直線</th><th class="col7-1">レース</th><th class="col7-2">コース</th><th class="col7-3">ST</th><th class="col7-4">着順</th></tr></thead><tbody><tr class="even"><td rowspan="3" class="com-teino imp-num1">1</td><td rowspan="3" class="racer  imp-num1"><div class="com-info"><span class="com-toban">5060</span><span class="com-rname"><a class="col_b" href="https://www.boatrace.jp/owpc/pc/data/racersearch/season?toban=5060" target="_blank">数原　　　魁</a></span><span class="com-subinfo">A2/兵庫/兵庫/29</span></div></td><td class="com-val col3">52.0</td><td class="com-val col4" rowspan="2">0.0</td><td class="com-val col5 rank_1" rowspan="2">6.76</td>            <td class="col6 com-val" rowspan="2">18.70</td>
+            <td class="col7 com-val rank_2" rowspan="2">4.64</td>
+            <td class="col8 com-val" rowspan="2">7.66</td><td class="com-val col9" rowspan="2"></td><td class="com-val col10 imp-num" rowspan="2"></td><td class="com-val col11" rowspan="2"></td><td class="com-val col12" rowspan="2"></td></tr><tr class="even"><td class="com-val adjust"></td></tr><tr class="even parts"><td class="replace" colspan="10"></td></tr><tr class="odd"><td rowspan="3" class="com-teino imp-num2">2</td><td rowspan="3" class="racer  imp-num2"><div class="com-info"><span class="com-toban">4022</span><span class="com-rname"><a class="col_w" href="https://www.boatrace.jp/owpc/pc/data/racersearch/season?toban=4022" target="_blank">待鳥　　雄紀</a></span><span class="com-subinfo">B1/福岡/福岡/46</span></div></td><td class="com-val col3">54.9</td><td class="com-val col4" rowspan="2">-0.5</td><td class="com-val col5" rowspan="2">6.88</td>            <td class="col6 com-val rank_2" rowspan="2">18.65</td>
+            <td class="col7 com-val" rowspan="2">4.68</td>
+            <td class="col8 com-val rank_1" rowspan="2">7.59</td><td class="com-val col9" rowspan="2">1</td><td class="com-val col10 imp-num5" rowspan="2">5</td><td class="com-val col11" rowspan="2">.20</td><td class="com-val col12" rowspan="2">５</td></tr><tr class="odd"><td class="com-val adjust"></td></tr><tr class="odd parts"><td class="replace" colspan="10"></td></tr><tr class="even"><td rowspan="3" class="com-teino imp-num3">3</td><td rowspan="3" class="racer  imp-num3"><div class="com-info"><span class="com-toban">3793</span><span class="com-rname"><a class="col_w" href="https://www.boatrace.jp/owpc/pc/data/racersearch/season?toban=3793" target="_blank">高橋　　真吾</a></span><span class="com-subinfo">B1/埼玉/東京/54</span></div></td><td class="com-val col3">56.7</td><td class="com-val col4" rowspan="2">0.0</td><td class="com-val col5" rowspan="2">6.83</td>            <td class="col6 com-val" rowspan="2">19.06</td>
+            <td class="col7 com-val" rowspan="2">4.68</td>
+            <td class="col8 com-val" rowspan="2">7.79</td><td class="com-val col9" rowspan="2"></td><td class="com-val col10 imp-num" rowspan="2"></td><td class="com-val col11" rowspan="2"></td><td class="com-val col12" rowspan="2"></td></tr><tr class="even"><td class="com-val adjust"></td></tr><tr class="even parts"><td class="replace" colspan="10"></td></tr><tr class="odd"><td rowspan="3" class="com-teino imp-num4">4</td><td rowspan="3" class="racer  imp-num4"><div class="com-info"><span class="com-toban">4511</span><span class="com-rname"><a class="col_w" href="https://www.boatrace.jp/owpc/pc/data/racersearch/season?toban=4511" target="_blank">中岡　　健人</a></span><span class="com-subinfo">B1/香川/高知/37</span></div></td><td class="com-val col3">56.6</td><td class="com-val col4" rowspan="2">0.0</td><td class="com-val col5" rowspan="2">6.95</td>            <td class="col6 com-val rank_1" rowspan="2">18.59</td>
+            <td class="col7 com-val" rowspan="2">4.69</td>
+            <td class="col8 com-val rank_2" rowspan="2">7.63</td><td class="com-val col9" rowspan="2">1</td><td class="com-val col10 imp-num3" rowspan="2">3</td><td class="com-val col11" rowspan="2">.22</td><td class="com-val col12" rowspan="2">３</td></tr><tr class="odd"><td class="com-val adjust"></td></tr><tr class="odd parts"><td class="replace" colspan="10"></td></tr><tr class="even"><td rowspan="3" class="com-teino imp-num5">5</td><td rowspan="3" class="racer  imp-num5"><div class="com-info"><span class="com-toban">4203</span><span class="com-rname"><a class="col_b" href="https://www.boatrace.jp/owpc/pc/data/racersearch/season?toban=4203" target="_blank">小倉　　康典</a></span><span class="com-subinfo">B1/群馬/群馬/44</span></div></td><td class="com-val col3">52.1</td><td class="com-val col4" rowspan="2">-0.5</td><td class="com-val col5" rowspan="2">6.95</td>            <td class="col6 com-val" rowspan="2">18.97</td>
+            <td class="col7 com-val" rowspan="2">4.75</td>
+            <td class="col8 com-val" rowspan="2">7.70</td><td class="com-val col9" rowspan="2"></td><td class="com-val col10 imp-num" rowspan="2"></td><td class="com-val col11" rowspan="2"></td><td class="com-val col12" rowspan="2"></td></tr><tr class="even"><td class="com-val adjust"></td></tr><tr class="even parts"><td class="replace" colspan="10"></td></tr><tr class="odd"><td rowspan="3" class="com-teino imp-num6">6</td><td rowspan="3" class="racer  imp-num6"><div class="com-info"><span class="com-toban">4625</span><span class="com-rname"><a class="col_w" href="https://www.boatrace.jp/owpc/pc/data/racersearch/season?toban=4625" target="_blank">渡邊　　裕貴</a></span><span class="com-subinfo">B1/静岡/静岡/40</span></div></td><td class="com-val col3">53.6</td><td class="com-val col4" rowspan="2">-0.5</td><td class="com-val col5 rank_2" rowspan="2">6.77</td>            <td class="col6 com-val" rowspan="2">18.98</td>
+            <td class="col7 com-val rank_1" rowspan="2">4.59</td>
+            <td class="col8 com-val" rowspan="2">7.67</td><td class="com-val col9" rowspan="2">2</td><td class="com-val col10 imp-num3" rowspan="2">3</td><td class="com-val col11" rowspan="2">.18</td><td class="com-val col12" rowspan="2">４</td></tr><tr class="odd"><td class="com-val adjust"></td></tr><tr class="odd parts"><td class="replace" colspan="10"></td></tr></tbody></table><div class="measurement">
+                <div class= "left_note">
+                    <h1>半周・まわり足・直線タイムはBOATRACE桐生独自計測値です。</h1>
+                    <span>※水面状況や再展示などで計測ができない場合がございます。予めご了承下さい。</span><br>
+                    <span>※計測ができなかった場合は、「--.--」が表示されます。</span>
+                </div>
+                <div class= "right_note">
+                    <span class="color_box rank_1">1位</span><!--
+                    --><span class="color_box rank_2">2位</span>
+                </div>
+            </div><div class="tool mt_10">
+                <span>電気…電気一式</span>　<span>キャブ…キャブレタ</span>　<span>ピストン…ピストン</span>　<span>リング…ピストンリング</span>　<span>シリンダ…シリンダケース</span>　<span>シャフト…クランクシャフト</span>　<span>ペラ…プロペラ</span>　<span>ギヤ…ギヤケース</span>　<span>キャリボ…キャリアボデー</span><span>（部品交換は各選手の下段に記載）</span>
+            </div><table class="com-yosou-table forecast mt_10">
+                <thead>
+                    <th>直前予想</th>
+                </thead>
+                <tbody>
+                    <td>機力ある数原の逃げを軸に。待鳥が差し追走。後は連争いに。外マイで残す高橋の連対注意。穴は機力上々の渡邊の連対。　１－２＝全　１－３＝４５６　穴１－６＝４５</td>
+                </tbody>
+            </table><div class="feature">直前予想担当者：群馬支部元レーサー生方厚成</div>    <h2 class="ttl02 mt_30">スタート展示</h2>
+            <div class="start">
+            <table class="com-yosou-table start table_01">
+                <thead>
+                    <tr>
+                        <th class="col1 teiban">艇番</th>
+                        <th class="col2 racer">登録番号/選手名<br/>級別/支部/出身地/年齢</th>
+                        <th class="col3 junban">並び</th>
+                        <th class="col4 st-tenji" colspan="3">スタート展示</th>
+                        <th class="col5 st">ST</th>
+                        <th class="col6">水面気象状況<br />20:39現在</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class='odd'>
+<td class='col1 com-teino com-val imp-num1'>1</td>
+<td class='col2 imp-num1'><div class='com-info'><span class='com-toban'>5060</span><span class='com-rname'>数原　　　魁</span><span class='com-subinfo'>A2/兵庫/兵庫/29</span></div></td>
+<td class='col3 com-val'>1</td>
+<td class='col4-1 sd-val com-yosou-suimen'>S</td> <td class='col4-2 com-yosou-suimen'><div class='com-yosou-boat'><img class='boat' style='left:-9px;' src='/modules/yosou/images/common/boat01.png' alt=''></div></td> <td class='col4-3 com-yosou-suimen'></td> <td class='col5 com-yosou-suimen'><div class='st'><div class='box timing'>.03</div></div></td><td class='col6' rowspan='6'>            <table class="com-yosou-table start table_02">
+               <tbody>
+                    <tr class="even">
+                        <td class="sui-col header_ttl">天候</td>
+                        <td class='sui-col'>晴れ</td>
+                    </tr>
+                    <tr class="odd">
+                        <td class="sui-col header_ttl">スタート</td>
+                        <td class='sui-col'>無　風</td>
+                    </tr>
+                    <tr class="even">
+                        <td class="sui-col header_ttl">風向</td>
+                        <td class='sui-col'>無風</td>
+                    </tr>
+                    <tr class="odd">
+                        <td class="sui-col header_ttl">風速</td>
+                        <td class='sui-col'>0m</td>
+                    </tr>
+                    <tr class="even">
+                        <td class="sui-col header_ttl">波高</td>
+                        <td class='sui-col'>0cm</td>
+                    </tr>
+                    <tr class="odd">
+                        <td class="sui-col header_ttl">気温</td>
+                        <td class='sui-col'>5.0℃</td>
+                    </tr>
+                    <tr class="even">
+                        <td class="sui-col header_ttl">水温</td>
+                        <td class='sui-col'>11.0℃</td>
+                    </tr>
+                </tbody>
+            </table></td></tr>
+<tr class='even'>
+<td class='col1 com-teino com-val imp-num2'>2</td>
+<td class='col2 imp-num2'><div class='com-info'><span class='com-toban'>4022</span><span class='com-rname'>待鳥　　雄紀</span><span class='com-subinfo'>B1/福岡/福岡/46</span></div></td>
+<td class='col3 com-val'>2</td>
+<td class='col4-1 sd-val com-yosou-suimen'>S</td> <td class='col4-2 com-yosou-suimen'><div class='com-yosou-boat'><img class='boat' style='left:-3px;' src='/modules/yosou/images/common/boat02.png' alt=''></div></td> <td class='col4-3 com-yosou-suimen'></td> <td class='col5 com-yosou-suimen'><div class='st'><div class='box timing'>.01</div></div></td></tr>
+<tr class='odd'>
+<td class='col1 com-teino com-val imp-num3'>3</td>
+<td class='col2 imp-num3'><div class='com-info'><span class='com-toban'>3793</span><span class='com-rname'>高橋　　真吾</span><span class='com-subinfo'>B1/埼玉/東京/54</span></div></td>
+<td class='col3 com-val'>3</td>
+<td class='col4-1 sd-val com-yosou-suimen'>S</td> <td class='col4-2 com-yosou-suimen'><div class='com-yosou-boat'><img class='boat' style='left:-6px;' src='/modules/yosou/images/common/boat03.png' alt=''></div></td> <td class='col4-3 com-yosou-suimen'></td> <td class='col5 com-yosou-suimen'><div class='st'><div class='box timing'>.02</div></div></td></tr>
+<tr class='even'>
+<td class='col1 com-teino com-val imp-num4'>4</td>
+<td class='col2 imp-num4'><div class='com-info'><span class='com-toban'>4511</span><span class='com-rname'>中岡　　健人</span><span class='com-subinfo'>B1/香川/高知/37</span></div></td>
+<td class='col3 com-val'>4</td>
+<td class='col4-1 sd-val com-yosou-suimen'>D</td> <td class='col4-2 com-yosou-suimen'><div class='com-yosou-boat'><img class='boat' style='left:-15px;' src='/modules/yosou/images/common/boat04.png' alt=''></div></td> <td class='col4-3 com-yosou-suimen'></td> <td class='col5 com-yosou-suimen'><div class='st'><div class='box timing'>.05</div></div></td></tr>
+<tr class='odd'>
+<td class='col1 com-teino com-val imp-num5'>5</td>
+<td class='col2 imp-num5'><div class='com-info'><span class='com-toban'>4203</span><span class='com-rname'>小倉　　康典</span><span class='com-subinfo'>B1/群馬/群馬/44</span></div></td>
+<td class='col3 com-val'>5</td>
+<td class='col4-1 sd-val com-yosou-suimen'>D</td> <td class='col4-2 com-yosou-suimen'><div class='com-yosou-boat'><img class='boat' style='left:6px;' src='/modules/yosou/images/common/boat05.png' alt=''></div></td> <td class='col4-3 com-yosou-suimen'></td> <td class='col5 com-yosou-suimen'><div class='st'><div class='box timing u-accent'>F.02</div></div></td></tr>
+<tr class='even'>
+<td class='col1 com-teino com-val imp-num6'>6</td>
+<td class='col2 imp-num6'><div class='com-info'><span class='com-toban'>4625</span><span class='com-rname'>渡邊　　裕貴</span><span class='com-subinfo'>B1/静岡/静岡/40</span></div></td>
+<td class='col3 com-val'>6</td>
+<td class='col4-1 sd-val com-yosou-suimen'>D</td> <td class='col4-2 com-yosou-suimen'><div class='com-yosou-boat'><img class='boat' style='left:3px;' src='/modules/yosou/images/common/boat06.png' alt=''></div></td> <td class='col4-3 com-yosou-suimen'></td> <td class='col5 com-yosou-suimen'><div class='st'><div class='box timing u-accent'>F.01</div></div></td></tr>
+
+                </tbody>
+            </table>
+        </div>    <h2 class="ttl02 mt_20">タイム総合ランキング</h2>
+    <table class="com-yosou-table time"><thead><tr><th class="rank">ランキング</th><th class="teiban">艇番</th><th class="racer">選手名</th><th class="heikin-st">今節の平均ST</th><th class="chaku">今節の着順</th></tr></thead><tbody><tr class="even"><td class="com-val">1</td><td class="com-teino imp-num2">2</td><td class="imp-num2"><span class="com-rname">待鳥　　雄紀</span></td><td class="com-val">.20</td><td class="com-val chaku"><div class="block">６</div><div class="block">２</div><div class="block">４</div><div class="block">-</div><div class="block">６</div><div class="block">６</div><div class="block">-</div><div class="block">２</div><div class="block">２</div><div class="block">-</div><div class="block">５</div><div class="block">２</div><div class="block"></div><div class="block"></div></td></tr><tr class="odd"><td class="com-val">2</td><td class="com-teino imp-num4">4</td><td class="imp-num4"><span class="com-rname">中岡　　健人</span></td><td class="com-val">.17</td><td class="com-val chaku"><div class="block">６</div><div class="block">４</div><div class="block">５</div><div class="block">-</div><div class="block">４</div><div class="block">-</div><div class="block">６</div><div class="block">３</div><div class="block">-</div><div class="block">４</div><div class="block">３</div><div class="block">３</div><div class="block"></div><div class="block"></div></td></tr><tr class="even"><td class="com-val">3</td><td class="com-teino imp-num1">1</td><td class="imp-num1"><span class="com-rname">数原　　　魁</span></td><td class="com-val">.20</td><td class="com-val chaku"><div class="block">５</div><div class="block">２</div><div class="block">-</div><div class="block">３</div><div class="block">２</div><div class="block">２</div><div class="block">-</div><div class="block">４</div><div class="block">４</div><div class="block">５</div><div class="block">１</div><div class="block">６</div><div class="block"></div><div class="block"></div></td></tr><tr class="odd"><td class="com-val">4</td><td class="com-teino imp-num6">6</td><td class="imp-num6"><span class="com-rname">渡邊　　裕貴</span></td><td class="com-val">.17</td><td class="com-val chaku"><div class="block">-</div><div class="block">１</div><div class="block">２</div><div class="block">４</div><div class="block">２</div><div class="block">６</div><div class="block">転</div><div class="block">４</div><div class="block">-</div><div class="block">３</div><div class="block">４</div><div class="block">６</div><div class="block"></div><div class="block"></div></td></tr><tr class="even"><td class="com-val">5</td><td class="com-teino imp-num5">5</td><td class="imp-num5"><span class="com-rname">小倉　　康典</span></td><td class="com-val">.16</td><td class="com-val chaku"><div class="block">１</div><div class="block">３</div><div class="block">-</div><div class="block">６</div><div class="block">６</div><div class="block">６</div><div class="block">３</div><div class="block">-</div><div class="block">４</div><div class="block">３</div><div class="block">４</div><div class="block">-</div><div class="block"></div><div class="block"></div></td></tr><tr class="odd"><td class="com-val">6</td><td class="com-teino imp-num3">3</td><td class="imp-num3"><span class="com-rname">高橋　　真吾</span></td><td class="com-val">.14</td><td class="com-val chaku"><div class="block">３</div><div class="block">-</div><div class="block">２</div><div class="block">５</div><div class="block">６</div><div class="block">-</div><div class="block">４</div><div class="block">４</div><div class="block">６</div><div class="block">４</div><div class="block">５</div><div class="block">-</div><div class="block"></div><div class="block"></div></td></tr></tbody></table><div class="time info mt_20"><a href="javascript:void(0);" class="block js-lightbox-btn" data-img-path="./images/cyokuzen/pc_timeranking.png?ver=2.0.0" ><dl><dt class="row2"><img src="./images/cyokuzen/icon_question.png" alt="" /></dt><dd>タイム総合ランキングとは</dd></dl></a><a href="javascript:void(0);" class="block js-lightbox-btn" data-img-path="./images/cyokuzen/measurement_position.png?ver=2.0.0"><dl><dt class="row2"><img src="./images/cyokuzen/icon_question.png" alt="" /></dt><dd>半周ラップ/まわり足/直線/</br>展示の測定位置とは</dd></dl></a></div></div>
+</div>
+<script type='text/javascript' src='/themes/kiryu/js/common/jquery-1.11.2.min.js'></script>
+<script type='text/javascript' src='./js/simple-light-box.js?ver=2.0.0'></script>
+</body>
+</html>
