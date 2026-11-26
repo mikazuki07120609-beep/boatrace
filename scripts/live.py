@@ -61,6 +61,7 @@ LIST_PER_CYCLE = 3        # 出走表は急がないので、1回りに読む数
 LATE = {"B": "b", "R": "r", "O": "o"}
 LATE_TRIES = {"B": 3, "R": 3, "O": 2}
 LATE_PER_CYCLE = 8
+LATE_BUDGET = 16          # 1回りに読むページの目安。今のレースで読むものが多い回は、取り直しを減らす(少なくとも2つ)
 IDLE_SEC = 600            # 夜(今日の分が終わってから朝5時まで)は読みに行かず、この間隔で待つ
 WATCH_SEC = 600           # オッズの取り込みが止まっていないかを見る間隔
 KIM = {"逃げ": "逃げ", "まくり": "捲り", "差し": "差し", "まくり差し": "捲り差し", "抜き": "抜き", "恵まれ": "恵まれ"}
@@ -351,8 +352,9 @@ def tasks(prog: dict, venues: dict, state: dict, now: dt.datetime) -> list:
                 out.append((5, mins, "O", code, race["no"]))
     out.sort()
     lists = [x for x in out if x[2] == "l"][:LIST_PER_CYCLE]
-    late = [x for x in out if x[2] in LATE][:LATE_PER_CYCLE]
-    return [x for x in out if x[2] in ("b", "r", "o")] + lists + late
+    now_tasks = [x for x in out if x[2] in ("b", "r", "o")] + lists
+    late = [x for x in out if x[2] in LATE][:max(2, min(LATE_PER_CYCLE, LATE_BUDGET - len(now_tasks)))]
+    return now_tasks + late
 
 
 def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
