@@ -356,13 +356,20 @@ def tasks(prog: dict, venues: dict, state: dict, now: dt.datetime) -> list:
 
 
 def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
-    """1回り。新しく取れた場のコードの集合を返す。"""
+    """1回り。締切前のレース(取りこぼしの取り直しでないもの)で新しく取れた場のコードの集合を返す
+    (見立ての記録を作り直すかどうかに使う。取り直した分も保存して送る)。"""
     prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None)
     if not prog:
         return set()
     now = now or dt.datetime.now(JST)
     venues, state = load_day(day)
-    changed, n = set(), 0
+    changed, fresh, n = set(), set(), 0
+    todo = ""
+
+    def mark(code: str) -> None:                      # 取れた場(取り直しでないものは fresh にも)
+        changed.add(code)
+        if todo not in LATE:
+            fresh.add(code)
     for _, _, todo, code, no in tasks(prog, venues, state, now):
         if n:
             time.sleep(WAIT_SEC)
@@ -381,7 +388,7 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
                 got = {}
             if got and any((v.get("dl") or {}).get(k) != t for k, t in got.items()):
                 v["dl"] = {**(v.get("dl") or {}), **got}
-                changed.add(code)
+                mark(code)
         if kind in ("l", "b") and "span" not in v:      # 節の初日と最終日(1度読めればよい)
             try:
                 sp = parse_span(page, day)
@@ -389,7 +396,7 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
                 sp = None
             if sp:
                 v["span"] = sp
-                changed.add(code)
+                mark(code)
         if kind == "o":
             try:
                 og = parse_orig(page)
@@ -398,7 +405,7 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
             if og:
                 og["fetched"] = dt.datetime.now(JST).strftime("%H:%M")
                 v.setdefault("orig", {})[str(no)] = og
-                changed.add(code)
+                mark(code)
             continue
         if kind == "l":
             try:
@@ -407,7 +414,7 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
                 fl = {}
             if fl:
                 v.setdefault("fl", {}).update(fl)
-                changed.add(code)
+                mark(code)
             continue
         try:
             info = parse_before(page) if kind == "b" else parse_result(page)
@@ -426,13 +433,13 @@ def cycle(day: dt.date, now: dt.datetime | None = None) -> set:
         if kind == "b" and old and not info.get("ready") and old == {**info, "fetched": old.get("fetched")}:
             continue
         slot[str(no)] = info
-        changed.add(code)
+        mark(code)
     if n:
         save_day(day, venues, state, changed)
         if any((venues.get(c) or {}).get("dl") for c in changed):
             save_delays(day, prog, venues)
     print(f"{now:%H:%M} {n}ページを読み、{len(changed)}場が更新", flush=True)
-    return changed
+    return fresh
 
 
 def drop_late_weather(info: dict, races: list, no: int, lv: dict) -> None:
@@ -646,12 +653,12 @@ def loop(minutes: float, push: bool) -> None:
                         keepalive.ensure("odds.yml")
                 except Exception as ex:  # noqa: BLE001
                     print("オッズの取り込みを見られませんでした:", ex, flush=True)
-            changed = cycle(day, now)
+            fresh = cycle(day, now)
             mirror_live(day)                     # 見る人のページへは、こちら(Cloudflare)から先に届ける
             if push:
                 git_push(f"直前情報・結果 {now:%Y-%m-%d %H:%M} [skip ci]")
                 mirror_live(day)                 # ほかの実行が送った分と合わせて中身が変わっていれば、それも送る
-            if changed:
+            if fresh:
                 after_change(day, push)
             if (PROGRAM / f"{day:%Y%m%d}.json").exists() and not remaining(day, now):
                 print("今日の分は終わりました(朝5時まで待ちます)", flush=True)
