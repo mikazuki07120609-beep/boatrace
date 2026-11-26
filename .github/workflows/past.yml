@@ -4,14 +4,15 @@ name: 過去分の取り込み(締切時刻・潮位)
 #  mode=times      : 過去の番組表から、レースの締切予定時刻を data/times に(まだない日を、新しい日から順に days 日分)
 #  mode=tide-probe : 気象庁の潮位表の地点一覧と、テキストの見本を probe ブランチに置く(地点記号を確かめるため)
 #  mode=tide       : 気象庁の潮位表(推算潮位)を、years の年の分だけ取り込んで data/tide に
+#  mode=live       : 取りこぼした直前情報・結果・オリジナル展示を、昨日から days 日前までの日の分も取り直す(番組表が残っている日だけ)
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "times / tide-probe / tide"
+        description: "times / tide-probe / tide / live"
         default: "times"
       days:
-        description: "times で1回に取り込む日数"
+        description: "times で1回に取り込む日数(live のときは、さかのぼる日数。例: 3)"
         default: "400"
       years:
         description: "tide で取り込む年(空白区切り)"
@@ -23,6 +24,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write          # mode=live: 取り直したあと、毎日の更新(サイトの作り直し)を起こすため
 
 jobs:
   past:
@@ -46,6 +48,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           python3 scripts/times.py --backfill "$DAYS" --commit-every 50
+      - name: 取りこぼした直前情報・結果を、過去の日の分も取り直して送る
+        if: ${{ github.event.inputs.mode == 'live' }}
+        env:
+          DAYS: ${{ github.event.inputs.days }}
+          GH_TOKEN: ${{ github.token }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/live.py --backfill "$DAYS" --push
       - name: 潮位表の地点一覧と見本を probe ブランチに置く
         if: ${{ github.event.inputs.mode == 'tide-probe' }}
         env:

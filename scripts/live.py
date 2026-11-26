@@ -17,6 +17,7 @@
 
   python3 scripts/live.py --loop 345          # 345分まで(今日の分が終わっても夜のあいだも待ち、朝5時から次の日の分を始める)
   python3 scripts/live.py --once              # 1回だけ
+  python3 scripts/live.py --backfill 3 --push # 昨日から3日前までの取りこぼしを取り直す(past.yml の mode=live)
   python3 scripts/live.py --parse before FILE # 保存したページを読み取って表示(確認用)
 """
 import argparse
@@ -680,6 +681,34 @@ def loop(minutes: float, push: bool) -> None:
         time.sleep(max(10, CYCLE_SEC - (time.time() - now.timestamp())))
 
 
+def backfill(days: int, push: bool) -> int:
+    """取りこぼしの取り直しを、昨日から days 日前までの日の分も(番組表が残っている日だけ。手で動かす: past.yml の mode=live)。
+    その日の終わりの時刻で1回りずつ読み、取り直すものがなくなるまで(1日60回りまで)。取り直した場の数を返す。"""
+    today = dt.datetime.now(JST).date()
+    total = 0
+    for i in range(1, days + 1):
+        day = today - dt.timedelta(days=i)
+        if not (PROGRAM / f"{day:%Y%m%d}.json").exists():
+            continue
+        end = dt.datetime.combine(day, dt.time(23, 59), JST)
+        for _ in range(60):
+            if push:
+                git_sync()
+            prog = load_json(PROGRAM / f"{day:%Y%m%d}.json", None) or {}
+            venues, state = load_day(day)
+            if not any(t[2] in LATE for t in tasks(prog, venues, state, end)):
+                break
+            before = {c: json.dumps(v, sort_keys=True) for c, v in venues.items()}
+            cycle(day, end)
+            after, _ = load_day(day)
+            total += sum(1 for c, v in after.items() if json.dumps(v, sort_keys=True) != before.get(c))
+            if push:
+                git_push(f"直前情報・結果(取り直し {day:%Y-%m-%d}) [skip ci]")
+        mirror_live(day)
+    print(f"取り直し: のべ{total}場の分を足しました", flush=True)
+    return total
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--loop", type=float, help="何分まで動かすか")
@@ -687,7 +716,12 @@ def main() -> int:
     ap.add_argument("--push", action="store_true", help="取れたらリポジトリへ送る(GitHub Actions 用)")
     ap.add_argument("--parse", nargs=2, metavar=("KIND", "FILE"))
     ap.add_argument("--need-more", action="store_true", help="今日の分がまだ残っていれば 0 で終わる(次の実行を起こすかどうか)")
+    ap.add_argument("--backfill", type=int, metavar="DAYS", help="昨日から DAYS 日前までの取りこぼしを取り直す")
     a = ap.parse_args()
+    if a.backfill:
+        if backfill(a.backfill, a.push) and a.push:
+            dispatch("update.yml")                  # 取り直した分を、サイトのページにも入れる
+        return 0
     if a.need_more:
         now = dt.datetime.now(JST)
         if now.hour < 5:
